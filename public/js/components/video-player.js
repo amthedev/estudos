@@ -141,10 +141,14 @@ export function vimeoId(input) {
 }
 
 /** Extensão do arquivo (sem query string), em minúsculas. */
-function fileExtension(url) {
-  const parsed = parseUrl(url);
-  if (!parsed) return '';
-  const match = parsed.pathname.match(/\.([a-z0-9]+)$/i);
+export function fileExtension(url) {
+  // caminho interno (/uploads/aulas/x.mp4) não passa por parseUrl, que só
+  // aceita endereço absoluto; sem este atalho o vídeo da própria plataforma
+  // caía no cartão de "abrir em outra página" em vez de tocar
+  const internal = internalPath(url);
+  const pathname = internal ? internal.split('?')[0] : parseUrl(url)?.pathname;
+  if (!pathname) return '';
+  const match = pathname.match(/\.([a-z0-9]+)$/i);
   return match ? match[1].toLowerCase() : '';
 }
 

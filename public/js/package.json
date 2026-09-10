@@ -1,0 +1,4 @@
+{
+  "type": "module",
+  "//": "O frontend é escrito em ES modules. Este arquivo não muda nada no navegador: serve para o Node reconhecer os .js desta pasta como módulos ao rodar os testes."
+}
