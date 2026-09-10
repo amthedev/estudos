@@ -107,6 +107,7 @@ function view() {
       subtitle: 'Videoaulas da biblioteca, com classificação, provas em que caem e resumo em markdown.',
       actions: html`
         <a class="btn btn-secondary" href="/admin/conteudo">${icon('list-tree')}<span>Conteúdo</span></a>
+        <a class="btn btn-secondary" href="/admin/aulas/importar">${icon('upload')}<span>Importar lista</span></a>
         <a class="btn btn-primary" href="/admin/aulas/nova">${icon('plus')}<span>Nova aula</span></a>`,
     })}
     <section class="card"><div class="card-body" data-table></div></section>`;

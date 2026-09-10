@@ -123,7 +123,7 @@ os ramos com resultado. Os botões **Expandir** e **Recolher** abrem e fecham tu
 
 ## 3. Aulas
 
-Telas: **Aulas** (`/admin/aulas`), **Nova aula** (`/admin/aulas/nova`).
+Telas: **Aulas** (`/admin/aulas`), **Nova aula** (`/admin/aulas/nova`), **Importar aulas** (`/admin/aulas/importar`).
 
 A lista mostra miniatura, título, matéria e assunto, provas em que a aula cai, duração e situação.
 Use a busca e os filtros de matéria, prova, dificuldade e situação para achar rápido.
@@ -168,6 +168,43 @@ Use a busca e os filtros de matéria, prova, dificuldade e situação para achar
 Clique na linha da tabela para abrir a aula. Os botões de ação de cada linha permitem editar, ir
 para as questões do assunto, ativar/desativar e excluir. **Excluir a aula apaga também o progresso
 registrado pelos alunos nela** — quando a intenção é só tirar do ar, desative.
+
+### 3.4 Cadastrar várias aulas de uma vez
+
+Quando você já gravou uma sequência inteira e tem os links na mão, não cadastre uma a uma. Em
+**Aulas**, clique em **Importar lista**.
+
+1. **Cole os links**, um por linha. Aceita YouTube e Vimeo.
+
+   ```
+   https://www.youtube.com/watch?v=XXXXXXXXXXX
+   https://youtu.be/YYYYYYYYYYY | Porcentagem — parte 2
+   https://vimeo.com/123456789
+   ```
+
+   Para escolher o título à mão, escreva o link, uma barra vertical e o título. Sem a barra, o
+   sistema usa o título do próprio vídeo. Linhas começadas por `#` são ignoradas. Até 200 por vez.
+
+2. **Preencha o que vale para todas** na coluna da direita: matéria, assunto, subassunto opcional,
+   professor, dificuldade, duração padrão e as provas em que as aulas caem. Matéria e assunto são
+   obrigatórios — todas as aulas da lista entram no mesmo assunto.
+
+3. Clique em **Analisar links**. Aparece uma tabela com a miniatura, o título e a duração de cada
+   vídeo, e a situação de cada linha:
+
+   * **Pronta** — vai ser cadastrada.
+   * **Já cadastrada** — existe uma aula com esse mesmo vídeo; a linha vem desmarcada.
+   * **Repetido na lista** — o link aparece duas vezes no que você colou.
+   * **Link inválido** — não é um endereço de vídeo reconhecido.
+
+4. **Ajuste os títulos** direto na tabela, se quiser, e desmarque o que não deve entrar.
+
+5. Clique em **Importar selecionadas**. O resultado mostra o que entrou e o motivo de cada linha
+   que ficou de fora.
+
+As aulas entram na ordem em que estão na lista, continuando a numeração de onde o assunto parou.
+Depois é só abrir cada uma para acrescentar o resumo, se for o caso. Reimportar a mesma lista não
+duplica nada.
 
 ---
 

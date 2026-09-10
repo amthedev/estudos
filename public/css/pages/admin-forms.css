@@ -336,3 +336,51 @@
   .fu-hint { width: 100%; }
   .fu-img { max-width: 100%; }
 }
+
+/* ---------------------------------------------------------------------------
+   Admin › Importar aulas (.li-)
+   --------------------------------------------------------------------------- */
+.li-cols { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); gap: var(--s-5); align-items: start; }
+.li-links { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.7; }
+
+.li-settings { display: flex; flex-direction: column; gap: var(--s-4); }
+.li-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+
+.li-exams { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.li-exam { cursor: pointer; user-select: none; }
+.li-exam input { margin-right: var(--s-1); }
+
+.li-preview, .li-result { margin-top: var(--s-5); }
+.li-table th, .li-table td { vertical-align: middle; }
+.li-row-off { opacity: .55; }
+
+.li-check { width: 40px; text-align: center; }
+.li-thumb { width: 92px; }
+.li-thumb img {
+  width: 84px; height: 47px; object-fit: cover; display: block;
+  border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--card-2);
+}
+.li-thumb-empty {
+  display: flex; align-items: center; justify-content: center;
+  width: 84px; height: 47px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--card-2); color: var(--text-3);
+}
+.li-title { margin-bottom: var(--s-1); }
+.li-url { display: block; color: var(--text-3); font-size: 12px; word-break: break-all; }
+.li-duration, .li-status { white-space: nowrap; }
+
+.li-created, .li-errors { list-style: none; padding: 0; margin: var(--s-4) 0 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.li-created li, .li-errors li { display: flex; align-items: flex-start; gap: var(--s-2); font-size: 13px; }
+.li-created li { color: var(--text-2); }
+.li-created .icon { color: var(--success); flex: 0 0 auto; }
+.li-errors li { color: var(--text-2); }
+.li-errors .icon { color: var(--warning); flex: 0 0 auto; }
+.li-result-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; margin-top: var(--s-5); }
+
+@media (max-width: 1023px) {
+  .li-cols { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .li-row { grid-template-columns: 1fr; }
+  .li-thumb { display: none; }
+}

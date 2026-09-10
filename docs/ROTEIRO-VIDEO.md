@@ -256,6 +256,21 @@ salvar. Voltar à área do aluno e mostrar a aula lá.
 
 ---
 
+### 16b. Importar uma sequência inteira de aulas (9:50 – 10:15)
+
+**O que fazer:** `/admin/aulas` → **Importar lista**. Colar três ou quatro links de uma vez, escolher
+matéria e assunto na coluna da direita, clicar em **Analisar links** e mostrar a tabela com miniatura
+e título de cada vídeo. Ajustar um título à mão, importar e abrir a lista de aulas.
+
+**Frases-guia:**
+* "Quando você gravar uma sequência inteira, não precisa cadastrar uma por uma."
+* "Colo a lista de links, escolho o assunto e o sistema busca título, miniatura e duração de cada vídeo."
+* "Ele ainda avisa se algum link já foi cadastrado antes, para não duplicar aula."
+
+**Destaque:** o que seria uma tarde de trabalho vira um minuto.
+
+---
+
 ### 17. Cadastrar uma questão (9:50 – 10:15)
 
 **O que fazer:** `/admin/questoes` → **Nova questão**. Preencher enunciado, alternativas, marcar a
