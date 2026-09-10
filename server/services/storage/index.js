@@ -14,6 +14,7 @@
 const local = require('./local');
 const squarecloud = require('./squarecloud');
 const { getSetting } = require('../settings');
+const config = require('../../config');
 
 const DRIVERS = { local, squarecloud };
 const NAMES = Object.keys(DRIVERS);
@@ -25,6 +26,9 @@ function normalize(value) {
 
 /** Nome do provedor ativo. */
 async function providerName() {
+  // Em teste é sempre disco: a suíte não pode enviar arquivo para a conta real
+  // de quem estiver rodando, nem depender de rede para passar.
+  if (config.isTest) return 'local';
   const chosen = normalize(await getSetting('storage_provider', '')) || normalize(process.env.STORAGE_PROVIDER);
   if (chosen) return chosen;
   return squarecloud.isConfigured() ? 'squarecloud' : 'local';

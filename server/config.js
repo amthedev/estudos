@@ -136,8 +136,10 @@ const config = deepFreeze({
   version: pkg.version,
   rootDir,
   squarecloud: {
-    // chave da conta usada pelo Blob Storage; fica só no servidor
-    blobKey: env.SQUARECLOUD_API_KEY || '',
+    // Chave da conta usada pelo Blob Storage; fica só no servidor.
+    // Em teste é sempre vazia: a suíte não pode gravar nem apagar nada na
+    // conta real de quem estiver rodando os testes.
+    blobKey: isTest ? '' : env.SQUARECLOUD_API_KEY || '',
   },
   storageProvider: env.STORAGE_PROVIDER || '',
   publicDir: path.join(rootDir, 'public'),

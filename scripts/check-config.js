@@ -56,6 +56,14 @@ function mascarar(valor) {
   return `••••${texto.slice(-4)}`;
 }
 
+function formatarBytes(valor) {
+  const bytes = Number(valor) || 0;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1).replace('.', ',')} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
 function env(nome) {
   const valor = String(process.env[nome] || '').trim();
   if (!valor || valor.toLowerCase().includes('troque')) return null;
@@ -150,7 +158,8 @@ async function main() {
         OK,
         'Square Cloud Blob',
         consumo
-          ? `chave ${situacao.key_masked} · ${consumo.objects} arquivo(s), ${(consumo.used_bytes / 1024 / 1024).toFixed(0)} MB usados`
+          ? `chave ${situacao.key_masked} · ${consumo.objects} arquivo(s), ${formatarBytes(consumo.used_bytes)}` +
+            (consumo.included_bytes ? ` de ${formatarBytes(consumo.included_bytes)} (${consumo.used_pct}%)` : '')
           : `chave ${situacao.key_masked}`
       );
     } else if (situacao.provider === 'squarecloud') {

@@ -377,18 +377,21 @@ async function list({ folder, cursor } = {}) {
  */
 async function stats() {
   const response = await call('https://blob.squarecloud.app/v1/account/stats');
+  // nomes conferidos contra a resposta real da API:
+  // { usage: { objects, storage }, plan: { included },
+  //   billing: { extraStorage, storagePrice, objectsPrice, totalEstimate } }
   const usage = response?.usage || {};
   const plan = response?.plan || {};
   const billing = response?.billing || {};
-  const used = Number(usage.size ?? usage.total_size ?? 0);
-  const included = Number(plan.included_size ?? plan.size ?? 0);
+  const used = Number(usage.storage ?? 0);
+  const included = Number(plan.included ?? 0);
   return {
-    objects: Number(usage.objects ?? usage.count ?? 0),
+    objects: Number(usage.objects ?? 0),
     used_bytes: used,
     included_bytes: included,
     used_pct: included > 0 ? Math.min(100, Math.round((used / included) * 100)) : null,
-    extra_bytes: Number(billing.extra_size ?? 0),
-    estimated_cost: billing.total ?? billing.estimate ?? null,
+    extra_bytes: Number(billing.extraStorage ?? 0),
+    estimated_cost: Number(billing.totalEstimate ?? 0),
   };
 }
 
