@@ -904,7 +904,12 @@ async function getToday(userId) {
   const totalMin = sumMinutes(items);
   const doneMin = sumMinutes(items, (item) => item.status === 'done');
   const doneCount = items.filter((item) => item.status === 'done').length;
-  const nextItem = items.find((item) => item.status === 'pending') || null;
+  // O treino físico corre em paralelo ao estudo: ele não pode ser o que a
+  // plataforma manda o aluno "começar a estudar". Só vira próxima atividade
+  // quando não sobrou mais nada de conteúdo no dia.
+  const pendentes = items.filter((item) => item.status === 'pending');
+  const nextItem =
+    pendentes.find((item) => item.type !== 'training' && item.type !== 'rest') || pendentes[0] || null;
 
   return {
     date: today,

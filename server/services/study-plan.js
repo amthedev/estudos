@@ -196,7 +196,9 @@ async function buildItems({
     if (trainingDays.has(dates.weekday(date))) {
       out.push({
         date,
-        position,
+        // posição alta: o treino aparece depois do conteúdo do dia, porque
+        // complementa o estudo em vez de abrir a jornada
+        position: position + 2000,
         type: 'training',
         title: plan.training_label || 'Treino físico',
         subject_id: null,
@@ -206,7 +208,6 @@ async function buildItems({
         plan_item_id: null,
         duration_min: TRAINING_MIN,
       });
-      position += 1;
     }
 
     const week = dates.startOfWeek(date, 1);

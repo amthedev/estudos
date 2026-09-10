@@ -244,6 +244,40 @@ describe('Plano de estudos', () => {
     assert.ok(estudoNoMesmoDia.length > 0, 'o treino não pode substituir o estudo do dia');
   });
 
+  it('a próxima atividade é o estudo, não o treino físico', async () => {
+    const bb = await db.one(
+      `INSERT INTO exams (slug, name, short_name, track, board)
+       VALUES ('bb-proxima', 'Barro Branco', 'Barro Branco', 'barro_branco', 'VUNESP') RETURNING id`
+    );
+    const planoBB = await db.one(
+      `INSERT INTO study_plans (exam_id, slug, name, weeks, training_weekdays, training_label)
+       VALUES ($1, 'plano-proxima', 'Plano BB', 4, '{0,1,2,3,4,5,6}', 'Treino físico para o TAF') RETURNING id`,
+      [bb.id]
+    );
+    await db.query(
+      `INSERT INTO study_plan_items (plan_id, position, week, subject_id, title)
+       VALUES ($1, 1, 1, $2, 'Razão e proporção')`,
+      [planoBB.id, subjects.mat]
+    );
+
+    const student = await ctx.registerStudent({ name: 'Aluno próxima' });
+    await db.query(
+      `UPDATE student_profiles SET exam_id = $2, study_days = '{0,1,2,3,4,5,6}', hours_per_day = 2,
+              onboarding_completed = true WHERE user_id = $1`,
+      [student.user.id, bb.id]
+    );
+    await schedule.generateSchedule(student.user.id, { days: 3 });
+
+    const hoje = await schedule.getToday(student.user.id);
+    assert.ok(hoje.items.length >= 2, 'o dia precisa ter estudo e treino');
+    assert.notEqual(
+      hoje.next_item.type,
+      'training',
+      'o treino corre em paralelo: quem abre o dia é o conteúdo de estudo'
+    );
+    assert.equal(hoje.items[hoje.items.length - 1].type, 'training', 'o treino fica por último no dia');
+  });
+
   it('prova sem plano continua usando a distribuição por peso', async () => {
     const outra = await db.one(
       `INSERT INTO exams (slug, name, short_name, track, board)
