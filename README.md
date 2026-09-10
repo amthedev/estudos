@@ -81,6 +81,7 @@ openssl rand -hex 48             # → ADMIN_JWT_SECRET
 
 # 5. Criar o schema e popular a estrutura base
 npm run migrate
+npm run check          # confere o que já está configurado e o que falta
 npm run seed
 
 # 6. (opcional) Incluir aulas e questões de exemplo para navegar com dados

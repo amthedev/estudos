@@ -676,6 +676,19 @@ dig +short www.focoelite.com.br
 
 ## 14. Verificação final
 
+Antes de qualquer coisa, rode a conferência automática no servidor:
+
+```bash
+npm run check
+```
+
+Ela lê a configuração e o banco e responde, em português, o que está pronto e o que falta: conexão com
+o banco, migrations aplicadas, conteúdo base, administrador criado, segredos de sessão, armazenamento
+de arquivos, OpenAI, meio de cobrança, e-mail e endereço público. Sai com erro quando algo impede o
+funcionamento, então serve também dentro de um script de publicação.
+
+Depois, confira na mão:
+
 Depois de tudo no ar, percorra esta lista:
 
 ```bash
