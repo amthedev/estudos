@@ -8,7 +8,8 @@
  *   DELETE /api/admin/uploads                                  { url }
  *
  * O corpo vem cru (sem multipart) para o painel poder mandar o próprio objeto
- * File do navegador direto no fetch, sem depender de biblioteca:
+ * File do navegador direto no fetch, sem depender de biblioteca. O arquivo é
+ * gravado em fluxo, então videoaula grande não passa pela memória:
  *
  *   fetch('/api/admin/uploads?folder=logos&filename=' + encodeURIComponent(file.name), {
  *     method: 'POST',
@@ -43,6 +44,9 @@ const STATUS_BY_CODE = {
   unsupported_type: [415, 'unsupported_type'],
   too_large: [413, 'too_large'],
   invalid_path: [400, 'validation_error'],
+  storage_not_configured: [503, 'storage_unavailable'],
+  storage_timeout: [504, 'storage_unavailable'],
+  storage_error: [502, 'storage_unavailable'],
 };
 
 function toAppError(err) {
@@ -55,12 +59,10 @@ router.post(
   '/',
   validate({ query: uploadQuery }),
   wrap(async (req, res) => {
-    // app.js aplica express.raw neste caminho: o corpo chega como Buffer
-    if (!Buffer.isBuffer(req.body)) {
-      throw new AppError(400, 'validation_error', 'Envie o arquivo no corpo da requisição.');
-    }
+    // o corpo não é lido por nenhum middleware: a requisição é gravada em
+    // fluxo direto no disco, para aguentar videoaula de centenas de megabytes
     try {
-      const saved = await uploads.save(req.body, {
+      const saved = await uploads.saveStream(req, {
         contentType: req.get('content-type'),
         filename: req.valid.query.filename,
         folder: req.valid.query.folder,
@@ -82,8 +84,8 @@ router.get(
   '/',
   validate({ query: listQuery }),
   wrap(async (req, res) => {
-    const items = await uploads.list(req.valid.query);
-    res.json({ items, total: items.length, folders: uploads.FOLDERS });
+    const [items, storage] = await Promise.all([uploads.list(req.valid.query), uploads.status()]);
+    res.json({ items, total: items.length, folders: uploads.FOLDERS, storage });
   })
 );
 
@@ -92,9 +94,6 @@ router.delete(
   validate({ body: z.object({ url: z.string().trim().min(1, 'Informe o arquivo.').max(500) }) }),
   wrap(async (req, res) => {
     const { url } = req.valid.body;
-    if (!url.startsWith('/uploads/')) {
-      throw new AppError(400, 'validation_error', 'Só é possível remover arquivos enviados pelo painel.');
-    }
     try {
       await uploads.remove(url);
     } catch (err) {

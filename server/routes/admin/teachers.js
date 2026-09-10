@@ -21,6 +21,7 @@
 const router = require('express').Router();
 const db = require('../../db/pool');
 const { validate, z } = require('../../middleware/validate');
+const { nullableFileRef } = require('../../utils/validators');
 const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 
@@ -31,7 +32,7 @@ const idParams = z.object({ id: uuid });
 const emptyToUndefined = (value) => (value === '' ? undefined : value);
 const emptyToNull = (value) => (typeof value === 'string' && value.trim() === '' ? null : value);
 const nullableText = (max) => z.preprocess(emptyToNull, z.string().trim().max(max).nullable().optional());
-const nullableUrl = z.preprocess(emptyToNull, z.string().trim().url('URL inválida.').max(2000).nullable().optional());
+const nullableUrl = nullableFileRef(2000, 'Informe um endereço válido ou envie o arquivo.');
 
 const timeField = z
   .string()

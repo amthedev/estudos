@@ -60,6 +60,8 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_SECURE: boolFromEnv(undefined).optional(),
   SMTP_FROM: z.string().default('Foco Elite <no-reply@focoelite.com.br>'),
+  SQUARECLOUD_API_KEY: z.string().optional(),
+  STORAGE_PROVIDER: z.string().optional(),
 
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().optional(),
@@ -133,6 +135,11 @@ const config = deepFreeze({
   isTest,
   version: pkg.version,
   rootDir,
+  squarecloud: {
+    // chave da conta usada pelo Blob Storage; fica só no servidor
+    blobKey: env.SQUARECLOUD_API_KEY || '',
+  },
+  storageProvider: env.STORAGE_PROVIDER || '',
   publicDir: path.join(rootDir, 'public'),
 
   port: env.PORT,

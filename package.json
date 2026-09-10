@@ -18,7 +18,8 @@
     "setup": "npm run migrate && npm run seed",
     "test": "NODE_ENV=test node --test --test-concurrency=1 'tests/**/*.test.js'",
     "build:icons": "node scripts/build-icons.js",
-    "vendor": "node scripts/vendor.js"
+    "vendor": "node scripts/vendor.js",
+    "start:cloud": "node server/db/migrate.js && node server/index.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

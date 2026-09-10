@@ -1,0 +1,14 @@
+# Enviado para a Square Cloud: só o que a aplicação precisa para rodar.
+node_modules/
+.git/
+.env
+.env.*
+!.env.example
+uploads/
+tests/
+docs/
+.playwright-cli/
+output/
+*.log
+.DS_Store
+ARCHITECTURE.md

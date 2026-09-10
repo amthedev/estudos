@@ -23,7 +23,7 @@ A biblioteca de conteúdo tem cinco níveis, todos administráveis em `/admin/co
 | Matéria     | `subjects`  | `slug` único                 | Unidade de progresso, de peso no cronograma e de filtro nas questões. Tem ícone e cor próprios. |
 | Assunto     | `topics`    | `(subject_id, slug)` único   | Unidade do syllabus: é o que o cronograma agenda, o que as revisões repetem e o que o desempenho mede. |
 | Subassunto  | `subtopics` | `(topic_id, slug)` único     | Detalha o assunto; aulas e questões podem apontar para ele para a prática ser mais precisa. |
-| Aula        | `lessons`   | `slug` único                 | Vídeo (YouTube/Vimeo/externo) + resumo em Markdown + duração + dificuldade. |
+| Aula        | `lessons`   | `slug` único                 | Vídeo enviado pelo painel + resumo em Markdown + duração + dificuldade. |
 
 Questões (`questions`) apontam para matéria, assunto e, opcionalmente, subassunto. Uma questão
 respondida alimenta o desempenho do assunto, o caderno de erros e as revisões.

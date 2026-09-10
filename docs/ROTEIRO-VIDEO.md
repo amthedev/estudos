@@ -89,7 +89,7 @@ o que fazer.
 propósito**.
 
 **Frases-guia:**
-* "O vídeo é do YouTube, cadastrado por você no painel."
+* "O vídeo está hospedado na própria plataforma, enviado por você pelo painel."
 * "Ao lado, o resumo da aula e as provas em que o assunto cai."
 * "Concluí a aula. Repare no que aconteceu: o progresso subiu e a revisão foi agendada
   automaticamente."
@@ -240,14 +240,14 @@ portal de cobrança.
 
 **Transição:** "Agora vou para o painel. Esse é o seu lado — e é de onde tudo o que você viu sai."
 
-### 16. Cadastrar uma aula com link do YouTube (9:15 – 9:50)
+### 16. Cadastrar uma aula enviando o vídeo (9:15 – 9:50)
 
-**O que fazer:** `/admin/aulas` → **Nova aula**. Escolher matéria e assunto, colar um link do YouTube,
+**O que fazer:** `/admin/aulas` → **Nova aula**. Escolher matéria e assunto, enviar o arquivo do vídeo,
 mostrar que o título, a miniatura e a duração são reconhecidos, marcar as provas em que a aula cai e
 salvar. Voltar à área do aluno e mostrar a aula lá.
 
 **Frases-guia:**
-* "Colo o link do YouTube e a plataforma já traz a miniatura e a duração."
+* "Envio o arquivo e a plataforma já lê a duração do próprio vídeo."
 * "Aqui marco em quais provas essa aula cai. Repare: eu cadastro **uma vez** e ela vale para o ENEM e
   para o Barro Branco ao mesmo tempo."
 * "Era exatamente isso que você pediu: não duplicar aula por prova."
@@ -256,16 +256,16 @@ salvar. Voltar à área do aluno e mostrar a aula lá.
 
 ---
 
-### 16b. Importar uma sequência inteira de aulas (9:50 – 10:15)
+### 16b. Enviar uma sequência inteira de aulas (9:50 – 10:15)
 
-**O que fazer:** `/admin/aulas` → **Importar lista**. Colar três ou quatro links de uma vez, escolher
-matéria e assunto na coluna da direita, clicar em **Analisar links** e mostrar a tabela com miniatura
-e título de cada vídeo. Ajustar um título à mão, importar e abrir a lista de aulas.
+**O que fazer:** `/admin/aulas` → **Enviar em massa**. Selecionar três ou quatro vídeos de uma vez,
+escolher matéria e assunto na coluna da direita e mostrar a lista com o tamanho, a duração e o título
+sugerido de cada arquivo. Ajustar um título à mão, enviar e abrir a lista de aulas.
 
 **Frases-guia:**
 * "Quando você gravar uma sequência inteira, não precisa cadastrar uma por uma."
-* "Colo a lista de links, escolho o assunto e o sistema busca título, miniatura e duração de cada vídeo."
-* "Ele ainda avisa se algum link já foi cadastrado antes, para não duplicar aula."
+* "Seleciono todos os arquivos, escolho o assunto e a plataforma envia um por um, lendo a duração de cada vídeo."
+* "Ela ainda avisa se algum vídeo já foi cadastrado antes, para não duplicar aula."
 
 **Destaque:** o que seria uma tarde de trabalho vira um minuto.
 

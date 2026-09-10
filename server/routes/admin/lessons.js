@@ -10,19 +10,26 @@
  *                                             + garante exam_topics/exam_subjects)
  *   PUT    /api/admin/lessons/:id             edita (parcial)
  *   DELETE /api/admin/lessons/:id
- *   POST   /api/admin/lessons/parse-video     { url } → provider, embed, miniatura, título/duração quando disponíveis
  *   PATCH  /api/admin/lessons/reorder         { ids[] } → sort_order pela posição
- *   POST   /api/admin/lessons/import/preview   { text|items[] } → metadados de cada link, sem gravar
- *   POST   /api/admin/lessons/import           cria várias aulas de uma vez no mesmo assunto
+ *   POST   /api/admin/lessons/import          cadastra várias aulas de uma vez a partir de
+ *                                             vídeos já enviados ao armazenamento da plataforma
+ *
+ * As videoaulas são arquivos enviados pelo painel (MP4, WEBM ou MOV). O envio em
+ * si acontece em POST /api/admin/uploads, que grava em fluxo; aqui chegam apenas
+ * os caminhos resultantes.
  */
 const router = require('express').Router();
 const db = require('../../db/pool');
 const config = require('../../config');
 const { validate, z } = require('../../middleware/validate');
+const { nullableFileRef } = require('../../utils/validators');
 const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const { uniqueSlug } = require('../../utils/slug');
 const { parseVideoUrl } = require('../../utils/video');
+const { join: pathJoin } = require('node:path');
+const fsp = require('node:fs/promises');
+const uploads = require('../../services/uploads');
 const { parsePagination, paginate, parseSort } = require('../../utils/pagination');
 const { ensureExamCoverage, assertExamsExist } = require('./content');
 
@@ -30,10 +37,7 @@ const uuid = z.string().uuid();
 const idParams = z.object({ id: uuid });
 const emptyToUndefined = (value) => (value === '' ? undefined : value);
 const optionalUuid = z.preprocess(emptyToUndefined, uuid.optional());
-const nullableUrl = z.preprocess(
-  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
-  z.string().trim().url('URL inválida.').max(2000).nullable().optional()
-);
+const nullableUrl = nullableFileRef(2000, 'Informe um endereço válido ou envie o arquivo.');
 
 const lessonBody = z.object({
   title: z.string().trim().min(3, 'Informe pelo menos 3 caracteres.').max(200),
@@ -114,7 +118,13 @@ async function assertClassification({ subject_id, topic_id, subtopic_id }) {
 
 /** Provedor e miniatura derivados da URL do vídeo. */
 function videoMeta(videoUrl, thumbnailUrl) {
-  const parsed = parseVideoUrl(videoUrl || '');
+  const value = String(videoUrl || '').trim();
+  if (!value) return { video_url: null, video_provider: 'none', thumbnail_url: thumbnailUrl || null };
+  // arquivo enviado pelo painel e servido pela própria plataforma
+  if (isUploadedVideo(value)) {
+    return { video_url: value, video_provider: 'upload', thumbnail_url: thumbnailUrl || null };
+  }
+  const parsed = parseVideoUrl(value);
   return {
     video_url: parsed.provider === 'none' ? null : parsed.url,
     video_provider: parsed.provider,
@@ -122,147 +132,63 @@ function videoMeta(videoUrl, thumbnailUrl) {
   };
 }
 
-async function fetchJson(url, timeoutMs = 4000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+/**
+ * Vídeo gravado pelo painel. Pode ser um endereço do Blob da Square Cloud
+ * (https://public-blob.squarecloud.dev/...) ou, quando o provedor é o disco,
+ * um caminho servido pela própria aplicação (/uploads/...).
+ */
+function isUploadedVideo(value) {
+  const text = String(value || '').trim();
+  if (/^https:\/\/[a-z0-9.-]*squarecloud\.dev\/\S+\.(mp4|webm|mov)$/i.test(text)) return true;
+  return /^\/uploads\/[a-z]+\/[a-f0-9]{8,}\.(mp4|webm|mov)$/i.test(text);
+}
+
+/**
+ * Confere que o arquivo apontado existe de fato. Só dá para verificar em
+ * disco; no Blob a existência é garantida pela resposta do próprio envio.
+ */
+async function assertVideoFile(url) {
+  if (!isUploadedVideo(url)) {
+    throw new AppError(400, 'validation_error', 'Envie o arquivo do vídeo pelo painel antes de cadastrar a aula.', [
+      { path: 'video_url', message: 'Arquivo de vídeo inválido.' },
+    ]);
+  }
+  if (!String(url).startsWith('/uploads/')) return;
+  const full = pathJoin(uploads.UPLOADS_DIR, String(url).replace('/uploads/', ''));
   try {
-    const res = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
-    if (!res.ok) return null;
-    return await res.json();
+    await fsp.access(full);
   } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+    throw new AppError(400, 'validation_error', 'O arquivo deste vídeo não está mais no armazenamento.', [
+      { path: 'video_url', message: 'Arquivo não encontrado.' },
+    ]);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Importação em massa
+// Cadastro em massa
 //
-// A equipe grava as aulas no YouTube e cadastra os links. Uma a uma seria uma
-// tarde inteira, então aqui ela cola a lista, confere a prévia (título e
-// miniatura vêm do próprio vídeo) e confirma tudo de uma vez.
+// A equipe envia os arquivos das videoaulas pelo painel e cadastra todas de
+// uma vez dentro do mesmo assunto. Os vídeos já subiram por
+// POST /api/admin/uploads; aqui chegam só os caminhos, o título e a duração
+// que o navegador leu de cada arquivo.
 // ---------------------------------------------------------------------------
 
 const MAX_IMPORT = 200;
 
-/**
- * Lê o texto colado. Uma aula por linha, no formato:
- *   https://youtu.be/abc123
- *   https://youtu.be/abc123 | Título escolhido à mão
- * Linhas em branco e começadas por # são ignoradas.
- */
-function parseImportText(text) {
-  return String(text || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'))
-    .map((line) => {
-      const [url, ...rest] = line.split('|');
-      return { url: url.trim(), title: rest.join('|').trim() || null };
-    })
-    .filter((item) => item.url);
-}
-
-/** Metadados de um link: provedor, miniatura e, quando o vídeo informa, título e duração. */
-async function describeVideo(url) {
-  const parsed = parseVideoUrl(url);
-  const out = {
-    url,
-    provider: parsed.provider,
-    video_url: parsed.provider === 'none' ? null : parsed.url,
-    thumbnail_url: parsed.thumbnail_url || null,
-    title: null,
-    duration_min: null,
-  };
-  if (config.isTest) return out;
-  if (parsed.provider !== 'youtube' && parsed.provider !== 'vimeo') return out;
-
-  const endpoint = parsed.provider === 'youtube'
-    ? `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(parsed.url)}`
-    : `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(parsed.url)}`;
-  const data = await fetchJson(endpoint);
-  if (data) {
-    if (typeof data.title === 'string') out.title = data.title.slice(0, 200);
-    if (!out.thumbnail_url && typeof data.thumbnail_url === 'string') out.thumbnail_url = data.thumbnail_url;
-    const seconds = Number(data.duration);
-    if (Number.isFinite(seconds) && seconds > 0) out.duration_min = Math.max(1, Math.round(seconds / 60));
-  }
-  return out;
-}
-
-/** Consulta os links em pequenos lotes para não abrir 200 conexões de uma vez. */
-async function describeAll(items) {
-  const out = [];
-  const BATCH = 6;
-  for (let i = 0; i < items.length; i += BATCH) {
-    const slice = items.slice(i, i + BATCH);
-    const described = await Promise.all(slice.map((item) => describeVideo(item.url)));
-    described.forEach((meta, index) => {
-      out.push({ ...meta, title: slice[index].title || meta.title });
-    });
-  }
-  return out;
-}
-
 const importItems = z
   .array(
     z.object({
-      url: z.string().trim().min(1, 'Informe o link.').max(2000),
-      title: z.string().trim().max(200).nullable().optional(),
+      video_url: z.string().trim().min(1, 'Envie o arquivo do vídeo.').max(500),
+      title: z.string().trim().min(3, 'Informe um título com pelo menos 3 caracteres.').max(200),
       duration_min: z.coerce.number().int().min(1).max(600).nullable().optional(),
+      video_seconds: z.coerce.number().int().min(1).max(360000).nullable().optional(),
+      video_bytes: z.coerce.number().int().min(0).nullable().optional(),
+      video_mime: z.string().trim().max(80).nullable().optional(),
       thumbnail_url: nullableUrl,
     })
   )
-  .min(1, 'Informe pelo menos um link.')
-  .max(MAX_IMPORT, `Importe no máximo ${MAX_IMPORT} aulas por vez.`);
-
-const importSource = z
-  .object({
-    text: z.string().max(60000).optional(),
-    items: importItems.optional(),
-  })
-  .refine((body) => body.text || body.items, 'Cole os links das aulas.');
-
-router.post(
-  '/import/preview',
-  validate({ body: importSource }),
-  wrap(async (req, res) => {
-    const body = req.valid.body;
-    const parsed = body.items ? body.items.map((i) => ({ url: i.url, title: i.title || null })) : parseImportText(body.text);
-    if (!parsed.length) throw new AppError(400, 'validation_error', 'Nenhum link encontrado no texto.');
-    if (parsed.length > MAX_IMPORT) {
-      throw new AppError(400, 'validation_error', `Importe no máximo ${MAX_IMPORT} aulas por vez.`);
-    }
-
-    const described = await describeAll(parsed);
-    const urls = described.map((item) => item.video_url).filter(Boolean);
-    const known = urls.length
-      ? await db.many('SELECT video_url, title FROM lessons WHERE video_url = ANY($1::text[])', [urls])
-      : [];
-    const byUrl = new Map(known.map((row) => [row.video_url, row.title]));
-
-    const seen = new Set();
-    const items = described.map((item) => {
-      const duplicatedInList = item.video_url ? seen.has(item.video_url) : false;
-      if (item.video_url) seen.add(item.video_url);
-      const existing = item.video_url ? byUrl.get(item.video_url) : null;
-      return {
-        ...item,
-        already_registered: Boolean(existing),
-        existing_title: existing || null,
-        duplicated_in_list: duplicatedInList,
-        valid: item.provider !== 'none',
-      };
-    });
-
-    res.json({
-      items,
-      total: items.length,
-      ready: items.filter((item) => item.valid && !item.already_registered && !item.duplicated_in_list).length,
-    });
-  })
-);
+  .min(1, 'Envie pelo menos um vídeo.')
+  .max(MAX_IMPORT, `Cadastre no máximo ${MAX_IMPORT} aulas por vez.`);
 
 router.post(
   '/import',
@@ -286,14 +212,6 @@ router.post(
     const examIds = await assertExamsExist(db, body.exam_ids);
     const skipExisting = body.skip_existing !== false;
 
-    const described = await describeAll(body.items.map((i) => ({ url: i.url, title: i.title || null })));
-    // preserva a duração e a miniatura que o administrador ajustou na prévia
-    described.forEach((meta, index) => {
-      const chosen = body.items[index] || {};
-      if (chosen.duration_min) meta.duration_min = chosen.duration_min;
-      if (chosen.thumbnail_url) meta.thumbnail_url = chosen.thumbnail_url;
-    });
-
     let order = Number(
       (await db.one('SELECT coalesce(max(sort_order), 0) AS last FROM lessons WHERE topic_id = $1', [body.topic_id])).last
     );
@@ -302,31 +220,24 @@ router.post(
     const errors = [];
     const seen = new Set();
 
-    for (const [index, meta] of described.entries()) {
+    for (const [index, item] of body.items.entries()) {
       const line = index + 1;
+      const title = item.title.trim();
       try {
-        if (meta.provider === 'none') {
-          errors.push({ line, url: meta.url, message: 'Link de vídeo não reconhecido.' });
+        await assertVideoFile(item.video_url);
+
+        if (seen.has(item.video_url)) {
+          errors.push({ line, title, message: 'O mesmo arquivo aparece duas vezes na lista.' });
           continue;
         }
-        if (seen.has(meta.video_url)) {
-          errors.push({ line, url: meta.url, message: 'Link repetido na própria lista.' });
-          continue;
-        }
-        seen.add(meta.video_url);
+        seen.add(item.video_url);
 
         if (skipExisting) {
-          const existing = await db.one('SELECT id FROM lessons WHERE video_url = $1', [meta.video_url]);
+          const existing = await db.one('SELECT id FROM lessons WHERE video_url = $1', [item.video_url]);
           if (existing) {
-            errors.push({ line, url: meta.url, message: 'Já existe uma aula com este vídeo.' });
+            errors.push({ line, title, message: 'Já existe uma aula com este vídeo.' });
             continue;
           }
-        }
-
-        const title = (meta.title || '').trim() || `Aula ${line}`;
-        if (title.length < 3) {
-          errors.push({ line, url: meta.url, message: 'Informe um título com pelo menos 3 caracteres.' });
-          continue;
         }
 
         const slug = await uniqueSlug(title, async (candidate) =>
@@ -334,19 +245,24 @@ router.post(
         );
         order += 1;
         const position = order;
+        const minutes = item.duration_min
+          || (item.video_seconds ? Math.max(1, Math.round(item.video_seconds / 60)) : null)
+          || body.duration_min
+          || 30;
 
         // cada aula em sua própria transação: uma linha com problema não
         // derruba as que já entraram
         const id = await db.tx(async (client) => {
           const row = await client.one(
             `INSERT INTO lessons (subject_id, topic_id, subtopic_id, slug, title, video_url, video_provider,
-                                  thumbnail_url, duration_min, teacher_name, difficulty, sort_order, active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+                                  thumbnail_url, duration_min, teacher_name, difficulty, sort_order, active,
+                                  video_bytes, video_mime, video_seconds)
+             VALUES ($1, $2, $3, $4, $5, $6, 'upload', $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
             [
               body.subject_id, body.topic_id, body.subtopic_id ?? null, slug, title,
-              meta.video_url, meta.provider, meta.thumbnail_url,
-              meta.duration_min || body.duration_min || 30,
+              item.video_url, item.thumbnail_url ?? null, minutes,
               body.teacher_name ?? null, body.difficulty ?? 2, position, body.active ?? true,
+              item.video_bytes ?? null, item.video_mime ?? null, item.video_seconds ?? null,
             ]
           );
           if (examIds.length) {
@@ -359,9 +275,9 @@ router.post(
           return row.id;
         });
 
-        created.push({ id, title, url: meta.url, thumbnail_url: meta.thumbnail_url, duration_min: meta.duration_min });
+        created.push({ id, title, video_url: item.video_url, duration_min: minutes });
       } catch (err) {
-        errors.push({ line, url: meta.url, message: (err && err.message) || 'Não foi possível cadastrar esta aula.' });
+        errors.push({ line, title, message: (err && err.message) || 'Não foi possível cadastrar esta aula.' });
       }
     }
 
@@ -378,31 +294,6 @@ router.post(
 // ---------------------------------------------------------------------------
 // utilitários (antes de /:id)
 // ---------------------------------------------------------------------------
-router.post(
-  '/parse-video',
-  validate({ body: z.object({ url: z.string().trim().min(1, 'Informe a URL.').max(2000) }) }),
-  wrap(async (req, res) => {
-    const parsed = parseVideoUrl(req.valid.body.url);
-    const out = { ...parsed, title: null, duration_min: null };
-    if (parsed.provider === 'none') {
-      return res.json(out);
-    }
-    // oEmbed público (sem chave): título e miniatura; o Vimeo também devolve a duração
-    if (!config.isTest && (parsed.provider === 'youtube' || parsed.provider === 'vimeo')) {
-      const endpoint = parsed.provider === 'youtube'
-        ? `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(parsed.url)}`
-        : `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(parsed.url)}`;
-      const data = await fetchJson(endpoint);
-      if (data) {
-        if (typeof data.title === 'string') out.title = data.title.slice(0, 200);
-        if (!out.thumbnail_url && typeof data.thumbnail_url === 'string') out.thumbnail_url = data.thumbnail_url;
-        if (Number.isFinite(Number(data.duration)) && Number(data.duration) > 0) out.duration_min = Math.max(1, Math.round(Number(data.duration) / 60));
-      }
-    }
-    res.json(out);
-  })
-);
-
 router.patch(
   '/reorder',
   validate({ body: z.object({ ids: z.array(uuid).min(1).max(5000) }) }),
@@ -483,6 +374,7 @@ router.post(
     const body = req.valid.body;
     await assertClassification(body);
     const examIds = await assertExamsExist(db, body.exam_ids);
+    if (body.video_url) await assertVideoFile(body.video_url);
     const slug = await uniqueSlug(body.title, async (s) => Boolean(await db.one('SELECT 1 FROM lessons WHERE slug = $1', [s])));
     const video = videoMeta(body.video_url, body.thumbnail_url);
     const order = body.sort_order ?? Number((await db.one('SELECT coalesce(max(sort_order), 0) + 1 AS next FROM lessons WHERE topic_id = $1', [body.topic_id])).next);
@@ -518,6 +410,7 @@ router.put(
     const body = req.valid.body;
     const current = await db.one('SELECT * FROM lessons WHERE id = $1', [id]);
     if (!current) throw new AppError(404, 'not_found', 'Aula não encontrada.');
+    if (body.video_url) await assertVideoFile(body.video_url);
 
     const merged = {
       subject_id: body.subject_id ?? current.subject_id,

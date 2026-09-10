@@ -63,7 +63,7 @@ que **já está pronto e entregue**.
 
 | Item | Detalhe |
 |------|---------|
-| O que é | Os vídeos das aulas, hospedados no **YouTube** (podem ser "não listados") ou no Vimeo. |
+| O que é | Os arquivos das videoaulas em MP4, para enviar pelo painel. A plataforma hospeda no Blob Storage da Square Cloud. |
 | Por que assim | A plataforma não armazena vídeo: ela incorpora o player. Isso evita custo de armazenamento e de banda, e o vídeo carrega rápido em qualquer conexão. |
 | O que cadastrar em cada aula | Título, matéria, assunto, link do vídeo, duração, um resumo em texto e em quais provas aquele conteúdo cai. |
 | Questões | O banco de questões pode ser preenchido uma a uma pelo painel ou em lote, por planilha CSV, usando o modelo que a própria tela de importação disponibiliza. |
@@ -91,7 +91,7 @@ que **já está pronto e entregue**.
 - [x] Cronograma diário, semanal e mensal, com concluir, reagendar, mudar horário, marcar como não realizada, incluir item manual e recalcular
 - [x] Botão "Não consegui estudar hoje", que redistribui o que ficou pendente pelos próximos dias
 - [x] Matérias → assuntos → subassuntos → aulas, com progresso em cada nível
-- [x] Aula com player (YouTube, Vimeo ou link externo), resumo, anotações com salvamento automático, provas em que o assunto cai e botão de concluir
+- [x] Aula com player do vídeo hospedado pela plataforma, resumo, anotações com salvamento automático, provas em que o assunto cai e botão de concluir
 - [x] Cinco questões do assunto logo após a conclusão da aula, com resposta comentada imediata
 - [x] Banco de questões com filtros por matéria, assunto, subassunto, ano, banca e dificuldade
 - [x] Caderno de erros automático, com filtros e modo de refazer
@@ -115,7 +115,7 @@ que **já está pronto e entregue**.
 - [x] Dashboard com as métricas da operação
 - [x] Alunos: lista, ficha individual com progresso, bloqueio, desbloqueio e liberação manual de acesso
 - [x] Conteúdo: árvore de área → matéria → assunto → subassunto, com criação, edição e reordenação
-- [x] Aulas: cadastro com link do YouTube ou do Vimeo, reconhecimento automático de miniatura e duração, resumo e vínculo com várias provas de uma vez
+- [x] Aulas: envio do arquivo do vídeo (uma a uma ou várias de uma vez), duração lida do próprio arquivo, resumo e vínculo com várias provas de uma vez
 - [x] Questões: cadastro completo com alternativas, resolução e explicação; importação e exportação em CSV com validação linha a linha
 - [x] Provas anteriores
 - [x] Vestibulares: dados da prova, data, matérias com pesos e assuntos cobrados

@@ -30,8 +30,6 @@ const ADMIN_ROUTES_DIR = path.join(ROUTES_DIR, 'admin');
 const WEBHOOK_PATH = '/api/billing/webhook';
 // O envio de arquivos do painel chega como corpo bruto (sem multipart).
 const UPLOAD_PATH = '/api/admin/uploads';
-// margem sobre o maior arquivo aceito, para o erro vir do serviço com mensagem clara
-const uploadLimit = `${Math.ceil(uploads.MAX_BYTES / (1024 * 1024)) + 1}mb`;
 const CSRF_HEADER_VALUE = 'FocoElite';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -60,8 +58,12 @@ function buildCsp() {
     'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
     'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
     'img-src': ["'self'", 'https:', 'data:', 'blob:'],
-    'media-src': ["'self'", 'https:', 'blob:'],
+    // vídeo e áudio vêm do armazenamento da plataforma (Blob da Square Cloud)
+    // ou do próprio domínio quando o provedor configurado é o disco
+    'media-src': ["'self'", 'https://public-blob.squarecloud.dev', 'https://*.squarecloud.dev', 'blob:'],
     'frame-src': [
+      // mantidos para aulas antigas que ainda apontem para vídeo externo;
+      // o cadastro novo é sempre por arquivo enviado ao painel
       'https://www.youtube.com',
       'https://www.youtube-nocookie.com',
       'https://player.vimeo.com',
@@ -154,9 +156,9 @@ function createApp() {
   // ---- corpo da requisição ---------------------------------------------------
   // O webhook do Stripe precisa do corpo bruto para validar a assinatura.
   app.use(WEBHOOK_PATH, express.raw({ type: 'application/json', limit: '2mb' }));
-  // POST de arquivo: qualquer tipo, guardado como Buffer. O DELETE do mesmo
-  // caminho continua em JSON, por isso o parser bruto só vale para POST.
-  app.post(UPLOAD_PATH, express.raw({ type: () => true, limit: uploadLimit }));
+  // POST de arquivo: o corpo NÃO é lido aqui. A rota consome a requisição em
+  // fluxo e grava direto no disco, porque uma videoaula passa de 300 MB e
+  // montar isso na memória derrubaria o servidor.
   app.use((req, res, next) => {
     const path = req.originalUrl.split('?')[0];
     if (path === WEBHOOK_PATH) return next();

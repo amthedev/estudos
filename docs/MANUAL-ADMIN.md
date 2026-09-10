@@ -139,7 +139,7 @@ Use a busca e os filtros de matéria, prova, dificuldade e situação para achar
    * **Link do vídeo** — cole o endereço e aguarde: a prévia aparece logo abaixo e o sistema
      preenche título, miniatura e duração quando o serviço informa esses dados. O botão **Analisar**
      refaz a leitura.
-   * **Miniatura** — preenchida automaticamente no YouTube e no Vimeo; edite se quiser outra imagem.
+   * **Miniatura** — opcional. Envie uma imagem para aparecer na lista de aulas; sem ela, o player mostra o primeiro quadro do vídeo.
    * **Resumo da aula** — texto em Markdown com aba de **Prévia**. Aceita `**negrito**`, `_itálico_`,
      listas, títulos e links. Aparece abaixo do player, na tela da aula.
 3. **Coluna da direita — classificação:**
@@ -153,15 +153,21 @@ Use a busca e os filtros de matéria, prova, dificuldade e situação para achar
 4. Clique em **Salvar** — ou em **Salvar e criar questões**, que grava a aula e já abre o formulário
    de questão com a matéria e o assunto preenchidos.
 
-### 3.2 Que links funcionam
+### 3.2 Que arquivos funcionam
 
-| Origem | Exemplo | O que acontece |
-|--------|---------|----------------|
-| YouTube | `https://www.youtube.com/watch?v=ID`, `https://youtu.be/ID`, `/shorts/ID` | Player incorporado, sem cookies de rastreio, com miniatura automática. |
-| Vimeo | `https://vimeo.com/ID` | Player incorporado, com miniatura e duração automáticas. |
-| Arquivo de vídeo | `https://…/aula.mp4` | Player nativo do navegador. |
-| Outra página | qualquer outro endereço `https://` | Cartão com botão "Abrir vídeo" em nova aba. |
-| Sem link | campo vazio | O aluno vê "Vídeo em breve" e aproveita o resumo e as questões. |
+| Formato | Limite | O que acontece |
+|---------|--------|----------------|
+| MP4 | 1 GB | Melhor opção. Toca em qualquer navegador e celular. |
+| WEBM | 1 GB | Toca normalmente nos navegadores atuais. |
+| MOV | 1 GB | Aceito, mas prefira converter para MP4: alguns navegadores não reproduzem. |
+| Sem vídeo | — | O aluno vê "Vídeo em breve" e aproveita o resumo e as questões. |
+
+O arquivo é conferido pelo conteúdo, não pelo nome: renomear outro tipo de arquivo para `.mp4` não
+engana a plataforma. A duração é lida do próprio vídeo e preenche o campo de minutos, que é o número
+usado pelo cronograma para montar o dia de estudo do aluno.
+
+Os vídeos ficam no armazenamento da plataforma (Blob Storage da Square Cloud) e são servidos por CDN,
+com a barra de progresso funcionando normalmente.
 
 ### 3.3 Editar e excluir
 
@@ -169,42 +175,32 @@ Clique na linha da tabela para abrir a aula. Os botões de ação de cada linha 
 para as questões do assunto, ativar/desativar e excluir. **Excluir a aula apaga também o progresso
 registrado pelos alunos nela** — quando a intenção é só tirar do ar, desative.
 
-### 3.4 Cadastrar várias aulas de uma vez
+### 3.4 Enviar várias aulas de uma vez
 
-Quando você já gravou uma sequência inteira e tem os links na mão, não cadastre uma a uma. Em
-**Aulas**, clique em **Importar lista**.
+Quando você já gravou uma sequência inteira, não cadastre uma por uma. Em **Aulas**, clique em
+**Enviar em massa**.
 
-1. **Cole os links**, um por linha. Aceita YouTube e Vimeo.
-
-   ```
-   https://www.youtube.com/watch?v=XXXXXXXXXXX
-   https://youtu.be/YYYYYYYYYYY | Porcentagem — parte 2
-   https://vimeo.com/123456789
-   ```
-
-   Para escolher o título à mão, escreva o link, uma barra vertical e o título. Sem a barra, o
-   sistema usa o título do próprio vídeo. Linhas começadas por `#` são ignoradas. Até 200 por vez.
+1. **Escolha os arquivos** — arraste os vídeos para a área indicada ou clique para selecionar vários
+   de uma vez. Aceita MP4, WEBM e MOV, até 1 GB cada, no máximo 200 por envio.
 
 2. **Preencha o que vale para todas** na coluna da direita: matéria, assunto, subassunto opcional,
    professor, dificuldade, duração padrão e as provas em que as aulas caem. Matéria e assunto são
-   obrigatórios — todas as aulas da lista entram no mesmo assunto.
+   obrigatórios: todas as aulas do lote entram no mesmo assunto.
 
-3. Clique em **Analisar links**. Aparece uma tabela com a miniatura, o título e a duração de cada
-   vídeo, e a situação de cada linha:
+3. **Confira a lista.** Cada arquivo aparece com o tamanho, a duração lida do próprio vídeo e um
+   título sugerido a partir do nome do arquivo. Ajuste os títulos ali mesmo e tire da lista o que não
+   deve entrar.
 
-   * **Pronta** — vai ser cadastrada.
-   * **Já cadastrada** — existe uma aula com esse mesmo vídeo; a linha vem desmarcada.
-   * **Repetido na lista** — o link aparece duas vezes no que você colou.
-   * **Link inválido** — não é um endereço de vídeo reconhecido.
+4. Clique em **Enviar e cadastrar**. Os vídeos sobem um por um, com a barra de progresso de cada um,
+   e as aulas são criadas ao final. O resultado mostra o que entrou e o motivo de cada arquivo que
+   ficou de fora.
 
-4. **Ajuste os títulos** direto na tabela, se quiser, e desmarque o que não deve entrar.
+As aulas entram na ordem da lista, continuando a numeração de onde o assunto parou. Depois é só abrir
+cada uma para acrescentar o resumo, se for o caso. O mesmo vídeo não vira duas aulas.
 
-5. Clique em **Importar selecionadas**. O resultado mostra o que entrou e o motivo de cada linha
-   que ficou de fora.
-
-As aulas entram na ordem em que estão na lista, continuando a numeração de onde o assunto parou.
-Depois é só abrir cada uma para acrescentar o resumo, se for o caso. Reimportar a mesma lista não
-duplica nada.
+**Onde os vídeos ficam:** no armazenamento da plataforma (Blob Storage da Square Cloud). Você não
+precisa hospedar em nenhum outro lugar, e o aluno assiste direto na aula, com a barra de progresso
+funcionando normalmente.
 
 ---
 

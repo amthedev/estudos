@@ -3,7 +3,7 @@
 //
 // Formulário em duas colunas: à esquerda os dados e o campo de vídeo, que
 // mostra a prévia com components/video-player.js assim que a URL é colada
-// (POST /api/admin/lessons/parse-video); à direita a classificação encadeada
+// enviado pelo painel; à direita a classificação encadeada
 // (matéria → assunto → subassunto), dificuldade, ordem, provas em que cai e
 // situação. O resumo é escrito em markdown com prévia.
 //
@@ -19,8 +19,6 @@ import { md } from '../../core/markdown.js';
 import { fmtMinutes } from '../../core/format.js';
 import { renderVideo } from '../../components/video-player.js';
 import { attachFileUpload } from '../../components/file-input.js';
-
-const PARSE_DEBOUNCE_MS = 600;
 
 const DIFFICULTIES = [
   { value: 1, label: 'Básico' },
@@ -152,7 +150,7 @@ function paintVideo() {
     render(box, html`
       <div class="af-video-empty">
         ${icon('film', { size: 26 })}
-        <p>Cole o link do YouTube, do Vimeo ou de um arquivo de vídeo para ver a prévia aqui.</p>
+        <p>Envie o arquivo da videoaula (MP4, WEBM ou MOV) para ver a prévia aqui.</p>
       </div>`);
     if (meta) render(meta, '');
     return;
@@ -173,34 +171,26 @@ function paintVideo() {
   }
 }
 
-async function parseVideo({ fillEmpty = true } = {}) {
-  const url = val('video_url');
-  const status = qs('[data-video-status]', state.ctx.el);
-  if (!url) {
-    state.video = null;
-    if (status) status.textContent = '';
-    paintVideo();
-    return;
-  }
-  if (status) status.textContent = 'Analisando o link…';
-  try {
-    const info = await api.post('/api/admin/lessons/parse-video', { url });
-    if (!state) return;
-    state.video = info;
-    if (fillEmpty) {
-      const titleEl = qs('[name="title"]', state.ctx.el);
-      if (titleEl && !titleEl.value.trim() && info.title) titleEl.value = info.title;
-      const thumbEl = qs('[name="thumbnail_url"]', state.ctx.el);
-      if (thumbEl && !thumbEl.value.trim() && info.thumbnail_url) thumbEl.value = info.thumbnail_url;
-      const durationEl = qs('[name="duration_min"]', state.ctx.el);
-      if (durationEl && info.duration_min && (!durationEl.value || durationEl.value === '30')) durationEl.value = String(info.duration_min);
-    }
-    if (status) status.textContent = '';
-    paintVideo();
-  } catch (err) {
-    if (status) status.textContent = '';
-    toast((err && err.message) || 'Não foi possível analisar o link do vídeo.', { type: 'error' });
-  }
+/**
+ * Lê a duração do arquivo enviado direto no navegador e preenche o campo de
+ * minutos. Evita depender de qualquer serviço externo para isso.
+ */
+function readDurationFromFile(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => {
+      const seconds = Number(probe.duration);
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : null);
+    };
+    probe.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    probe.src = url;
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -353,12 +343,9 @@ function view() {
             <div class="card-header"><h2 class="card-title">${icon('video')}<span>Vídeo</span></h2></div>
             <div class="card-body af-grid">
               <div class="field af-w-full">
-                <label class="label" for="af-video">Link do vídeo</label>
-                <div class="af-video-input">
-                  <input class="input" id="af-video" name="video_url" value="${lesson.video_url || ''}" maxlength="2000"
-                    placeholder="https://www.youtube.com/watch?v=… ou https://vimeo.com/…" inputmode="url" spellcheck="false">
-                  <button type="button" class="btn btn-secondary" data-act="parse-video">${icon('refresh-cw')}<span>Analisar</span></button>
-                </div>
+                <label class="label" for="af-video">Arquivo da videoaula</label>
+                <input class="input" id="af-video" name="video_url" value="${lesson.video_url || ''}" maxlength="500"
+                  placeholder="Envie o arquivo do vídeo" spellcheck="false" readonly>
                 <p class="hint" data-video-status></p>
                 <p class="error-text" data-error-for="video_url"></p>
               </div>
@@ -367,7 +354,7 @@ function view() {
                 <div class="af-video-meta" data-video-meta></div>
               </div>
               <div class="field af-w-full">
-                <label class="label" for="af-thumb">Miniatura <span class="hint-inline">(preenchida automaticamente a partir do vídeo)</span></label>
+                <label class="label" for="af-thumb">Miniatura <span class="hint-inline">(opcional)</span></label>
                 <input class="input" id="af-thumb" name="thumbnail_url" value="${lesson.thumbnail_url || ''}" maxlength="2000" placeholder="https://…" inputmode="url" spellcheck="false">
                 <p class="error-text" data-error-for="thumbnail_url"></p>
               </div>
@@ -480,9 +467,6 @@ function bind(ctx) {
       } else if (act === 'delete') {
         event.preventDefault();
         removeLesson();
-      } else if (act === 'parse-video') {
-        event.preventDefault();
-        parseVideo({ fillEmpty: true });
       }
     })
   );
@@ -505,12 +489,7 @@ function bind(ctx) {
     })
   );
 
-  state.off.push(
-    on(ctx.el, 'input', '[name="video_url"]', () => {
-      clearTimeout(state.videoTimer);
-      state.videoTimer = setTimeout(() => parseVideo({ fillEmpty: true }), PARSE_DEBOUNCE_MS);
-    })
-  );
+  state.off.push(on(ctx.el, 'input', '[name="video_url"]', () => paintVideo()));
   state.off.push(
     on(ctx.el, 'change', '[name="thumbnail_url"]', () => paintVideo())
   );
@@ -601,6 +580,30 @@ async function renderLessonForm(ctx) {
   const thumbInput = qs('[name="thumbnail_url"]', ctx.el);
   if (thumbInput) {
     const upload = attachFileUpload(thumbInput, { folder: 'aulas', accept: 'image' });
+    state.off.push(() => upload.destroy());
+  }
+
+  // arquivo da videoaula: enviado em fluxo e servido pela própria plataforma
+  const videoInput = qs('[name="video_url"]', ctx.el);
+  if (videoInput) {
+    const upload = attachFileUpload(videoInput, {
+      folder: 'videos',
+      accept: 'video',
+      preview: false,
+      onPicked: async (file) => {
+        const seconds = await readDurationFromFile(file);
+        if (!seconds || !state) return;
+        state.videoSeconds = seconds;
+        const durationEl = qs('[name="duration_min"]', state.ctx.el);
+        const minutes = Math.max(1, Math.round(seconds / 60));
+        if (durationEl && (!durationEl.value || durationEl.value === '30')) durationEl.value = String(minutes);
+      },
+      onUploaded: (saved) => {
+        if (!state) return;
+        state.video = { provider: 'upload', url: saved.url, bytes: saved.bytes, mime: saved.content_type };
+        paintVideo();
+      },
+    });
     state.off.push(() => upload.destroy());
   }
 }

@@ -86,7 +86,7 @@ O caminho de volta está sempre visível, então ele nunca se perde.
 
 ## 7. Aulas
 
-Cada aula tem o vídeo (YouTube, Vimeo ou link externo), o resumo em texto, a duração, a dificuldade e
+Cada aula tem o vídeo hospedado na própria plataforma, o resumo em texto, a duração, a dificuldade e
 a lista das provas em que aquele conteúdo cai — aquele "onde cai" que você queria que o aluno visse.
 
 Ao concluir a aula, três coisas acontecem sozinhas: o progresso da matéria sobe, as revisões daquele
@@ -240,7 +240,7 @@ Tudo o que aparece para o aluno é cadastrado por você, sem depender de program
   estudou; bloquear, desbloquear e liberar acesso manualmente (útil para cortesias e casos especiais).
 * **Conteúdo** — a árvore de área, matéria, assunto e subassunto, com criação, edição e reordenação
   direto na tela.
-* **Aulas** — cadastro colando o link do YouTube ou do Vimeo (a miniatura e a duração vêm
+* **Aulas** — cadastro enviando o arquivo do vídeo (a duração é lida do próprio arquivo
   automaticamente), resumo, dificuldade e o vínculo com várias provas de uma vez.
 * **Questões** — cadastro completo com alternativas, gabarito, resolução e explicação; além da
   importação em planilha CSV, que valida linha por linha e diz exatamente o que corrigir nas que têm

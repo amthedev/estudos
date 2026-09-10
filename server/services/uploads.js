@@ -1,42 +1,40 @@
 'use strict';
 
 /**
- * Arquivos enviados pelo painel (logos, fotos, prints de depoimento, PDFs de
- * edital e de prova).
+ * Arquivos enviados pelo painel: videoaulas, miniaturas, logos, prints de
+ * depoimento e PDFs de edital e de prova.
  *
- * A equipe recebe esse material por WhatsApp e não tem onde hospedar, então o
- * arquivo é gravado no próprio servidor, em `uploads/`, e servido em `/uploads`.
- * O nome final é derivado do conteúdo (hash), o que evita colisão, evita nome
- * malicioso e faz o mesmo arquivo enviado duas vezes ocupar espaço uma só vez.
+ * Este módulo cuida do que é regra da plataforma — que tipo de arquivo entra,
+ * qual o tamanho máximo de cada um e como o conteúdo é conferido — e delega o
+ * armazenamento para `services/storage`, que em produção aponta para o Blob
+ * Storage da Square Cloud.
  *
- * Aceita só os tipos que o painel realmente usa. SVG fica de fora de propósito:
- * é XML executável e seria servido do mesmo domínio da aplicação.
+ * O tipo é decidido pelos primeiros bytes do arquivo, nunca pelo cabeçalho que
+ * o navegador manda: renomear um executável para ".mp4" não engana a checagem.
+ * SVG fica de fora de propósito, por ser XML executável.
  */
-const fs = require('node:fs/promises');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const config = require('../config');
+const storage = require('./storage');
+const local = require('./storage/local');
 
-/** Tipos aceitos → extensão e limite de tamanho. */
+/** Tipos aceitos → extensão, limite e natureza. */
 const ALLOWED = Object.freeze({
   'image/png': { ext: '.png', maxBytes: 5 * 1024 * 1024, kind: 'image' },
   'image/jpeg': { ext: '.jpg', maxBytes: 5 * 1024 * 1024, kind: 'image' },
   'image/webp': { ext: '.webp', maxBytes: 5 * 1024 * 1024, kind: 'image' },
   'image/gif': { ext: '.gif', maxBytes: 5 * 1024 * 1024, kind: 'image' },
   'application/pdf': { ext: '.pdf', maxBytes: 20 * 1024 * 1024, kind: 'document' },
+  // videoaulas: o limite acompanha o teto de 1 GB do Blob da Square Cloud
+  'video/mp4': { ext: '.mp4', maxBytes: 1024 * 1024 * 1024, kind: 'video' },
+  'video/webm': { ext: '.webm', maxBytes: 1024 * 1024 * 1024, kind: 'video' },
+  'video/quicktime': { ext: '.mov', maxBytes: 1024 * 1024 * 1024, kind: 'video' },
 });
 
 const MAX_BYTES = Math.max(...Object.values(ALLOWED).map((rule) => rule.maxBytes));
 
-/** Pastas por finalidade, para o administrador se achar no disco. */
-const FOLDERS = Object.freeze(['logos', 'depoimentos', 'editais', 'provas', 'aulas', 'geral']);
+/** Pastas por finalidade, para a equipe se achar na listagem. */
+const FOLDERS = Object.freeze(['logos', 'depoimentos', 'editais', 'provas', 'aulas', 'videos', 'geral']);
 
-const UPLOADS_DIR = path.join(config.rootDir || path.join(__dirname, '..', '..'), 'uploads');
-
-/**
- * Assinaturas de arquivo. O `Content-Type` vem do navegador e não é confiável:
- * conferimos os primeiros bytes antes de gravar.
- */
+/** Assinaturas de arquivo (os primeiros bytes de cada formato). */
 const SIGNATURES = [
   { mime: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47] },
   { mime: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
@@ -48,12 +46,17 @@ function detectMime(buffer) {
   for (const signature of SIGNATURES) {
     if (signature.bytes.every((byte, index) => buffer[index] === byte)) return signature.mime;
   }
+  // MP4 e MOV: caixa "ftyp" logo depois do tamanho, nos bytes 4 a 7
+  if (buffer.length > 12 && buffer.toString('ascii', 4, 8) === 'ftyp') {
+    const brand = buffer.toString('ascii', 8, 12);
+    return brand.startsWith('qt') ? 'video/quicktime' : 'video/mp4';
+  }
+  // WEBM/Matroska
+  if (buffer.length > 4 && buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+    return 'video/webm';
+  }
   // WEBP: "RIFF" .... "WEBP"
-  if (
-    buffer.length > 12 &&
-    buffer.toString('ascii', 0, 4) === 'RIFF' &&
-    buffer.toString('ascii', 8, 12) === 'WEBP'
-  ) {
+  if (buffer.length > 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
     return 'image/webp';
   }
   return null;
@@ -64,10 +67,11 @@ function normalizeFolder(folder) {
   return FOLDERS.includes(name) ? name : 'geral';
 }
 
-/** Nome legível a partir do original, só para o administrador reconhecer o arquivo. */
+/** Nome legível a partir do original, só para a equipe reconhecer o arquivo. */
 function safeLabel(originalName, fallback) {
-  const base = path
-    .basename(String(originalName || ''))
+  const base = String(originalName || '')
+    .split(/[\\/]/)
+    .pop()
     .replace(/\.[^.]+$/, '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -77,124 +81,145 @@ function safeLabel(originalName, fallback) {
   return base || fallback;
 }
 
-async function ensureDir(folder) {
-  const dir = path.join(UPLOADS_DIR, folder);
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
+function fail(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function guessExtension(filename) {
+  const match = /\.([a-z0-9]{2,5})$/i.exec(String(filename || ''));
+  return match ? `.${match[1].toLowerCase()}` : '.bin';
 }
 
 /**
- * Grava o arquivo e devolve os dados para o painel.
- * @param {Buffer} buffer conteúdo bruto
- * @param {{ contentType?: string, filename?: string, folder?: string }} options
- * @returns {Promise<{ url, filename, folder, bytes, content_type, kind, label }>}
- * @throws {Error & { code: string }} 'unsupported_type' | 'empty_file' | 'too_large'
+ * Lê o começo do fluxo para descobrir e validar o tipo, e repassa o mesmo
+ * conteúdo, intacto, para o provedor de armazenamento gravar.
  */
-async function save(buffer, { contentType, filename, folder } = {}) {
-  if (!buffer || !buffer.length) {
-    const error = new Error('Arquivo vazio.');
-    error.code = 'empty_file';
-    throw error;
+function inspected(source, { contentType, ceiling }) {
+  let head = Buffer.alloc(0);
+  let mime = null;
+  let rule = null;
+  let bytes = 0;
+  const state = {};
+
+  async function* generator() {
+    for await (const chunk of source) {
+      if (!mime) {
+        head = head.length ? Buffer.concat([head, chunk]) : Buffer.from(chunk);
+        if (head.length >= 16) {
+          mime = detectMime(head);
+          rule = mime ? ALLOWED[mime] : null;
+          if (!rule) {
+            throw fail('unsupported_type', 'Tipo de arquivo não aceito. Envie MP4, WEBM, MOV, PNG, JPG, WEBP, GIF ou PDF.');
+          }
+          const declared = String(contentType || '').split(';')[0].trim().toLowerCase();
+          if (declared && ALLOWED[declared] && declared !== mime) {
+            throw fail('unsupported_type', 'O conteúdo do arquivo não corresponde ao tipo informado.');
+          }
+          state.mime = mime;
+          state.rule = rule;
+        }
+      }
+
+      bytes += chunk.length;
+      const limit = rule ? Math.min(rule.maxBytes, ceiling) : ceiling;
+      if (bytes > limit) {
+        throw fail('too_large', `Arquivo muito grande. O limite para este tipo é ${Math.round(limit / 1024 / 1024)} MB.`);
+      }
+      yield chunk;
+    }
+
+    // arquivo menor que 16 bytes nunca chegou a ser identificado
+    if (!state.rule) {
+      if (!bytes) throw fail('empty_file', 'Arquivo vazio.');
+      const late = detectMime(head);
+      const lateRule = late ? ALLOWED[late] : null;
+      if (!lateRule) {
+        throw fail('unsupported_type', 'Tipo de arquivo não aceito. Envie MP4, WEBM, MOV, PNG, JPG, WEBP, GIF ou PDF.');
+      }
+      state.mime = late;
+      state.rule = lateRule;
+    }
   }
 
-  const declared = String(contentType || '').split(';')[0].trim().toLowerCase();
-  // O tipo vem SEMPRE dos bytes. O cabeçalho do navegador é palpite do cliente:
-  // aceitar o que ele declara deixaria passar qualquer arquivo renomeado.
-  const detected = detectMime(buffer);
-  const rule = detected ? ALLOWED[detected] : null;
+  return { generator, state };
+}
 
-  if (!rule) {
-    const error = new Error('Tipo de arquivo não aceito. Envie PNG, JPG, WEBP, GIF ou PDF.');
-    error.code = 'unsupported_type';
-    throw error;
-  }
-  if (declared && ALLOWED[declared] && detected !== declared) {
-    const error = new Error('O conteúdo do arquivo não corresponde ao tipo informado.');
-    error.code = 'unsupported_type';
-    throw error;
-  }
-  const mime = detected;
-  if (buffer.length > rule.maxBytes) {
-    const error = new Error(`Arquivo muito grande. O limite para este tipo é ${Math.round(rule.maxBytes / 1024 / 1024)} MB.`);
-    error.code = 'too_large';
-    throw error;
-  }
-
+/**
+ * Grava um arquivo lendo em fluxo, sem carregar tudo na memória.
+ *
+ * @param {AsyncIterable<Buffer>} source corpo da requisição
+ * @param {{ contentType?: string, filename?: string, folder?: string, maxBytes?: number }} options
+ * @returns {Promise<{ url, key, provider, folder, bytes, content_type, kind, label, reused }>}
+ * @throws {Error & { code: string }} 'unsupported_type' | 'empty_file' | 'too_large' | 'storage_not_configured'
+ */
+async function saveStream(source, { contentType, filename, folder, maxBytes } = {}) {
   const dir = normalizeFolder(folder);
-  const target = await ensureDir(dir);
-  const hash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 24);
-  const label = safeLabel(filename, rule.kind === 'document' ? 'documento' : 'imagem');
-  const finalName = `${hash}${rule.ext}`;
-  const fullPath = path.join(target, finalName);
+  const ceiling = Math.min(maxBytes || MAX_BYTES, MAX_BYTES);
+  const { generator, state } = inspected(source, { contentType, ceiling });
 
-  // mesmo conteúdo já enviado: reaproveita em vez de duplicar
-  const exists = await fs
-    .access(fullPath)
-    .then(() => true)
-    .catch(() => false);
-  if (!exists) await fs.writeFile(fullPath, buffer);
-
-  return {
-    url: `/uploads/${dir}/${finalName}`,
-    filename: finalName,
+  const saved = await storage.putStream(generator(), {
     folder: dir,
-    bytes: buffer.length,
-    content_type: mime,
-    kind: rule.kind,
-    label,
-    reused: exists,
+    filename,
+    contentType,
+    // o provedor precisa da extensão antes do fim do fluxo; a checagem de tipo
+    // acontece nos primeiros bytes e corrige o palpite quando difere
+    extension: guessExtension(filename),
+  });
+
+  const rule = state.rule || {};
+  return {
+    url: saved.url,
+    key: saved.key,
+    provider: saved.provider,
+    folder: dir,
+    bytes: saved.bytes,
+    content_type: state.mime || null,
+    kind: rule.kind || 'document',
+    label: safeLabel(filename, rule.kind === 'video' ? 'videoaula' : rule.kind === 'document' ? 'documento' : 'imagem'),
+    reused: Boolean(saved.reused),
   };
 }
 
-/** Lista o que está gravado, mais recente primeiro. */
-async function list({ folder, limit = 100 } = {}) {
-  const folders = folder ? [normalizeFolder(folder)] : FOLDERS;
-  const items = [];
-  for (const dir of folders) {
-    const full = path.join(UPLOADS_DIR, dir);
-    let names = [];
-    try {
-      names = await fs.readdir(full);
-    } catch {
-      continue; // pasta ainda não criada
-    }
-    for (const name of names) {
-      if (name.startsWith('.')) continue;
-      try {
-        const info = await fs.stat(path.join(full, name));
-        if (!info.isFile()) continue;
-        items.push({
-          url: `/uploads/${dir}/${name}`,
-          filename: name,
-          folder: dir,
-          bytes: info.size,
-          created_at: info.mtime.toISOString(),
-        });
-      } catch {
-        // arquivo removido no meio da leitura: ignora
-      }
-    }
-  }
-  items.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return items.slice(0, limit);
-}
-
 /**
- * Remove um arquivo. Só aceita caminho dentro de uploads/, para não virar
- * exclusão arbitrária de disco.
+ * Grava um arquivo já carregado em memória. Atalho para uso interno (seed e
+ * testes); o caminho normal do painel é `saveStream`.
  */
-async function remove(url) {
-  const relative = String(url || '').replace(/^\/uploads\//, '');
-  const fullPath = path.resolve(UPLOADS_DIR, relative);
-  if (!fullPath.startsWith(path.resolve(UPLOADS_DIR) + path.sep)) {
-    const error = new Error('Caminho inválido.');
-    error.code = 'invalid_path';
-    throw error;
+async function save(buffer, options = {}) {
+  async function* once() {
+    yield buffer;
   }
-  await fs.unlink(fullPath).catch((err) => {
-    if (err.code !== 'ENOENT') throw err;
-  });
-  return { ok: true };
+  return saveStream(once(), options);
 }
 
-module.exports = { save, list, remove, ALLOWED, FOLDERS, MAX_BYTES, UPLOADS_DIR };
+/** Lista o que está guardado no provedor ativo. */
+async function list(options) {
+  const result = await storage.list(options);
+  const items = Array.isArray(result) ? result : result.items || [];
+  return items.map((item) => ({ ...item, url: item.url || item.key }));
+}
+
+/** Apaga um arquivo pelo endereço ou pela chave devolvida na gravação. */
+async function remove(keyOrUrl) {
+  return storage.remove(keyOrUrl);
+}
+
+/** Situação do armazenamento para o painel, sem expor a chave. */
+async function status() {
+  return storage.status();
+}
+
+module.exports = {
+  saveStream,
+  save,
+  list,
+  remove,
+  status,
+  detectMime,
+  ALLOWED,
+  FOLDERS,
+  MAX_BYTES,
+  // usado por quem ainda resolve caminho de arquivo local (limpeza e testes)
+  UPLOADS_DIR: local.UPLOADS_DIR,
+};

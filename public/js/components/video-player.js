@@ -3,6 +3,9 @@
  *
  *   renderVideo(el, { video_url, video_provider, thumbnail_url, title })
  *
+ * As videoaulas são arquivos enviados pelo painel e servidos pela plataforma
+ * (video_provider = 'upload'), reproduzidos em <video> com avanço da barra.
+ *
  *  - youtube  → iframe em youtube-nocookie.com (16:9, allowfullscreen), id derivado de qualquer formato de URL
  *  - vimeo    → iframe em player.vimeo.com
  *  - external → arquivo .mp4/.webm/.ogv vira <video controls>; outras URLs viram um card com a
@@ -25,6 +28,7 @@ const VIMEO_HOSTS = /(^|\.)vimeo\.com$/i;
 const FILE_TYPES = {
   mp4: 'video/mp4',
   m4v: 'video/mp4',
+  mov: 'video/quicktime',
   webm: 'video/webm',
   ogv: 'video/ogg',
   ogg: 'video/ogg',
@@ -45,8 +49,20 @@ function parseUrl(input) {
   }
 }
 
-/** Só aceita URLs http(s) para uso em src/href. */
+/**
+ * Caminho servido pela própria plataforma (/uploads/aulas/x.mp4).
+ * Precisa ser aceito como endereço: as videoaulas são arquivos nossos.
+ */
+function internalPath(input) {
+  const text = String(input || '').trim();
+  if (!/^\/[^/\\\s]/.test(text)) return null;
+  return text;
+}
+
+/** Aceita URL http(s) ou caminho interno para uso em src/href. */
 function safeUrl(input) {
+  const internal = internalPath(input);
+  if (internal) return internal;
   const url = parseUrl(input);
   return url ? url.href : null;
 }
@@ -135,6 +151,9 @@ function fileExtension(url) {
 /** Detecta o provedor pela URL: 'youtube' | 'vimeo' | 'external' | 'none'. */
 export function detectProvider(url) {
   if (!url) return 'none';
+  if (internalPath(url)) return 'upload';
+  // arquivo hospedado no Blob da Square Cloud
+  if (/^https:\/\/[a-z0-9.-]*squarecloud\.dev\//i.test(String(url))) return 'upload';
   if (youtubeInfo(url)) return 'youtube';
   if (vimeoInfo(url)) return 'vimeo';
   return parseUrl(url) ? 'external' : 'none';
@@ -145,6 +164,7 @@ export function resolveProvider(provider, url) {
   const declared = String(provider || '').toLowerCase();
   if (declared === 'none' || !url) return 'none';
   const detected = detectProvider(url);
+  if (declared === 'upload' && detected === 'upload') return 'upload';
   if (declared === 'youtube' && detected === 'youtube') return 'youtube';
   if (declared === 'vimeo' && detected === 'vimeo') return 'vimeo';
   return detected;
@@ -205,7 +225,7 @@ export function renderVideo(el, video = {}) {
             allow="autoplay; fullscreen; picture-in-picture" loading="lazy"></iframe>
         </div>
       </div>`;
-  } else if (provider === 'external') {
+  } else if (provider === 'upload' || provider === 'external') {
     const src = safeUrl(url);
     resolvedUrl = src;
     const mime = FILE_TYPES[fileExtension(src)];

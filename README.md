@@ -334,7 +334,7 @@ as boas práticas de cadastro — está em [`docs/CONTEUDO.md`](docs/CONTEUDO.md
 * **Rate limit.** Login e recuperação de senha aceitam 10 tentativas por IP a cada 15 minutos; as rotas
   de IA, 30 chamadas por minuto por aluno; a API em geral, 600 requisições por IP a cada 15 minutos.
 * **Cabeçalhos e CSP.** O Helmet aplica uma Content Security Policy restritiva: scripts e estilos do
-  próprio domínio, iframes apenas de YouTube, Vimeo e Stripe, conexões apenas para o próprio domínio e
+  próprio domínio, mídia apenas do armazenamento da plataforma, conexões apenas para o próprio domínio e
   para o Stripe. Não há CDN de terceiros: as bibliotecas do front são servidas de `public/vendor/`.
 * **Segredos fora da interface.** As chaves da OpenAI, do Stripe e do SMTP vivem apenas em variáveis de
   ambiente, no servidor. O painel mostra somente o status da integração e os últimos caracteres da

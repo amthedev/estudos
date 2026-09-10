@@ -326,10 +326,14 @@ garantia.
 
 ### Arquivos enviados pelo painel
 
-O que a equipe envia pelo painel (logo dos vestibulares, prints de depoimento, PDFs de edital e de
-prova) fica em `/opt/focoelite/app/uploads`, servido em `https://focoelite.com.br/uploads`. Essa pasta
-**não está no Git** e **não entra no dump do banco**: o banco guarda só o caminho do arquivo. Sem
-backup dela, uma restauração devolve a plataforma com todas as imagens quebradas.
+Com `STORAGE_PROVIDER=squarecloud` (o caso da entrega), os arquivos ficam no Blob Storage e **não**
+no servidor: não há pasta para copiar, e o dump do banco continua pequeno porque ele guarda só o
+endereço de cada arquivo. Em compensação, o Blob passa a ser a única cópia — mantenha os originais
+das videoaulas guardados fora da plataforma.
+
+O que segue abaixo vale apenas para `STORAGE_PROVIDER=local`, quando a aplicação roda em servidor
+próprio e grava em `/opt/focoelite/app/uploads`. Essa pasta **não está no Git** e **não entra no dump
+do banco**: sem backup dela, uma restauração devolve a plataforma com todas as imagens quebradas.
 
 Inclua a pasta no backup:
 
@@ -386,7 +390,77 @@ obrigatório, e não opcional.
 
 ---
 
-## 9. Alternativa: Railway ou Render com Neon
+## 9. Square Cloud (opção escolhida)
+
+A plataforma foi preparada para rodar na Square Cloud, com os arquivos no Blob Storage da própria
+conta. Dois arquivos na raiz do projeto cuidam disso:
+
+* **`squarecloud.app`** — configuração da aplicação (nome, memória, arquivo principal, subdomínio e
+  comando de início). O comando é `npm run start:cloud`, que aplica as migrations pendentes antes de
+  subir o servidor, então publicar uma versão nova já atualiza o banco.
+* **`.squarecloudignore`** — o que não sobe: `node_modules`, testes, documentação e o `.env`.
+
+### 9.1 Publicar
+
+1. Gere o pacote com o conteúdo do projeto (sem `node_modules`) e envie pelo painel da Square Cloud,
+   ou use a CLI oficial na pasta do projeto.
+2. Ajuste `MEMORY` em `squarecloud.app` conforme o plano. 1024 MB atende bem; o envio de vídeo em si
+   não consome memória proporcional ao arquivo, porque o conteúdo é repassado ao Blob em partes.
+3. Ajuste `SUBDOMAIN` ou aponte o domínio próprio (item 13).
+
+### 9.2 Variáveis de ambiente
+
+Cadastre no painel da Square Cloud, nunca no código:
+
+```
+NODE_ENV=production
+APP_URL=https://focoelite.com.br
+DATABASE_URL=postgres://usuario:senha@host:5432/focoelite
+JWT_SECRET=...
+ADMIN_JWT_SECRET=...
+COOKIE_SECURE=true
+STORAGE_PROVIDER=squarecloud
+SQUARECLOUD_API_KEY=...
+OPENAI_API_KEY=...
+PAYMENT_PROVIDER=asaas
+ASAAS_API_KEY=...
+ASAAS_WEBHOOK_TOKEN=...
+SMTP_HOST=... SMTP_PORT=587 SMTP_USER=... SMTP_PASS=...
+```
+
+A `SQUARECLOUD_API_KEY` é a chave da conta, em Configurações da conta → API. É a mesma chave usada
+pelo Blob Storage.
+
+### 9.3 Banco de dados
+
+A Square Cloud hospeda a aplicação, não o PostgreSQL. Use um banco gerenciado (Neon, Supabase ou
+Railway) e informe a `DATABASE_URL` completa, com SSL. Depois da primeira publicação, crie o
+administrador uma única vez, pelo terminal do painel:
+
+```bash
+node scripts/create-admin.js --email seu@email.com --password "senha forte"
+```
+
+### 9.4 Arquivos no Blob Storage
+
+Com `STORAGE_PROVIDER=squarecloud`, tudo que a equipe envia pelo painel — videoaula, miniatura, logo,
+print de depoimento, PDF de edital e de prova — vai para o Blob e é servido pelo CDN da Square Cloud,
+em `public-blob.squarecloud.dev`. O banco guarda só o endereço.
+
+O que isso significa na prática:
+
+* **A aplicação não guarda arquivo.** Publicar uma versão nova não apaga nada, e a pasta `uploads/`
+  do projeto deixa de existir em produção.
+* **Vídeo até 1 GB.** Acima de 100 MB o envio é dividido em partes automaticamente. Se uma parte
+  falhar, o envio inteiro é abortado para não deixar pedaço órfão consumindo cota.
+* **O backup do banco não carrega os vídeos**, o que mantém o dump pequeno. Em compensação, o Blob é
+  a única cópia dos arquivos: mantenha os originais das aulas guardados fora da plataforma.
+* **Trocar de provedor** é questão de configuração: `STORAGE_PROVIDER=local` volta a gravar em disco,
+  útil para rodar na sua máquina. Os endereços já gravados continuam funcionando.
+
+---
+
+## 9b. Alternativa: Railway ou Render com Neon
 
 Para quem prefere não administrar servidor. O custo mensal costuma ser parecido, e não há Nginx,
 Certbot, PM2 nem firewall para manter — em troca, o controle sobre a máquina é menor.
@@ -594,7 +668,7 @@ curl -sI http://focoelite.com.br/ | head -n 1        # 301 para HTTPS
 * [ ] A landing abre em `https://focoelite.com.br`, com cadeado válido, e os planos aparecem.
 * [ ] O cadastro de um aluno de teste funciona, e o onboarding gera o cronograma do primeiro dia.
 * [ ] O painel abre em `/admin/login` com o administrador criado, e o login do aluno **não** dá acesso a ele.
-* [ ] Uma aula com vídeo do YouTube reproduz normalmente.
+* [ ] Uma aula com vídeo enviado pelo painel reproduz normalmente, inclusive avançando a barra.
 * [ ] O tutor responde com o texto aparecendo aos poucos (streaming funcionando através do proxy).
 * [ ] Uma redação enviada volta corrigida, com nota por critério.
 * [ ] Uma assinatura de teste libera o acesso, e o evento correspondente aparece no log de webhooks do Stripe.

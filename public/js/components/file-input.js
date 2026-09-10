@@ -21,13 +21,15 @@ import { fmtBytes } from '../core/format.js';
 const ACCEPT = {
   image: 'image/png,image/jpeg,image/webp,image/gif',
   document: 'application/pdf',
-  any: 'image/png,image/jpeg,image/webp,image/gif,application/pdf',
+  video: 'video/mp4,video/webm,video/quicktime',
+  any: 'image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/webm,video/quicktime',
 };
 
 const LIMIT_TEXT = {
   image: 'PNG, JPG, WEBP ou GIF até 5 MB',
   document: 'PDF até 20 MB',
-  any: 'imagem até 5 MB ou PDF até 20 MB',
+  video: 'MP4, WEBM ou MOV até 1 GB',
+  any: 'imagem, PDF ou vídeo',
 };
 
 function isImageUrl(url) {
@@ -99,7 +101,7 @@ export function uploadFile(file, { folder = 'geral', onProgress } = {}) {
  */
 export function attachFileUpload(input, options = {}) {
   if (!input || input.dataset.fileUpload === 'on') return { destroy() {}, setValue() {} };
-  const { folder = 'geral', accept = 'image', preview = true, onUploaded } = options;
+  const { folder = 'geral', accept = 'image', preview = true, onUploaded, onPicked } = options;
   input.dataset.fileUpload = 'on';
 
   const wrap = document.createElement('div');
@@ -145,7 +147,9 @@ export function attachFileUpload(input, options = {}) {
       return;
     }
     figure.hidden = false;
-    if (isPdfUrl(url)) {
+    if (/\.(mp4|webm|mov)(\?|$)/i.test(url)) {
+      figure.innerHTML = `<video class="fu-video" src="${url}" controls preload="metadata"></video>`;
+    } else if (isPdfUrl(url)) {
       figure.innerHTML = `<a class="fu-doc" href="${url}" target="_blank" rel="noopener">${icon('file-text')}<span>Abrir o PDF enviado</span></a>`;
     } else if (isImageUrl(url) || url.startsWith('/uploads/')) {
       figure.innerHTML = `<img class="fu-img" src="${url}" alt="Prévia do arquivo enviado" loading="lazy">`;
@@ -163,6 +167,14 @@ export function attachFileUpload(input, options = {}) {
 
   async function send(file) {
     if (!file) return;
+    // deixa quem chamou ler o arquivo antes do envio (duração do vídeo, por exemplo)
+    if (onPicked) {
+      try {
+        await onPicked(file);
+      } catch {
+        // leitura opcional: falhar aqui não impede o envio
+      }
+    }
     status.hidden = false;
     status.className = 'fu-status';
     status.textContent = 'Enviando…';
