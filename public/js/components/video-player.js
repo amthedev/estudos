@@ -25,6 +25,16 @@ const ic = (name, size = 18) => icon(name, { size });
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 const YT_HOSTS = /(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i;
 const VIMEO_HOSTS = /(^|\.)vimeo\.com$/i;
+/**
+ * Velocidades da videoaula. O cliente pediu 1x e 1,5x; 1,25x e 2x entram porque
+ * não custam nada e é o que o aluno espera encontrar.
+ */
+const SPEEDS = [1, 1.25, 1.5, 2];
+
+function speedLabel(rate) {
+  return `${String(rate).replace('.', ',')}x`;
+}
+
 const FILE_TYPES = {
   mp4: 'video/mp4',
   m4v: 'video/mp4',
@@ -245,6 +255,13 @@ export function renderVideo(el, video = {}) {
               <a href="${src}" target="_blank" rel="noopener noreferrer">Abrir vídeo em nova aba</a>.
             </video>
           </div>
+          <div class="vp-speed" role="group" aria-label="Velocidade da aula">
+            <span class="vp-speed-label">Velocidade</span>
+            ${SPEEDS.map(
+              (rate) => h`<button type="button" class="vp-speed-btn${rate === 1 ? ' is-active' : ''}"
+                data-speed="${rate}" aria-pressed="${rate === 1 ? 'true' : 'false'}">${speedLabel(rate)}</button>`
+            )}
+          </div>
         </div>`;
     } else {
       markup = html`
@@ -277,7 +294,47 @@ export function renderVideo(el, video = {}) {
   }
 
   render(el, markup);
+
+  // Controle de velocidade: a preferência do aluno vale para as próximas aulas.
+  const media = el.querySelector('video');
+  if (media) {
+    const guardada = Number(readStoredSpeed());
+    if (SPEEDS.includes(guardada) && guardada !== 1) media.playbackRate = guardada;
+    for (const button of el.querySelectorAll('.vp-speed-btn')) {
+      const rate = Number(button.dataset.speed);
+      const ativo = rate === media.playbackRate;
+      button.classList.toggle('is-active', ativo);
+      button.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+      button.addEventListener('click', () => {
+        media.playbackRate = rate;
+        storeSpeed(rate);
+        for (const outro of el.querySelectorAll('.vp-speed-btn')) {
+          const ligado = Number(outro.dataset.speed) === rate;
+          outro.classList.toggle('is-active', ligado);
+          outro.setAttribute('aria-pressed', ligado ? 'true' : 'false');
+        }
+      });
+    }
+  }
+
   return { provider, id, url: resolvedUrl };
+}
+
+/** A velocidade escolhida acompanha o aluno; falhar aqui não pode quebrar a aula. */
+function readStoredSpeed() {
+  try {
+    return window.localStorage.getItem('fe:video-speed') || 1;
+  } catch {
+    return 1;
+  }
+}
+
+function storeSpeed(rate) {
+  try {
+    window.localStorage.setItem('fe:video-speed', String(rate));
+  } catch {
+    // navegador com armazenamento bloqueado: a velocidade vale só nesta aula
+  }
 }
 
 export default renderVideo;

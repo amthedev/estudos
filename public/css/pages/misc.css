@@ -1007,3 +1007,20 @@
     max-width: none;
   }
 }
+
+/* Velocidade da videoaula (components/video-player.js) */
+.vp-speed {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) 0 0; flex-wrap: wrap;
+}
+.vp-speed-label { color: var(--text-3); font-size: 12px; }
+.vp-speed-btn {
+  padding: 2px var(--s-3); font-size: 12px; line-height: 1.6;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--card-2); color: var(--text-2); cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.vp-speed-btn:hover { color: var(--text); border-color: var(--border-2); }
+.vp-speed-btn.is-active {
+  color: var(--text); border-color: var(--primary); background: var(--primary-soft);
+}

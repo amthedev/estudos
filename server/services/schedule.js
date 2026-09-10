@@ -28,6 +28,7 @@
  */
 const db = require('../db/pool');
 const dates = require('../utils/dates');
+const studyPlan = require('./study-plan');
 const { getSetting } = require('./settings');
 
 const DEFAULT_HORIZON_DAYS = 14;
@@ -163,6 +164,15 @@ function itemHref(item) {
       if (item.topic_id) return `/app/questoes?topic_id=${item.topic_id}`;
       if (item.subject_id) return `/app/questoes?subject_id=${item.subject_id}`;
       return '/app/questoes';
+    // dia de resumo: leva de volta à aula, onde ficam o resumo e as anotações
+    case 'summary':
+      if (item.lesson_id) return `/app/aulas/${item.lesson_id}`;
+      if (item.subject_id && item.topic_id) return `/app/materias/${item.subject_id}/assuntos/${item.topic_id}`;
+      return '/app/resumos';
+    case 'past_exam':
+      return '/app/provas-anteriores';
+    case 'training':
+      return '/app/cronograma';
     default:
       return '/app/cronograma';
   }
@@ -534,6 +544,7 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
 
   const config = await getScheduleDefaults();
   const plan = await loadPlan(userId, profile);
+  const planData = await studyPlan.loadPlanForExam(profile.exam_id);
   const examDate = effectiveExamDate(profile);
   const today = dates.todayISO();
   const states = buildSubjectStates(plan, profile, examDate, today);
@@ -608,6 +619,55 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
 
     const reviewQueue = dueReviews.filter((review) => !takenReviews.has(review.id));
     const items = [];
+
+    // Quando a prova tem plano de estudos cadastrado, a sequência dos dias vem
+    // dele: aula, resumo daquela aula com questões do conteúdo, e prova
+    // anterior a cada quatro semanas. A pontuação por peso e fraqueza continua
+    // valendo para provas sem plano.
+    if (planData) {
+      const startPosition = await studyPlan.currentPosition(userId, planData.plan.id);
+      const planItems = await studyPlan.buildItems({
+        planData,
+        studyDates,
+        capacity,
+        usedMinutes,
+        maxPosition,
+        takenLessons,
+        startPosition,
+      });
+
+      // revisões devidas entram antes do conteúdo do dia, sem estourar a carga
+      const byDate = new Map();
+      for (const item of planItems) {
+        if (!byDate.has(item.date)) byDate.set(item.date, []);
+        byDate.get(item.date).push(item);
+      }
+      for (const date of studyDates) {
+        const doDia = byDate.get(date) || [];
+        const ocupado = doDia.reduce((soma, item) => soma + (item.duration_min || 0), 0);
+        let sobra = capacity - (usedMinutes.get(date) || 0) - ocupado;
+        let posicao = (maxPosition.get(date) || 0) + 1000; // depois do conteúdo do dia
+        while (reviewQueue.length > 0 && sobra >= reviewMin) {
+          if (reviewQueue[0].due_date > date) break;
+          const review = reviewQueue.shift();
+          items.push({
+            date,
+            position: posicao,
+            type: 'review',
+            title: `Revisão: ${review.topic_name}`,
+            subject_id: review.subject_id,
+            topic_id: review.topic_id,
+            lesson_id: null,
+            review_id: review.id,
+            plan_item_id: null,
+            duration_min: reviewMin,
+          });
+          posicao += 1;
+          sobra -= reviewMin;
+        }
+      }
+      items.push(...planItems);
+    } else {
 
     studyDates.forEach((date, dayIndex) => {
       let remaining = capacity - (usedMinutes.get(date) || 0);
@@ -727,12 +787,13 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
 
       items.push(...dayItems);
     });
+    }
 
     for (const item of items) {
       await client.query(
         `INSERT INTO schedule_items
-           (user_id, date, position, type, title, subject_id, topic_id, lesson_id, review_id, duration_min, generated)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)`,
+           (user_id, date, position, type, title, subject_id, topic_id, lesson_id, review_id, duration_min, plan_item_id, generated)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)`,
         [
           userId,
           item.date,
@@ -744,6 +805,7 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
           item.lesson_id || null,
           item.review_id || null,
           item.duration_min,
+          item.plan_item_id || null,
         ]
       );
     }

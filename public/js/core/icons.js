@@ -85,6 +85,9 @@ export function activityIcon(type) {
     lesson: 'play', topic: 'book-open', questions: 'file-text', review: 'refresh-cw',
     essay: 'pen-line', simulado: 'target', custom: 'circle-dot', practice: 'file-text',
     schedule: 'calendar-days', tutor: 'bot', manual: 'clock',
+    // ritmo do plano de estudos: resumo do dia seguinte, prova anterior,
+    // treino físico do TAF e dia de descanso
+    summary: 'notebook-pen', past_exam: 'file', training: 'dumbbell', rest: 'coffee',
   };
   return map[type] || 'circle-dot';
 }

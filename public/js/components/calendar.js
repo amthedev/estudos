@@ -30,7 +30,7 @@ const join = (parts) => raw(parts.map((p) => String(p ?? '')).join(''));
 const ic = (name, size = 16) => icon(name, { size });
 const pad = (n) => String(n).padStart(2, '0');
 
-export const TYPES = ['lesson', 'topic', 'questions', 'review', 'essay', 'simulado', 'custom'];
+export const TYPES = ['lesson', 'topic', 'questions', 'review', 'essay', 'simulado', 'custom', 'summary', 'past_exam', 'training', 'rest'];
 
 export const TYPE_ICONS = Object.fromEntries(TYPES.map((type) => [type, activityIcon(type)]));
 

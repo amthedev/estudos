@@ -305,6 +305,7 @@ export function activityLabel(type) {
   const map = {
     lesson: 'Aula', topic: 'Estudo', questions: 'Questões', review: 'Revisão', essay: 'Redação',
     simulado: 'Simulado', custom: 'Personalizado', practice: 'Prática', tutor: 'Tutor', manual: 'Manual', schedule: 'Cronograma',
+    summary: 'Resumo', past_exam: 'Prova anterior', training: 'Treino físico', rest: 'Descanso',
   };
   return map[type] || type || '—';
 }

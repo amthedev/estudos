@@ -46,6 +46,7 @@ const data = {
   essayThemes: require('./data/essay_themes'),
   plans: require('./data/plans'),
   landing: require('./data/landing'),
+  studyPlans: require('./data/study_plans'),
 };
 
 // ---------------------------------------------------------------------
@@ -61,6 +62,7 @@ function parseArgs(argv) {
     forceCriteria: force || flags.has('force-criteria'),
     forcePlans: force || flags.has('force-plans'),
     forceLanding: force || flags.has('force-landing'),
+    forcePlans2: force || flags.has('force-study-plans'),
     forceSettings: force || flags.has('force-settings'),
     quiet: flags.has('quiet'),
   };
@@ -427,6 +429,71 @@ async function seedLanding(client, ctx) {
   }
 }
 
+
+/**
+ * Planos de estudo: a sequência de aulas de cada prova. Recriar o plano apaga
+ * os itens antigos, então só acontece com --force-study-plans; do contrário o
+ * seed apenas cria o que ainda não existe, preservando o que o admin editou.
+ */
+async function seedStudyPlans(client, ctx) {
+  for (const plano of data.studyPlans) {
+    const exam = ctx.exams.get(plano.exam);
+    if (!exam) {
+      ctx.warnings.push(`plano ${plano.slug}: prova ${plano.exam} não encontrada`);
+      continue;
+    }
+
+    const existente = await client.one('SELECT id FROM study_plans WHERE slug = $1', [plano.slug]);
+    if (existente && !ctx.forceStudyPlans) {
+      ctx.summary.bump('study_plans', 'kept');
+      continue;
+    }
+
+    let planId;
+    if (existente) {
+      await client.query(
+        `UPDATE study_plans SET exam_id = $2, name = $3, description = $4, weeks = $5,
+                lessons_per_week = $6, exam_every_weeks = $7, training_weekdays = $8, training_label = $9
+           WHERE id = $1`,
+        [
+          existente.id, exam, plano.name, plano.description ?? null, plano.weeks ?? 52,
+          plano.lessons_per_week ?? 3, plano.exam_every_weeks ?? 4,
+          plano.training_weekdays ?? [], plano.training_label ?? null,
+        ]
+      );
+      planId = existente.id;
+      await client.query('DELETE FROM study_plan_items WHERE plan_id = $1', [planId]);
+      ctx.summary.bump('study_plans', 'synced');
+    } else {
+      const criado = await client.one(
+        `INSERT INTO study_plans (exam_id, slug, name, description, weeks, lessons_per_week,
+                                  exam_every_weeks, training_weekdays, training_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [
+          exam, plano.slug, plano.name, plano.description ?? null, plano.weeks ?? 52,
+          plano.lessons_per_week ?? 3, plano.exam_every_weeks ?? 4,
+          plano.training_weekdays ?? [], plano.training_label ?? null,
+        ]
+      );
+      planId = criado.id;
+      ctx.summary.bump('study_plans', 'created');
+    }
+
+    let posicao = 0;
+    for (const item of plano.items) {
+      posicao += 1;
+      const subjectId = ctx.subjects.get(item.subject) ?? null;
+      if (!subjectId) ctx.warnings.push(`plano ${plano.slug}: matéria ${item.subject} não encontrada`);
+      await client.query(
+        `INSERT INTO study_plan_items (plan_id, position, week, subject_id, title, kind, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [planId, posicao, item.week ?? null, subjectId, item.title, item.kind ?? 'lesson', item.notes ?? null]
+      );
+      ctx.summary.bump('study_plan_items', 'created');
+    }
+  }
+}
+
 // ---------------------------------------------------------------------
 // conteúdo de demonstração
 // ---------------------------------------------------------------------
@@ -647,6 +714,7 @@ async function runSeed(options = {}) {
     forceCriteria: Boolean(options.forceCriteria ?? force),
     forcePlans: Boolean(options.forcePlans ?? force),
     forceLanding: Boolean(options.forceLanding ?? force),
+    forceStudyPlans: Boolean(options.forcePlans2 ?? force),
     forceSettings: Boolean(options.forceSettings ?? force),
     summary: new Summary(),
     warnings: [],
@@ -672,6 +740,7 @@ async function runSeed(options = {}) {
     say('[seed]   temas de redação');    await seedEssayThemes(client, ctx);
     say('[seed]   planos');              await seedPlans(client, ctx);
     say('[seed]   página inicial');     await seedLanding(client, ctx);
+    say('[seed]   planos de estudo');   await seedStudyPlans(client, ctx);
   });
 
   if (options.demo) {
