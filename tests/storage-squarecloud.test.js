@@ -67,7 +67,18 @@ describe('Blob Storage da Square Cloud', () => {
       if (req.method === 'POST' && url.pathname === '/v1/objects/chunked') {
         return send(200, {
           status: 'success',
-          response: { upload: 'token-de-teste', id: '123/videos/aula.mp4', chunk: { max: 5 * 1024 * 1024 } },
+          response: {
+            upload: 'token-de-teste',
+            id: '123/videos/aula.mp4',
+            url: 'https://public-blob.squarecloud.dev/123/videos/aula.mp4',
+            // nomes exatos da documentação
+            chunk: {
+              min_size: 5 * 1024 * 1024,
+              max_size: 5 * 1024 * 1024,
+              max_parts: 205,
+              max_object_size: 1024 * 1024 * 1024,
+            },
+          },
         });
       }
       // recebe uma parte
@@ -212,11 +223,28 @@ describe('Blob Storage da Square Cloud', () => {
     assert.equal(cursor, null);
   });
 
+  it('recusa arquivo menor que o mínimo aceito pela API', async () => {
+    await assert.rejects(
+      () => driver.putStream(streamOf(Buffer.alloc(100, 1)), { filename: 'minusculo.png', folder: 'logos' }),
+      /pequeno demais/i
+    );
+    assert.equal(calls.length, 0, 'nem chega a bater na API');
+  });
+
+  it('respeita o tamanho de parte que o servidor informa', async () => {
+    const buffer = Buffer.alloc(40 * 1024 * 1024, 4);
+    await driver.putStream(streamOf(buffer), { filename: 'aula.mp4', folder: 'videos' });
+    const partes = calls.filter((c) => c.method === 'PUT');
+    // o servidor falso pede 5 MB por parte, não os 16 MB do plano B
+    assert.ok(partes.every((c) => c.bytes <= 5 * 1024 * 1024), 'nenhuma parte passa do máximo informado');
+    assert.equal(partes[0].bytes, 5 * 1024 * 1024);
+  });
+
   it('sem chave, avisa que o armazenamento não está configurado', async () => {
     process.env.SQUARECLOUD_API_KEY = '';
     try {
       await assert.rejects(
-        () => driver.putStream(streamOf(Buffer.alloc(32, 1)), { filename: 'x.mp4', folder: 'videos' }),
+        () => driver.putStream(streamOf(Buffer.alloc(4096, 1)), { filename: 'x.mp4', folder: 'videos' }),
         /não está configurado/i
       );
     } finally {

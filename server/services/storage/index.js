@@ -66,6 +66,19 @@ async function list(options) {
   return chosen.list(options);
 }
 
+/** Consumo da conta, quando o provedor souber informar. */
+async function usage() {
+  const name = await providerName();
+  const chosen = DRIVERS[name] || local;
+  if (typeof chosen.stats !== 'function' || !chosen.isConfigured()) return null;
+  try {
+    return await chosen.stats();
+  } catch {
+    // o consumo é informativo: falhar aqui não pode derrubar a tela
+    return null;
+  }
+}
+
 /** Situação para o painel, sem expor a chave. */
 async function status() {
   const name = await providerName();
@@ -76,8 +89,9 @@ async function status() {
     label: chosen.label,
     configured: chosen.isConfigured(),
     key_masked: key ? `••••${key.slice(-4)}` : null,
+    usage: await usage(),
     max_bytes: chosen.name === 'squarecloud' ? squarecloud.MAX_OBJECT : null,
   };
 }
 
-module.exports = { putStream, remove, list, status, providerName, DRIVERS, NAMES };
+module.exports = { putStream, remove, list, status, usage, providerName, DRIVERS, NAMES };

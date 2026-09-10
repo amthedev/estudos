@@ -29,10 +29,18 @@ const BASE = 'https://blob.squarecloud.app/v1/objects';
 
 /** Acima disso o envio precisa ser em partes. */
 const SINGLE_MAX = 100 * 1024 * 1024;
-/** Tamanho de cada parte: dentro da faixa aceita (5–32 MB). */
+/**
+ * Faixa aceita para cada parte, conforme a documentação: mínimo de 5 MB,
+ * máximo de 32 MB (a última parte pode ser menor). O valor que vale é o que o
+ * servidor devolve ao abrir o envio; estes são apenas o plano B.
+ */
+const CHUNK_MIN = 5 * 1024 * 1024;
+const CHUNK_MAX = 32 * 1024 * 1024;
 const CHUNK_SIZE = 16 * 1024 * 1024;
 const MAX_CHUNKS = 205;
 const MAX_OBJECT = 1024 * 1024 * 1024;
+/** A API recusa arquivo menor que isto. */
+const MIN_OBJECT = 512;
 
 /** Pastas da plataforma viram prefixos no Blob. */
 const PREFIX = {
@@ -117,7 +125,10 @@ async function call(url, { method = 'GET', headers = {}, body, timeoutMs = 12000
 /** Mensagens em português para o que o painel precisa entender. */
 function messageFor(status, payload) {
   const code = payload?.code || '';
-  if (status === 401) return 'A chave do armazenamento de arquivos é inválida. Confira as configurações do servidor.';
+  // a documentação usa 401 tanto para chave inválida quanto para o limite
+  // global da conta (RATE_LIMIT), que é coisa bem diferente
+  if (code === 'RATE_LIMIT') return 'A conta atingiu o limite de uso da API. Tente novamente em instantes.';
+  if (status === 401) return 'A chave do armazenamento de arquivos é inválida ou a conta não tem plano ativo.';
   if (status === 403) return 'A conta do armazenamento atingiu o limite contratado.';
   if (status === 413) return 'O arquivo é maior do que o armazenamento aceita.';
   if (status === 429) return 'Muitos envios ao mesmo tempo. Aguarde alguns segundos e tente de novo.';
@@ -211,18 +222,27 @@ async function putStream(source, { filename, folder, contentType, extension } = 
   let part = 0;
   let token = null;
   let chunkSize = CHUNK_SIZE;
+  let maxParts = MAX_CHUNKS;
+  let maxObject = MAX_OBJECT;
 
   const openChunked = async () => {
     const query = new URLSearchParams({ name, filename: safeName });
     if (prefix) query.set('prefix', prefix);
     const opened = await call(`${BASE}/chunked?${query}`, { method: 'POST' });
     token = opened.upload;
-    chunkSize = Number(opened.chunk?.max) || CHUNK_SIZE;
+    // os limites são os que o servidor informa (chunk.min_size, max_size,
+    // max_parts e max_object_size); os valores locais são só o plano B
+    const limits = opened.chunk || {};
+    const serverMax = Number(limits.max_size) || CHUNK_MAX;
+    const serverMin = Number(limits.min_size) || CHUNK_MIN;
+    chunkSize = Math.max(serverMin, Math.min(serverMax, CHUNK_MAX));
+    maxParts = Number(limits.max_parts) || MAX_CHUNKS;
+    maxObject = Number(limits.max_object_size) || MAX_OBJECT;
   };
 
   const sendPart = async (buffer) => {
     part += 1;
-    if (part > MAX_CHUNKS) {
+    if (part > maxParts) {
       const error = new Error('O arquivo é grande demais para o armazenamento.');
       error.code = 'too_large';
       throw error;
@@ -238,7 +258,7 @@ async function putStream(source, { filename, folder, contentType, extension } = 
   try {
     for await (const chunk of source) {
       bytes += chunk.length;
-      if (bytes > MAX_OBJECT) {
+      if (bytes > maxObject) {
         const error = new Error('O arquivo passa do limite de 1 GB do armazenamento.');
         error.code = 'too_large';
         throw error;
@@ -268,6 +288,11 @@ async function putStream(source, { filename, folder, contentType, extension } = 
       if (!buffer.length) {
         const error = new Error('Arquivo vazio.');
         error.code = 'empty_file';
+        throw error;
+      }
+      if (buffer.length < MIN_OBJECT) {
+        const error = new Error('O arquivo é pequeno demais para o armazenamento (mínimo de 512 bytes).');
+        error.code = 'too_small';
         throw error;
       }
       const result = await putSingle(buffer, { name, prefix, filename: safeName, contentType });
@@ -346,15 +371,38 @@ async function list({ folder, cursor } = {}) {
   };
 }
 
+/**
+ * Consumo da conta no Blob: quantos objetos, quantos bytes e quanto do plano
+ * já foi usado. O painel mostra isso em Configurações.
+ */
+async function stats() {
+  const response = await call('https://blob.squarecloud.app/v1/account/stats');
+  const usage = response?.usage || {};
+  const plan = response?.plan || {};
+  const billing = response?.billing || {};
+  const used = Number(usage.size ?? usage.total_size ?? 0);
+  const included = Number(plan.included_size ?? plan.size ?? 0);
+  return {
+    objects: Number(usage.objects ?? usage.count ?? 0),
+    used_bytes: used,
+    included_bytes: included,
+    used_pct: included > 0 ? Math.min(100, Math.round((used / included) * 100)) : null,
+    extra_bytes: Number(billing.extra_size ?? 0),
+    estimated_cost: billing.total ?? billing.estimate ?? null,
+  };
+}
+
 module.exports = {
   name: 'squarecloud',
   label: 'Square Cloud Blob',
   isConfigured,
   put,
   putStream,
+  stats,
   remove,
   list,
   PREFIX,
   SINGLE_MAX,
   MAX_OBJECT,
+  MIN_OBJECT,
 };

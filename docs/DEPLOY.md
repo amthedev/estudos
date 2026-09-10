@@ -458,6 +458,25 @@ O que isso significa na prática:
 * **Trocar de provedor** é questão de configuração: `STORAGE_PROVIDER=local` volta a gravar em disco,
   útil para rodar na sua máquina. Os endereços já gravados continuam funcionando.
 
+Limites e regras do Blob que a plataforma já respeita, conforme a documentação oficial:
+
+| Regra | Valor |
+|-------|-------|
+| Tamanho mínimo por arquivo | 512 bytes |
+| Envio em uma requisição | até 100 MB |
+| Envio em partes | acima de 100 MB, até 1 GiB |
+| Tamanho de cada parte | 5 MB a 32 MB (a última pode ser menor) |
+| Máximo de partes | 205 por arquivo |
+| Envios simultâneos | 4 simples, 8 em partes |
+| Tipos recusados pelo Blob | executáveis e instaladores |
+
+O plano **Pro** não tem o limite de um envio por segundo dos planos Hobby e Standard, o que importa
+no envio em massa de aulas. Os valores de parte não ficam presos no código: a plataforma usa os que o
+próprio servidor informa ao abrir cada envio.
+
+Chunks de um envio interrompido contam para a cota por cerca de 24 horas. Por isso, se uma parte
+falha, a plataforma aborta o envio inteiro em vez de deixar pedaço solto.
+
 ---
 
 ## 9b. Alternativa: Railway ou Render com Neon
