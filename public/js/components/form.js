@@ -27,12 +27,15 @@
 import { html, raw, render } from '../core/ui.js';
 import { icon } from '../core/icons.js';
 import { md } from '../core/markdown.js';
+import { attachFileUpload } from './file-input.js';
 
 const join = (parts) => raw(parts.map((p) => String(p ?? '')).join(''));
 const ic = (name, size = 16) => icon(name, { size });
 
-const INPUT_TYPES = { text: 'text', email: 'email', password: 'password', url: 'url', tel: 'tel', number: 'number', date: 'date', time: 'time', search: 'search' };
+const INPUT_TYPES = { text: 'text', email: 'email', password: 'password', url: 'url', tel: 'tel', number: 'number', date: 'date', time: 'time', search: 'search', file: 'text' };
 const FULL_WIDTH_TYPES = new Set(['textarea', 'markdown', 'json', 'multiselect', 'tags', 'section']);
+// campos que guardam a URL de um arquivo e ganham botão de envio
+const FILE_TYPES = new Set(['file']);
 const ARRAY_TYPES = new Set(['multiselect', 'tags']);
 const NON_INPUT_TYPES = new Set(['hidden', 'section']);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -260,6 +263,22 @@ export function buildForm(el, fields, opts = {}) {
     </form>`);
 
   const form = el.querySelector('form.fm');
+
+  // campos do tipo 'file' recebem o botão de envio, arrastar-e-soltar e prévia
+  const uploads = [];
+  for (const def of defs) {
+    if (!FILE_TYPES.has(def.type)) continue;
+    const input = form.querySelector(`[data-key="${CSS.escape(def.key)}"]`);
+    if (!input) continue;
+    uploads.push(
+      attachFileUpload(input, {
+        folder: def.folder || 'geral',
+        accept: def.accept || 'image',
+        preview: def.preview !== false,
+      })
+    );
+  }
+
   const alertEl = form.querySelector('.fm-alert');
   const alertTextEl = form.querySelector('.fm-alert-text');
   const submitBtn = form.querySelector('.fm-submit');
@@ -791,6 +810,7 @@ export function buildForm(el, fields, opts = {}) {
       form.removeEventListener('input', onInput);
       form.removeEventListener('keydown', onKeydown);
       form.removeEventListener('focusout', onFocusOut);
+      for (const upload of uploads) upload.destroy();
       el.innerHTML = '';
     },
   };

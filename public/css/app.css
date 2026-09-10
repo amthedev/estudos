@@ -19,3 +19,5 @@
 @import './pages/profile.css';
 @import './pages/tutoring.css';
 @import './pages/misc.css';
+/* acabamento visual compartilhado entre todas as rotas */
+@import './refinement.css';

@@ -393,3 +393,53 @@
     flex: 1 1 auto;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Edital vigente no topo de Provas Anteriores (.pex-notice)
+   --------------------------------------------------------------------------- */
+.pex-notice { margin-bottom: var(--s-6); border-color: var(--border-2); }
+
+.pex-notice-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--s-4); flex-wrap: wrap;
+}
+.pex-notice-eyebrow {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  color: var(--primary-2); font-size: 12px; font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase; margin-bottom: var(--s-2);
+}
+.pex-notice-eyebrow .icon { width: 15px; height: 15px; }
+
+.pex-notice-count {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  padding: var(--s-2) var(--s-4); border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--card-2); text-align: right;
+}
+.pex-notice-count strong {
+  font-family: var(--font-display); font-size: 26px; line-height: 1; color: var(--text);
+}
+.pex-notice-count span { color: var(--text-3); font-size: 12px; }
+
+.pex-notice-alert { margin: var(--s-4) 0 0; }
+
+.pex-notice-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s-2) var(--s-4); margin: var(--s-4) 0 0; padding: 0; list-style: none;
+}
+.pex-notice-facts li {
+  display: flex; align-items: center; gap: var(--s-2);
+  color: var(--text-2); font-size: 13px; min-width: 0;
+}
+.pex-notice-facts li.is-alert { color: var(--warning); }
+.pex-notice-facts .icon { width: 16px; height: 16px; flex: 0 0 auto; color: var(--text-3); }
+.pex-notice-facts li.is-alert .icon { color: var(--warning); }
+.pex-fact-label { color: var(--text-3); }
+.pex-notice-facts strong { color: var(--text); font-weight: 500; margin-left: auto; }
+
+.pex-notice-links { display: flex; gap: var(--s-2); flex-wrap: wrap; margin-top: var(--s-5); }
+
+@media (max-width: 640px) {
+  .pex-notice-head { flex-direction: column; }
+  .pex-notice-count { align-self: stretch; flex-direction: row; align-items: baseline; justify-content: space-between; }
+  .pex-notice-facts strong { margin-left: var(--s-2); }
+}

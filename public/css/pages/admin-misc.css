@@ -1322,3 +1322,15 @@
     justify-content: center;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Admin › Editais
+   -------------------------------------------------------------------------- */
+.en-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.en-title-main { color: var(--text); font-weight: 500; }
+.en-sub { color: var(--text-3); font-size: 12px; line-height: 1.35; }
+
+.en-dates { display: flex; flex-direction: column; gap: 2px; }
+.en-dates span { color: var(--text-2); font-size: 12px; white-space: nowrap; }
+
+.en-links { display: inline-flex; gap: var(--s-1); flex-wrap: wrap; }

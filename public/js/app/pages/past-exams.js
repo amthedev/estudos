@@ -6,12 +6,13 @@
 import { api } from '../../core/api.js';
 import { html, render as renderTo, pageHeader, emptyState, errorState, skeleton, tabs, qs, debounce } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
-import { pluralize } from '../../core/format.js';
+import { pluralize, fmtDate } from '../../core/format.js';
 
 let page = null;
 let data = null;
 let activeExam = null;
 let yearQuery = '';
+let notice = null;
 
 export default async function renderPage(ctx) {
   page = ctx;
@@ -27,11 +28,18 @@ export function unmount() {
   page = null;
   activeExam = null;
   yearQuery = '';
+  notice = null;
 }
 
 async function load() {
   try {
-    data = await api.get('/api/past-exams');
+    const [pastExams, notices] = await Promise.all([
+      api.get('/api/past-exams'),
+      // o edital é um complemento: se falhar, a página de provas continua de pé
+      api.get('/api/notices').catch(() => null),
+    ]);
+    data = pastExams;
+    notice = notices && notices.current ? notices.current : null;
   } catch (err) {
     if (err && err.status === 404) {
       renderEmptyApi();
@@ -59,10 +67,86 @@ function header() {
   });
 }
 
+/**
+ * Edital vigente da prova do aluno: o documento oficial com as datas.
+ * Só aparece quando a equipe publicou um edital para essa prova.
+ */
+function noticeCard() {
+  if (!notice) return '';
+  const facts = [
+    notice.registration_end
+      ? {
+        icon: 'calendar-clock',
+        label: 'Inscrições até',
+        value: fmtDate(notice.registration_end),
+        alert: notice.registration_open && notice.days_until_registration_end !== null && notice.days_until_registration_end <= 7,
+      }
+      : null,
+    notice.exam_date ? { icon: 'calendar-days', label: 'Prova', value: fmtDate(notice.exam_date) } : null,
+    notice.second_exam_date ? { icon: 'calendar-days', label: 'Segundo dia', value: fmtDate(notice.second_exam_date) } : null,
+    notice.result_date ? { icon: 'trophy', label: 'Resultado', value: fmtDate(notice.result_date) } : null,
+    notice.vacancies ? { icon: 'users', label: 'Vagas', value: String(notice.vacancies) } : null,
+  ].filter(Boolean);
+
+  const links = [
+    notice.pdf_url ? { href: notice.pdf_url, label: 'Ler o edital', icon: 'file-text', variant: 'secondary' } : null,
+    notice.external_url ? { href: notice.external_url, label: 'Página oficial', icon: 'external-link', variant: 'ghost' } : null,
+  ].filter(Boolean);
+
+  return html`
+    <section class="card pex-notice">
+      <div class="card-body">
+        <div class="pex-notice-head">
+          <div>
+            <span class="pex-notice-eyebrow">${icon('scroll-text')}<span>Edital vigente</span></span>
+            <h2 class="card-title">${notice.title}</h2>
+            ${notice.board ? html`<p class="hint">${notice.board}</p>` : ''}
+          </div>
+          ${notice.days_until_exam !== null
+            ? html`<div class="pex-notice-count">
+                <strong>${notice.days_until_exam}</strong>
+                <span>${pluralize(notice.days_until_exam, 'dia', 'dias', { withNumber: false })} para a prova</span>
+              </div>`
+            : ''}
+        </div>
+
+        ${notice.registration_open
+          ? html`<p class="alert alert-warning pex-notice-alert">
+              ${icon('circle-alert')}
+              <span>Inscrições abertas${notice.days_until_registration_end !== null
+                ? html` — ${pluralize(notice.days_until_registration_end, 'dia restante', 'dias restantes')}`
+                : ''}.</span>
+            </p>`
+          : ''}
+
+        ${facts.length
+          ? html`<ul class="pex-notice-facts">
+              ${facts.map((fact) => html`
+                <li class="${fact.alert ? 'is-alert' : ''}">
+                  ${icon(fact.icon)}
+                  <span class="pex-fact-label">${fact.label}</span>
+                  <strong>${fact.value}</strong>
+                </li>`)}
+            </ul>`
+          : ''}
+
+        ${links.length
+          ? html`<div class="pex-notice-links">
+              ${links.map((link) => html`
+                <a class="btn btn-${link.variant}" href="${link.href}" target="_blank" rel="noopener noreferrer">
+                  ${icon(link.icon)}<span>${link.label}</span>
+                </a>`)}
+            </div>`
+          : ''}
+      </div>
+    </section>`;
+}
+
 function renderEmptyApi() {
   renderTo(
     page.el,
     html`${header()}
+      ${noticeCard()}
       ${emptyState({
         icon: 'file',
         title: 'Provas anteriores ainda não disponíveis',
@@ -158,6 +242,7 @@ function paint() {
     page.el,
     html`
       ${header()}
+      ${noticeCard()}
       ${groups.length
         ? html`
             <div class="pex-toolbar">

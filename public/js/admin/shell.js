@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: '/admin/conteudo', label: 'Conteúdo', icon: 'list-tree' },
   { href: '/admin/aulas', label: 'Aulas', icon: 'play' },
   { href: '/admin/questoes', label: 'Questões', icon: 'file-text' },
+  { href: '/admin/editais', label: 'Editais', icon: 'scroll-text' },
   { href: '/admin/provas-anteriores', label: 'Provas anteriores', icon: 'file' },
   { href: '/admin/vestibulares', label: 'Vestibulares', icon: 'graduation-cap' },
   { href: '/admin/simulados', label: 'Simulados', icon: 'target' },
@@ -322,6 +323,9 @@ function guard() {
 
 function afterRoute(route, ctx) {
   shellEl.classList.toggle('bare', !!(route && route.bare));
+  const routeKey = ctx.path.replace(/^\/admin\/?/, '').split('/')[0] || 'overview';
+  shellEl.dataset.route = routeKey;
+  document.body.dataset.route = routeKey;
   updateActiveNav(ctx.path);
   closeDrawer();
 }

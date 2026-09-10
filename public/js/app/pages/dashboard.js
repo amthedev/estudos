@@ -65,6 +65,15 @@ function heroHeader(data) {
     ${data.quote ? html`<p class="dash-quote">${icon('quote', { size: 14 })}<span>${data.quote}</span></p>` : ''}`;
 }
 
+function dashboardVisual() {
+  return html`
+    <picture class="dash-next-media" aria-hidden="true">
+      <source media="(max-width: 720px)" srcset="/assets/platform-study-v2-640.jpg">
+      <source media="(max-width: 1200px)" srcset="/assets/platform-study-v2-960.jpg">
+      <img src="/assets/platform-study-v2.jpg" alt="" width="1536" height="1024" loading="eager">
+    </picture>`;
+}
+
 function nextActivityCard(data) {
   const item = data.next_item;
   if (item) {
@@ -72,21 +81,24 @@ function nextActivityCard(data) {
     const meta = [item.subject_name, showTopic ? item.topic_name : null].filter(Boolean);
     return html`
       <article class="card dash-next">
-        <div class="dash-next-body">
-          <div class="dash-next-tag">${badge(activityLabel(item.type), 'blue', { icon: activityIcon(item.type) })}</div>
-          <h2 class="dash-next-title">${item.title}</h2>
-          <p class="meta dash-next-meta">
-            ${meta.map((text) => html`<span>${text}</span>`)}
-            <span>${icon('clock', { size: 14 })}${fmtMinutes(item.duration_min)}</span>
-            ${item.start_time ? html`<span>${icon('calendar-clock', { size: 14 })}${item.start_time}</span>` : ''}
-          </p>
+        <div class="dash-next-copy">
+          <div class="dash-next-body">
+            <div class="dash-next-tag">${badge(activityLabel(item.type), 'blue', { icon: activityIcon(item.type) })}</div>
+            <h2 class="dash-next-title">${item.title}</h2>
+            <p class="meta dash-next-meta">
+              ${meta.map((text) => html`<span>${text}</span>`)}
+              <span>${icon('clock', { size: 14 })}${fmtMinutes(item.duration_min)}</span>
+              ${item.start_time ? html`<span>${icon('calendar-clock', { size: 14 })}${item.start_time}</span>` : ''}
+            </p>
+          </div>
+          <div class="dash-next-action">
+            <a class="btn btn-primary btn-lg" href="${item.href || '/app/cronograma'}">
+              ${icon('play')}<span>Começar a estudar</span>
+            </a>
+            <a class="link-sm" href="/app/cronograma">Ver cronograma</a>
+          </div>
         </div>
-        <div class="dash-next-action">
-          <a class="btn btn-primary btn-lg" href="${item.href || '/app/cronograma'}">
-            ${icon('play')}<span>Começar a estudar</span>
-          </a>
-          <a class="link-sm" href="/app/cronograma">Ver o cronograma completo</a>
-        </div>
+        ${dashboardVisual()}
       </article>`;
   }
 
@@ -106,7 +118,8 @@ function nextActivityCard(data) {
   }
   return html`
     <article class="card dash-next dash-next-empty">
-      ${emptyState({ icon: 'circle-check', title, text, action, size: 'sm' })}
+      <div class="dash-next-copy">${emptyState({ icon: 'circle-check', title, text, action, size: 'sm' })}</div>
+      ${dashboardVisual()}
     </article>`;
 }
 

@@ -247,10 +247,12 @@ function routineCard() {
 }
 
 function passwordCard() {
+  const user = me.user || {};
   return html`
     <section class="card pr-card" id="pr-password">
       <div class="card-header"><h2 class="card-title">Segurança</h2></div>
       <form class="card-body" data-form="password" novalidate>
+        <input type="email" name="username" value="${user.email || ''}" autocomplete="username" hidden tabindex="-1">
         <div class="grid grid-3">
           <div class="field">
             <label class="label" for="pr-current">Senha atual</label>

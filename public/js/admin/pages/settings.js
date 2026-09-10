@@ -187,7 +187,7 @@ function mountForms() {
   state.forms.push(buildForm(qs('#aset-form-brand', state.el), [
     { key: 'brand_name', label: 'Nome da marca', type: 'text', required: true, maxLength: 80 },
     { key: 'support_email', label: 'E-mail de suporte', type: 'email', required: true, maxLength: 160 },
-    { key: 'logo_url', label: 'Endereço da logo', type: 'text', required: true, maxLength: 500, width: 'full', hint: 'URL completa (https://…) ou caminho interno, como /assets/logo.svg.' },
+    { key: 'logo_url', label: 'Logo da marca', type: 'file', folder: 'logos', accept: 'image', required: true, maxLength: 500, width: 'full', hint: 'Envie a imagem ou informe um endereço. O padrão é /assets/logo.svg.' },
   ], {
     values: { brand_name: s.brand_name || '', support_email: s.support_email || '', logo_url: s.logo_url || '' },
     submitLabel: 'Salvar marca',

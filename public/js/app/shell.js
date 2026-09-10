@@ -457,6 +457,9 @@ function guard(route, info) {
 
 function afterRoute(route, ctx) {
   shellEl.classList.toggle('bare', !!(route && route.bare));
+  const routeKey = ctx.path.replace(/^\/app\/?/, '').split('/')[0] || 'home';
+  shellEl.dataset.route = routeKey;
+  document.body.dataset.route = routeKey;
   updateActiveNav(ctx.path);
   closeDrawer();
   const input = qs('#global-search input', shellEl);

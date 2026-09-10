@@ -32,7 +32,7 @@ function teacherFields() {
     { key: 'name', label: 'Nome', type: 'text', required: true, minLength: 3, maxLength: 120 },
     { key: 'email', label: 'E-mail', type: 'email', maxLength: 160 },
     { key: 'phone', label: 'Telefone', type: 'tel', maxLength: 40, placeholder: '(11) 90000-0000' },
-    { key: 'photo_url', label: 'Foto (URL)', type: 'url', placeholder: 'https://…' },
+    { key: 'photo_url', label: 'Foto do professor', type: 'file', folder: 'geral', accept: 'image', width: 'full', placeholder: 'https://… ou envie a imagem' },
     { key: 'bio', label: 'Apresentação', type: 'textarea', rows: 4, maxLength: 4000, hint: 'Texto exibido ao aluno na hora de escolher o professor.' },
     { type: 'section', label: 'Aula particular' },
     { key: 'hourly_price', label: 'Preço por hora (R$)', type: 'number', min: 0, step: '0.01', placeholder: '0,00' },

@@ -18,6 +18,7 @@ import { icon } from '../../core/icons.js';
 import { md } from '../../core/markdown.js';
 import { fmtMinutes } from '../../core/format.js';
 import { renderVideo } from '../../components/video-player.js';
+import { attachFileUpload } from '../../components/file-input.js';
 
 const PARSE_DEBOUNCE_MS = 600;
 
@@ -244,13 +245,31 @@ async function save({ then = 'list' } = {}) {
   }
   if (data.sort_order === undefined) delete data.sort_order;
 
-  const buttons = qsa('[data-act="save"], [data-act="save-questions"]', state.ctx.el);
+  const buttons = qsa('[data-act="save"], [data-act="save-questions"], [data-act="save-new"]', state.ctx.el);
   buttons.forEach((button) => setLoading(button, true));
   try {
     const saved = state.id
       ? await api.put(`/api/admin/lessons/${state.id}`, data)
       : await api.post('/api/admin/lessons', data);
     toast(state.id ? 'Aula salva.' : 'Aula criada.', { type: 'success' });
+    if (then === 'new') {
+      // mantém matéria, assunto, subassunto, professor e provas: numa sequência
+      // de aulas do mesmo assunto só mudam o título, o vídeo e a ordem
+      const keep = {
+        subject_id: saved.subject_id,
+        topic_id: saved.topic_id,
+        subtopic_id: saved.subtopic_id || '',
+        teacher_name: data.teacher_name || '',
+        exam_ids: Array.isArray(data.exam_ids) ? data.exam_ids.join(',') : '',
+        difficulty: data.difficulty || '',
+      };
+      const query = Object.entries(keep)
+        .filter(([, value]) => value !== '' && value != null)
+        .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+        .join('&');
+      state.ctx.navigate(`/admin/aulas/nova${query ? `?${query}` : ''}`);
+      return;
+    }
     if (then === 'questions') {
       state.ctx.navigate(`/admin/questoes/nova?subject_id=${encodeURIComponent(saved.subject_id)}&topic_id=${encodeURIComponent(saved.topic_id)}${saved.subtopic_id ? `&subtopic_id=${encodeURIComponent(saved.subtopic_id)}` : ''}`);
       return;
@@ -297,6 +316,7 @@ function view() {
       actions: html`
         <a class="btn btn-ghost" href="/admin/aulas">${icon('arrow-left')}<span>Voltar</span></a>
         ${editing ? html`<button type="button" class="btn btn-danger" data-act="delete">${icon('trash-2')}<span>Excluir</span></button>` : ''}
+        <button type="button" class="btn btn-secondary" data-act="save-new">${icon('plus')}<span>Salvar e criar outra</span></button>
         <button type="button" class="btn btn-secondary" data-act="save-questions">${icon('file-text')}<span>Salvar e criar questões</span></button>
         <button type="button" class="btn btn-primary" data-act="save">${icon('save')}<span>Salvar</span></button>`,
     })}
@@ -347,7 +367,7 @@ function view() {
                 <div class="af-video-meta" data-video-meta></div>
               </div>
               <div class="field af-w-full">
-                <label class="label" for="af-thumb">Miniatura <span class="hint-inline">(preenchida automaticamente quando possível)</span></label>
+                <label class="label" for="af-thumb">Miniatura <span class="hint-inline">(preenchida automaticamente a partir do vídeo)</span></label>
                 <input class="input" id="af-thumb" name="thumbnail_url" value="${lesson.thumbnail_url || ''}" maxlength="2000" placeholder="https://…" inputmode="url" spellcheck="false">
                 <p class="error-text" data-error-for="thumbnail_url"></p>
               </div>
@@ -451,6 +471,9 @@ function bind(ctx) {
       if (act === 'save') {
         event.preventDefault();
         save({ then: 'list' });
+      } else if (act === 'save-new') {
+        event.preventDefault();
+        save({ then: 'new' });
       } else if (act === 'save-questions') {
         event.preventDefault();
         save({ then: 'questions' });
@@ -544,6 +567,25 @@ async function renderLessonForm(ctx) {
     if (!state || state.token !== token) return;
   }
 
+  // "Salvar e criar outra" repassa o que costuma se repetir entre aulas do mesmo
+  // assunto; aqui esses valores voltam para o formulário em branco
+  if (!state.lesson) {
+    if (query.teacher_name) {
+      const teacher = qs('[name="teacher_name"]', ctx.el);
+      if (teacher) teacher.value = query.teacher_name;
+    }
+    if (query.difficulty) {
+      const difficulty = qs('[name="difficulty"]', ctx.el);
+      if (difficulty) difficulty.value = query.difficulty;
+    }
+    if (query.exam_ids) {
+      const wanted = new Set(String(query.exam_ids).split(',').filter(Boolean));
+      for (const box of qsa('[data-exam-id]', ctx.el)) {
+        box.checked = wanted.has(box.dataset.examId);
+      }
+    }
+  }
+
   if (state.lesson && state.lesson.video_url) {
     state.video = {
       provider: state.lesson.video_provider,
@@ -553,6 +595,14 @@ async function renderLessonForm(ctx) {
     };
   }
   paintVideo();
+
+  // envio de arquivo no campo da miniatura: a equipe costuma ter a imagem
+  // pronta no computador e não um link
+  const thumbInput = qs('[name="thumbnail_url"]', ctx.el);
+  if (thumbInput) {
+    const upload = attachFileUpload(thumbInput, { folder: 'aulas', accept: 'image' });
+    state.off.push(() => upload.destroy());
+  }
 }
 
 export default renderLessonForm;

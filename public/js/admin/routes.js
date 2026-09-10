@@ -11,6 +11,7 @@ export const routes = [
   { path: '/admin/questoes/importar', title: 'Importar questões', page: () => import('./pages/questions-import.js') },
   { path: '/admin/questoes/nova', title: 'Nova questão', page: () => import('./pages/question-form.js') },
   { path: '/admin/questoes/:id', title: 'Editar questão', page: () => import('./pages/question-form.js') },
+  { path: '/admin/editais', title: 'Editais', page: () => import('./pages/exam-notices.js') },
   { path: '/admin/provas-anteriores', title: 'Provas anteriores', page: () => import('./pages/past-exams.js') },
   { path: '/admin/vestibulares', title: 'Vestibulares', page: () => import('./pages/exams.js') },
   { path: '/admin/vestibulares/:id', title: 'Vestibular', page: () => import('./pages/exam-form.js') },

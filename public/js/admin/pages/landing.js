@@ -19,6 +19,7 @@ import {
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { truncate } from '../../core/format.js';
+import { attachUploadsIn } from '../../components/file-input.js';
 
 let state = null;
 
@@ -51,7 +52,7 @@ const ICON_HINT = 'Nome do ícone (letras minúsculas e hífens), por exemplo: s
 // ---------------------------------------------------------------------
 let sequence = 0;
 
-function field({ name, label, value = '', type = 'text', hint = '', placeholder = '', rows = 3, maxlength = 0, width = 'full', options = null, required = false }) {
+function field({ name, label, value = '', type = 'text', hint = '', placeholder = '', rows = 3, maxlength = 0, width = 'full', options = null, required = false, upload = '', uploadAccept = 'image' }) {
   sequence += 1;
   const id = `adl-${name}-${sequence}`;
   const attrs = raw(
@@ -67,7 +68,10 @@ function field({ name, label, value = '', type = 'text', hint = '', placeholder 
           <option value="${option.value}" ${String(option.value) === String(value ?? '') ? raw('selected') : ''}>${option.label}</option>`)}
       </select>`;
   } else {
-    control = html`<input class="input" type="${type}" value="${value ?? ''}" ${attrs}>`;
+    const uploadAttrs = upload
+      ? raw(` data-upload="${escapeHtml(upload)}" data-upload-accept="${escapeHtml(uploadAccept)}"`)
+      : '';
+    control = html`<input class="input" type="${type}" value="${value ?? ''}" ${attrs}${uploadAttrs}>`;
   }
   return html`
     <div class="field adl-field adl-field-${width}">
@@ -153,7 +157,7 @@ function blockCard(block, index) {
             ${field({ name: 'body', label: 'Texto', value: block.body, type: 'textarea', rows: 5, maxlength: 6000, hint: 'Use uma linha em branco para separar parágrafos.' })}
             ${field({ name: 'cta_label', label: 'Texto do botão', value: block.cta_label, width: 'half', maxlength: 80 })}
             ${field({ name: 'cta_href', label: 'Link do botão', value: block.cta_href, width: 'half', placeholder: '/cadastro', hint: 'Caminho interno (/cadastro), âncora (#planos) ou URL completa.' })}
-            ${field({ name: 'image_url', label: 'Imagem', value: block.image_url, placeholder: 'https://…', hint: 'URL completa ou caminho interno. Deixe em branco para não exibir imagem.' })}
+            ${field({ name: 'image_url', label: 'Imagem', value: block.image_url, placeholder: 'https://… ou envie a imagem', hint: 'Deixe em branco para não exibir imagem neste bloco.', upload: 'geral' })}
           </div>
 
           <div class="adl-items-head">
@@ -281,8 +285,8 @@ function testimonialForm() {
             ${field({ name: 'name', label: 'Nome do aluno', value: current.name, width: 'half', required: true, maxlength: 120 })}
             ${field({ name: 'role', label: 'Papel', value: current.role, width: 'half', placeholder: 'Aprovada em Medicina', maxlength: 120 })}
             ${field({ name: 'content', label: 'Depoimento em texto', value: current.content, type: 'textarea', rows: 5, maxlength: 4000, hint: 'Preencha o texto ou a imagem do print — pelo menos um dos dois.' })}
-            ${field({ name: 'image_url', label: 'Print da conversa (URL da imagem)', value: current.image_url, placeholder: 'https://…' })}
-            ${field({ name: 'photo_url', label: 'Foto do aluno (URL)', value: current.photo_url, width: 'half', placeholder: 'https://…' })}
+            ${field({ name: 'image_url', label: 'Print da conversa', value: current.image_url, placeholder: 'https://… ou envie a imagem', hint: 'Use quando o depoimento for uma captura de tela.', upload: 'depoimentos' })}
+            ${field({ name: 'photo_url', label: 'Foto do aluno', value: current.photo_url, placeholder: 'https://… ou envie a imagem', upload: 'depoimentos' })}
             ${field({ name: 'rating', label: 'Nota', value: current.rating ?? '', type: 'select', width: 'half', options: ratingOptions })}
             ${field({ name: 'exam_id', label: 'Prova relacionada', value: current.exam_id ?? '', type: 'select', width: 'half', options: examOptions })}
             ${field({ name: 'sort_order', label: 'Ordem', value: current.sort_order ?? '', type: 'number', width: 'half' })}
@@ -508,7 +512,7 @@ function examCard(exam) {
               </div>
             </div>
             <div class="adl-grid adl-exam-fields">
-              ${field({ name: 'logo_url', label: 'URL da logo', value: exam.logo_url, placeholder: 'https://… ou /assets/…' })}
+              ${field({ name: 'logo_url', label: 'Logo da prova', value: exam.logo_url, placeholder: 'https://… ou envie a imagem', hint: 'Aparece no card desta prova na página inicial.', upload: 'logos' })}
               ${field({ name: 'landing_headline', label: 'Chamada', value: exam.landing_headline, maxlength: 120, placeholder: exam.short_name || exam.name })}
               ${field({ name: 'landing_text', label: 'Texto do card', value: exam.landing_text, type: 'textarea', rows: 4, maxlength: 2000 })}
               ${field({ name: 'landing_cta', label: 'Texto do botão', value: exam.landing_cta, maxlength: 80, placeholder: 'Quero estudar para o ENEM' })}
@@ -619,6 +623,9 @@ function paintPanel() {
   if (!panel) return;
   const views = { blocks: blocksPanel, testimonials: testimonialsPanel, faqs: faqsPanel, exams: examsPanel };
   render(panel, (views[state.tab] || blocksPanel)());
+  // os campos de arquivo são recriados a cada troca de aba
+  if (state.uploads) state.uploads.destroy();
+  state.uploads = attachUploadsIn(panel);
   if (state.tabsApi) {
     TABS.forEach((tab) => state.tabsApi.setCount(tab.id, (state.data[tab.id] || []).length));
   }
@@ -827,6 +834,7 @@ export default async function renderLandingPage(ctx) {
 
 export function unmount() {
   if (!state) return;
+  if (state.uploads) state.uploads.destroy();
   state.off.forEach((off) => {
     if (typeof off === 'function') off();
   });

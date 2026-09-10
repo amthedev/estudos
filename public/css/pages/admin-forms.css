@@ -299,3 +299,40 @@
     justify-content: center;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Envio de arquivo acoplado a um campo de URL (components/file-input.js)
+   --------------------------------------------------------------------------- */
+.fu { display: flex; flex-direction: column; gap: var(--s-2); }
+.fu-url { width: 100%; }
+
+.fu-bar { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.fu-bar .btn { flex: 0 0 auto; }
+.fu-hint { color: var(--text-3); font-size: 12px; line-height: 1.4; }
+
+.fu.is-drag { outline: 2px dashed var(--primary-2); outline-offset: 4px; border-radius: var(--radius-sm); }
+.fu.is-drag .fu-hint { color: var(--primary-2); }
+
+.fu-status { font-size: 12px; color: var(--text-2); }
+.fu-status.ok { color: var(--success); }
+.fu-status.err { color: var(--danger); }
+
+.fu-preview { display: flex; }
+.fu-img {
+  max-width: 220px; max-height: 120px; width: auto; height: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--card-2); object-fit: contain; padding: var(--s-1);
+}
+.fu-doc {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-3); font-size: 13px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--card-2); color: var(--text-2); text-decoration: none;
+}
+.fu-doc:hover { color: var(--text); border-color: var(--border-2); }
+.fu-doc .icon { width: 16px; height: 16px; flex: 0 0 auto; }
+
+@media (max-width: 640px) {
+  .fu-hint { width: 100%; }
+  .fu-img { max-width: 100%; }
+}

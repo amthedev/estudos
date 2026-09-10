@@ -17,26 +17,37 @@ import {
 import { icon, activityIcon } from '../../core/icons.js';
 import { fmtDate, fmtHours, fmtMinutes, fmtStudyDays, weekdayName, difficultyLabel, activityLabel } from '../../core/format.js';
 
+// As três trilhas são estruturais (a coluna `track` da prova). Nome e descrição
+// vêm do vestibular cadastrado no painel: se a equipe renomear o ENEM ou trocar
+// o texto do Barro Branco, o onboarding acompanha sem mexer no código.
 const TRACKS = [
-  {
-    id: 'enem',
-    title: 'ENEM',
-    description: 'Exame Nacional do Ensino Médio: quatro áreas de conhecimento e redação.',
-    icon: 'graduation-cap',
-  },
-  {
-    id: 'barro_branco',
-    title: 'Academia do Barro Branco',
-    description: 'Concurso de Cadete da Polícia Militar de São Paulo (VUNESP).',
-    icon: 'shield',
-  },
-  {
-    id: 'vestibular',
-    title: 'Outros vestibulares',
-    description: 'FUVEST, UNICAMP, UNESP e demais processos seletivos.',
-    icon: 'school',
-  },
+  { id: 'enem', icon: 'graduation-cap', fallbackTitle: 'ENEM' },
+  { id: 'barro_branco', icon: 'shield', fallbackTitle: 'Academia do Barro Branco' },
+  { id: 'vestibular', icon: 'school', fallbackTitle: 'Outros vestibulares' },
 ];
+
+/** Título e descrição de uma trilha a partir das provas cadastradas. */
+function trackInfo(track) {
+  const exams = state.exams.filter((exam) => exam.track === track.id);
+
+  if (track.id === 'vestibular') {
+    const names = exams.map((exam) => exam.short_name || exam.name).filter(Boolean);
+    return {
+      title: 'Outros vestibulares',
+      description: names.length
+        ? `${names.slice(0, 4).join(', ')}${names.length > 4 ? ' e outros' : ''}.`
+        : 'Escolha o vestibular que você vai prestar.',
+      available: true,
+    };
+  }
+
+  const exam = exams[0] || null;
+  return {
+    title: exam ? exam.name : track.fallbackTitle,
+    description: exam && exam.description ? exam.description : '',
+    available: Boolean(exam),
+  };
+}
 
 const LEVELS = [
   { id: 'iniciante', title: 'Iniciante', description: 'Estou começando agora ou revendo a base.' },
@@ -110,11 +121,14 @@ function stepExam() {
     <div class="onb-tracks">
       ${TRACKS.map((track) => {
         const active = answers.track === track.id;
+        const info = trackInfo(track);
         return html`
-          <button type="button" class="onb-track ${active ? 'is-active' : ''}" data-action="track" data-track="${track.id}" aria-pressed="${active ? 'true' : 'false'}">
+          <button type="button" class="onb-track ${active ? 'is-active' : ''} ${info.available ? '' : 'is-unavailable'}"
+                  data-action="track" data-track="${track.id}" aria-pressed="${active ? 'true' : 'false'}">
             <span class="onb-track-icon">${icon(track.icon)}</span>
-            <span class="onb-track-title">${track.title}</span>
-            <span class="onb-track-desc">${track.description}</span>
+            <span class="onb-track-title">${info.title}</span>
+            ${info.description ? html`<span class="onb-track-desc">${info.description}</span>` : ''}
+            ${info.available ? '' : html`<span class="onb-track-tag">Em breve</span>`}
           </button>`;
       })}
     </div>
@@ -489,7 +503,7 @@ function renderSuccess(ctx, result) {
   render(
     ctx.el,
     html`
-      <div class="onb onb-done">
+      <div class="onb onb-done" data-step="done">
         <div class="card onb-card">
           <div class="onb-body onb-enter">
             <span class="onb-done-icon">${icon('circle-check')}</span>
@@ -616,7 +630,7 @@ function paint(ctx) {
   render(
     ctx.el,
     html`
-      <div class="onb">
+      <div class="onb" data-step="${state.step + 1}">
         <header class="onb-head">
           <img src="/assets/logo.svg" alt="Foco de Elite" width="176" height="38">
           <p>Vamos montar o seu plano de estudos</p>
@@ -685,7 +699,7 @@ export default async function renderOnboarding(ctx) {
     render(
       ctx.el,
       html`
-        <div class="onb">
+        <div class="onb" data-step="error">
           <header class="onb-head"><img src="/assets/logo.svg" alt="Foco de Elite" width="176" height="38"></header>
           <div class="card onb-card"><div class="onb-body">
             ${errorState({

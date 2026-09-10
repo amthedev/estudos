@@ -193,6 +193,15 @@ export function fmtMinutes(minutes, { long = false } = {}) {
   return `${m}min`;
 }
 
+/** Tamanho de arquivo legível: 2048 → "2 KB". */
+export function fmtBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1).replace('.', ',')} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
 /** Horas decimais → "2h 30min" (ex.: hours_per_day = 2.5). */
 export function fmtHours(hours) {
   return fmtMinutes(Math.round((Number(hours) || 0) * 60));
