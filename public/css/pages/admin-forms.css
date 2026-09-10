@@ -1,0 +1,301 @@
+/* =====================================================================
+   Foco Elite — Admin › formulários de aula e questão
+   Prefixos .af- (formulário em duas colunas) e .qf- (questão: alternativas
+   e pré-visualização do aluno).
+   ===================================================================== */
+
+.af-form {
+  display: block;
+}
+
+.af-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: var(--s-5);
+  align-items: start;
+}
+
+.af-main,
+.af-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  min-width: 0;
+}
+
+.af-side {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--s-4));
+}
+
+.af-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+
+.af-grid > .field,
+.af-grid > .switch-field {
+  margin: 0;
+  min-width: 0;
+}
+
+.af-w-full {
+  grid-column: 1 / -1;
+}
+
+.af-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.af-checks .check {
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-sm);
+  transition: background var(--t-fast);
+}
+
+.af-checks .check:hover {
+  background: var(--card-2);
+}
+
+.af-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4);
+  text-align: center;
+}
+
+.af-stat-value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  color: var(--text);
+  line-height: var(--lh-tight);
+}
+
+.af-stat-label {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+/* --------------------------------------------------------------- vídeo */
+.af-video-input {
+  display: flex;
+  gap: var(--s-2);
+  align-items: stretch;
+}
+
+.af-video-input .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.af-video-input .btn {
+  flex: none;
+}
+
+.af-video-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.af-video-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 180px;
+  padding: var(--s-6);
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius);
+  background: var(--card-2);
+  color: var(--text-3);
+  text-align: center;
+}
+
+.af-video-empty p {
+  margin: 0;
+  max-width: 34ch;
+  font-size: var(--fs-sm);
+}
+
+.af-video-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------- markdown */
+.af-md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.af-md-tabs {
+  align-self: flex-start;
+}
+
+.af-md-input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.af-md-preview {
+  min-height: 160px;
+  padding: var(--s-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-2);
+}
+
+.af-md-preview > :first-child {
+  margin-top: 0;
+}
+
+.af-md-preview > :last-child {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------- alternativas */
+.qf-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.qf-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.qf-option-letter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-2);
+  transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
+}
+
+.qf-option-letter:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+}
+
+.qf-option-letter:has(input:checked) {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.qf-option-letter:focus-within {
+  outline: 2px solid var(--primary-2);
+  outline-offset: 1px;
+}
+
+.qf-option-letter input {
+  accent-color: var(--success);
+}
+
+.qf-option-text {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+}
+
+/* --------------------------------------------------------------- prévia da questão */
+.qf-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-2);
+  padding: var(--s-4);
+}
+
+.qf-preview .question-header {
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.qf-preview .question-statement {
+  font-size: var(--fs-sm);
+}
+
+.qf-preview .option {
+  cursor: default;
+  font-size: var(--fs-sm);
+}
+
+.qf-preview .question-image {
+  max-height: 200px;
+  object-fit: contain;
+}
+
+/* --------------------------------------------------------------- responsivo */
+@media (max-width: 1180px) {
+  .af-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .af-side {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .af-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .af-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .af-video-input {
+    flex-direction: column;
+  }
+
+  .af-video-input .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .qf-option {
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+
+  .qf-option-letter {
+    align-self: flex-start;
+  }
+
+  .qf-option-text {
+    width: 100%;
+  }
+
+  .page-actions {
+    width: 100%;
+  }
+
+  .page-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

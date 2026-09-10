@@ -1,0 +1,14 @@
+/* Shell do painel administrativo */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import './layout.css';
+@import './utilities.css';
+@import './pages/misc.css';
+/* páginas do admin */
+@import './pages/admin-dashboard.css';
+@import './pages/admin-students.css';
+@import './pages/admin-content.css';
+@import './pages/admin-forms.css';
+@import './pages/admin-settings.css';
+@import './pages/admin-misc.css';

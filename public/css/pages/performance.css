@@ -1,0 +1,109 @@
+/* =====================================================================
+   Estilos específicos: Meu Desempenho. Prefixo .pf-
+   ===================================================================== */
+
+.pf-chart {
+  height: 280px;
+  position: relative;
+}
+
+/* Barras horizontais de acurácia por matéria */
+.pf-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.pf-bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-bottom: var(--s-2);
+}
+
+.pf-bar-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-bar-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-family: var(--font-display);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pf-bar-value small {
+  font-family: var(--font);
+  font-weight: 400;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.pf-bar-track {
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--muted-soft);
+  overflow: hidden;
+}
+
+.pf-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--t-slow);
+}
+
+/* Pontos fortes e fracos */
+.pf-highlights .list-item:last-child {
+  border-bottom: 0;
+}
+
+/* Tabela por assunto */
+.pf-search {
+  flex: 0 1 280px;
+}
+
+.pf-cell-pct {
+  min-width: 150px;
+}
+
+.pf-cell-pct .progress {
+  margin-bottom: var(--s-1);
+}
+
+.pf-cell-pct span {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+@media (max-width: 720px) {
+  .pf-chart {
+    height: 240px;
+  }
+
+  .pf-search {
+    flex: 1 1 100%;
+  }
+
+  .pf-bar-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-1);
+  }
+
+  .pf-bar-name {
+    white-space: normal;
+  }
+}

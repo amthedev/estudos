@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel administrativo — Foco de Elite</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#07111F">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@600;700&family=Poppins:wght@500;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/auth.css">
+  <script type="module" src="/js/auth.js"></script>
+</head>
+<body data-page="admin-login">
+  <div class="auth-layout is-admin">
+    <aside class="auth-aside">
+      <a class="auth-brand" href="/" aria-label="Foco de Elite — página inicial">
+        <img src="/assets/logo.svg" alt="Foco de Elite" width="220" height="48">
+      </a>
+      <div class="auth-aside-body">
+        <p class="auth-eyebrow">Painel administrativo</p>
+        <h1 class="auth-tagline">Conteúdo, alunos e operação <span>em um só lugar.</span></h1>
+        <ul class="auth-points">
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-list-tree"></use></svg><div><strong>Conteúdo programático</strong><span>Áreas, matérias, assuntos, aulas e questões organizados por prova.</span></div></li>
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-users"></use></svg><div><strong>Alunos e assinaturas</strong><span>Progresso individual, acesso, bloqueios e planos em tempo real.</span></div></li>
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-activity"></use></svg><div><strong>Saúde da plataforma</strong><span>Uso de IA, erros, auditoria e integrações com status claro.</span></div></li>
+        </ul>
+      </div>
+      <p class="auth-aside-foot">Acesso restrito a administradores</p>
+    </aside>
+    <main class="auth-main">
+      <div class="auth-card card">
+        <header class="auth-head">
+          <span class="badge badge-blue"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-shield-check"></use></svg><span>Painel administrativo</span></span>
+          <h1>Entrar no painel</h1>
+          <p>Acesso exclusivo para administradores da plataforma.</p>
+        </header>
+        <div class="auth-alert" id="form-alert" aria-live="assertive" hidden></div>
+        <form class="auth-form" id="auth-form" method="post" action="/api/admin/auth/login" novalidate>
+          <div class="field">
+            <label class="label" for="email">E-mail</label>
+            <input class="input" type="email" id="email" name="email" autocomplete="email" inputmode="email" spellcheck="false" maxlength="160" required autofocus>
+            <p class="error-text" data-error-for="email"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="password">Senha</label>
+            <div class="password-field">
+              <input class="input" type="password" id="password" name="password" autocomplete="current-password" minlength="1" maxlength="128" required>
+              <button type="button" class="password-toggle" data-toggle-password aria-label="Mostrar senha" aria-pressed="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-eye"></use></svg></button>
+            </div>
+            <p class="error-text" data-error-for="password"></p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg btn-block">Entrar no painel</button>
+        </form>
+        <p class="auth-alt">É aluno? <a href="/login">Entrar na área do aluno</a></p>
+      </div>
+      <p class="auth-legal">© <span data-year>2026</span> Foco de Elite · <a href="/">Voltar ao site</a></p>
+    </main>
+  </div>
+</body>
+</html>

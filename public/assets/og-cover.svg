@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Foco de Elite — plataforma de estudos para ENEM, Barro Branco e vestibulares">
+  <defs>
+    <linearGradient id="og-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1626"/>
+      <stop offset="0.55" stop-color="#07111F"/>
+      <stop offset="1" stop-color="#0C1A29"/>
+    </linearGradient>
+    <linearGradient id="og-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F0D28A"/>
+      <stop offset="0.55" stop-color="#D9B25C"/>
+      <stop offset="1" stop-color="#B8892E"/>
+    </linearGradient>
+    <radialGradient id="og-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#2F80ED" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#2F80ED" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#og-bg)"/>
+  <circle cx="1010" cy="120" r="360" fill="url(#og-glow)"/>
+  <rect x="0" y="0" width="1200" height="6" fill="url(#og-gold)"/>
+
+  <!-- marca -->
+  <g transform="translate(96,92) scale(1.05)">
+    <path fill="url(#og-gold)" d="M14 8h12v48H14z"/>
+    <path fill="url(#og-gold)" d="M26 8h30l-6 11H26z"/>
+    <path fill="url(#og-gold)" d="M26 28h22l-6 11H26z"/>
+    <text x="82" y="30" font-family="Manrope, Inter, Helvetica, Arial, sans-serif" font-size="27" font-weight="800" letter-spacing="2.6" fill="#F5F7FA">FOCO</text>
+    <text x="82" y="56" font-family="Manrope, Inter, Helvetica, Arial, sans-serif" font-size="21" font-weight="700" letter-spacing="3.6" fill="#D9B25C">DE ELITE</text>
+  </g>
+
+  <!-- proposta -->
+  <text x="96" y="300" font-family="Manrope, Inter, Helvetica, Arial, sans-serif" font-size="60" font-weight="800" letter-spacing="-1" fill="#F5F7FA">O sistema diz o que estudar hoje.</text>
+  <text x="96" y="372" font-family="Manrope, Inter, Helvetica, Arial, sans-serif" font-size="60" font-weight="800" letter-spacing="-1" fill="#4DA3FF">Você só executa.</text>
+
+  <text x="96" y="432" font-family="Inter, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#A8B4C6">Cronograma adaptativo, aulas, questões, simulados, revisões,</text>
+  <text x="96" y="470" font-family="Inter, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#A8B4C6">tutor com IA e correção de redação pelos critérios da sua prova.</text>
+
+  <!-- trilhas -->
+  <g font-family="Inter, Helvetica, Arial, sans-serif" font-size="21" font-weight="600">
+    <rect x="96" y="516" width="118" height="46" rx="23" fill="rgba(47,128,237,0.16)" stroke="#2F80ED" stroke-opacity="0.5"/>
+    <text x="155" y="546" fill="#4DA3FF" text-anchor="middle">ENEM</text>
+
+    <rect x="230" y="516" width="212" height="46" rx="23" fill="rgba(47,128,237,0.16)" stroke="#2F80ED" stroke-opacity="0.5"/>
+    <text x="336" y="546" fill="#4DA3FF" text-anchor="middle">Barro Branco</text>
+
+    <rect x="458" y="516" width="222" height="46" rx="23" fill="rgba(47,128,237,0.16)" stroke="#2F80ED" stroke-opacity="0.5"/>
+    <text x="569" y="546" fill="#4DA3FF" text-anchor="middle">Vestibulares</text>
+  </g>
+
+  <text x="1104" y="546" font-family="Inter, Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#718096" text-anchor="end">focoelite.com.br</text>
+</svg>

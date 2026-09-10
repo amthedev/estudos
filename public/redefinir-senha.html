@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Redefinir senha — Foco de Elite</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#07111F">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@600;700&family=Poppins:wght@500;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/auth.css">
+  <script type="module" src="/js/auth.js"></script>
+</head>
+<body data-page="reset">
+  <div class="auth-layout">
+    <aside class="auth-aside">
+      <a class="auth-brand" href="/" aria-label="Foco de Elite — página inicial">
+        <img src="/assets/logo.svg" alt="Foco de Elite" width="220" height="48">
+      </a>
+      <div class="auth-aside-body">
+        <p class="auth-eyebrow">Plataforma de estudos</p>
+        <h1 class="auth-tagline">O sistema diz o que estudar hoje. <span>Você só executa.</span></h1>
+        <ul class="auth-points">
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-calendar-days"></use></svg><div><strong>Cronograma adaptativo</strong><span>Decide o que estudar em cada dia a partir da sua prova, do seu tempo e do seu desempenho.</span></div></li>
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-file-text"></use></svg><div><strong>Questões com resolução</strong><span>Feedback imediato, caderno de erros automático e revisões em 1, 7 e 30 dias.</span></div></li>
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-pen-line"></use></svg><div><strong>Redação e tutor com IA</strong><span>Correção nos critérios da sua prova e um tutor disponível a qualquer hora.</span></div></li>
+        </ul>
+      </div>
+      <p class="auth-aside-foot">ENEM · Academia do Barro Branco · Vestibulares</p>
+    </aside>
+    <main class="auth-main">
+      <div class="auth-card card">
+        <header class="auth-head">
+          <h1>Redefinir senha</h1>
+          <p>Escolha uma nova senha para a sua conta.</p>
+        </header>
+        <div class="auth-alert" id="form-alert" aria-live="assertive" hidden></div>
+        <form class="auth-form" id="auth-form" method="post" action="/api/auth/reset-password" novalidate>
+          <div class="field">
+            <label class="label" for="password">Nova senha</label>
+            <div class="password-field">
+              <input class="input" type="password" id="password" name="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+              <button type="button" class="password-toggle" data-toggle-password aria-label="Mostrar senha" aria-pressed="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-eye"></use></svg></button>
+            </div>
+            <div class="strength" data-strength data-level="0" aria-live="polite">
+              <div class="strength-bars"><span></span><span></span><span></span><span></span></div>
+              <span class="strength-label">Use pelo menos 8 caracteres</span>
+            </div>
+            <p class="error-text" data-error-for="password"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="password_confirm">Confirmar nova senha</label>
+            <div class="password-field">
+              <input class="input" type="password" id="password_confirm" name="password_confirm" autocomplete="new-password" minlength="8" maxlength="128" required>
+              <button type="button" class="password-toggle" data-toggle-password aria-label="Mostrar senha" aria-pressed="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-eye"></use></svg></button>
+            </div>
+            <p class="error-text" data-error-for="password_confirm"></p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg btn-block">Salvar nova senha</button>
+        </form>
+        <p class="auth-alt">Link expirado? <a href="/recuperar-senha">Solicitar novo link</a></p>
+      </div>
+      <p class="auth-legal">© <span data-year>2026</span> Foco de Elite · <a href="/">Voltar ao site</a></p>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foco de Elite — plataforma de estudos para ENEM, Barro Branco e vestibulares</title>
+  <meta name="description" content="Plataforma de estudos com videoaulas, questões, simulados, cronograma personalizado, redação, resumos e acompanhamento de desempenho para o ENEM, a Academia do Barro Branco e outros vestibulares.">
+  <meta name="theme-color" content="#07111F">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:site_name" content="Foco de Elite">
+  <meta property="og:title" content="Foco de Elite — pare de estudar sem direção">
+  <meta property="og:description" content="Uma preparação organizada para a sua prova: videoaulas, questões, simulados, cronograma, redação e acompanhamento da sua evolução.">
+  <meta property="og:url" content="https://focoelite.com.br/">
+  <meta property="og:image" content="https://focoelite.com.br/assets/og-cover.svg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Foco de Elite — pare de estudar sem direção">
+  <meta name="twitter:description" content="Uma preparação organizada para a sua prova, do primeiro assunto até o dia da prova.">
+  <meta name="twitter:image" content="https://focoelite.com.br/assets/og-cover.svg">
+  <link rel="canonical" href="https://focoelite.com.br/">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@500;600;700;800&amp;family=Montserrat:wght@600;700&amp;family=Poppins:wght@500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/landing.css">
+  <script type="module" src="/js/landing.js"></script>
+</head>
+<body data-page="landing">
+  <a class="lp-skip" href="#conteudo">Pular para o conteúdo</a>
+
+  <!-- ==============================================================
+       Navegação fixa. Os links de seção só aparecem quando a seção
+       correspondente tem conteúdo cadastrado (public/js/landing.js).
+       ============================================================== -->
+  <header class="lp-nav" id="nav">
+    <div class="lp-wrap lp-nav-inner">
+      <a class="lp-nav-brand" href="/" aria-label="Foco de Elite — página inicial">
+        <img src="/assets/logo.svg" alt="Foco de Elite" width="184" height="44" fetchpriority="high">
+      </a>
+
+      <nav class="lp-nav-links" id="nav-links" aria-label="Seções da página">
+        <a href="#planos" data-nav-for="planos" hidden>Planos</a>
+        <a href="#como-funciona" data-nav-for="como-funciona" hidden>Como funciona</a>
+        <a href="#perguntas" data-nav-for="perguntas" hidden>Perguntas</a>
+        <div class="lp-nav-mobile-actions">
+          <a class="btn btn-secondary btn-block" href="/login">Entrar</a>
+          <a class="btn btn-primary btn-block" href="/cadastro">Começar agora</a>
+        </div>
+      </nav>
+
+      <div class="lp-nav-actions">
+        <a class="btn btn-ghost" href="/login">Entrar</a>
+        <a class="btn btn-primary" href="/cadastro">Começar agora</a>
+      </div>
+
+      <button type="button" class="btn btn-icon btn-ghost lp-nav-toggle" id="nav-toggle"
+              aria-label="Abrir menu" aria-controls="nav-links" aria-expanded="false">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-menu"></use></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="conteudo">
+    <!-- ============================================================
+         Hero — bloco "hero"
+         ============================================================ -->
+    <section class="lp-hero" id="inicio" aria-labelledby="hero-title">
+      <div class="lp-wrap lp-hero-inner">
+        <div class="lp-hero-copy">
+          <p class="lp-eyebrow" id="hero-eyebrow" hidden></p>
+
+          <h1 id="hero-title" data-state="loading">
+            <span class="skeleton lp-skel lp-skel-title"></span>
+            <span class="skeleton lp-skel lp-skel-title lp-skel-short"></span>
+          </h1>
+
+          <p class="lp-lead" id="hero-subtitle" data-state="loading">
+            <span class="skeleton lp-skel lp-skel-line"></span>
+            <span class="skeleton lp-skel lp-skel-line"></span>
+            <span class="skeleton lp-skel lp-skel-line lp-skel-short"></span>
+          </p>
+
+          <div class="lp-alert alert alert-danger" id="landing-error" role="alert" hidden>
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-triangle-alert"></use></svg>
+            <div class="alert-body">
+              <p class="alert-title">Não foi possível carregar o conteúdo da página.</p>
+              <p class="alert-text">Verifique sua conexão e tente novamente.</p>
+              <div class="alert-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="landing-retry">Tentar novamente</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="lp-hero-actions" id="hero-actions" hidden></div>
+
+          <ul class="lp-hero-items" id="hero-items" aria-label="Recursos da plataforma" hidden></ul>
+        </div>
+
+        <!-- Composição da tela do aluno: apenas HTML e CSS, sem números.
+             A rotina exibida vem dos passos cadastrados no bloco "como_funciona". -->
+        <div class="lp-hero-visual" id="hero-visual" role="img"
+             aria-label="Ilustração da área do aluno: rotina de estudos organizada dentro da plataforma">
+          <div class="lp-mock" aria-hidden="true">
+            <div class="lp-mock-chrome">
+              <span class="lp-mock-dot"></span>
+              <span class="lp-mock-dot"></span>
+              <span class="lp-mock-dot"></span>
+              <span class="lp-mock-brand" id="mock-brand"></span>
+            </div>
+            <div class="lp-mock-body">
+              <div class="lp-mock-rail">
+                <span class="lp-mock-rail-item is-active">
+                  <svg class="icon"><use href="/assets/icons.svg#i-house"></use></svg>
+                </span>
+                <span class="lp-mock-rail-item">
+                  <svg class="icon"><use href="/assets/icons.svg#i-calendar-days"></use></svg>
+                </span>
+                <span class="lp-mock-rail-item">
+                  <svg class="icon"><use href="/assets/icons.svg#i-square-play"></use></svg>
+                </span>
+                <span class="lp-mock-rail-item">
+                  <svg class="icon"><use href="/assets/icons.svg#i-file-text"></use></svg>
+                </span>
+                <span class="lp-mock-rail-item">
+                  <svg class="icon"><use href="/assets/icons.svg#i-chart-column"></use></svg>
+                </span>
+              </div>
+
+              <div class="lp-mock-main">
+                <div class="lp-mock-progress">
+                  <span class="lp-mock-progress-label"></span>
+                  <span class="lp-mock-progress-track"><span class="lp-mock-progress-fill"></span></span>
+                </div>
+                <ul class="lp-mock-routine" id="mock-routine"></ul>
+              </div>
+            </div>
+          </div>
+          <div class="lp-mock-glow" aria-hidden="true"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Dores — bloco "dores"
+         ============================================================ -->
+    <section class="lp-section" id="dores" aria-labelledby="dores-title" hidden>
+      <div class="lp-wrap">
+        <header class="lp-head">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="dores-title" data-slot="title"></h2>
+        </header>
+        <ul class="lp-pains" data-slot="items"></ul>
+        <div class="lp-pains-note" data-slot="body" hidden></div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Escolha seu objetivo — bloco "objetivos" + provas em destaque
+         ============================================================ -->
+    <section class="lp-section lp-section-alt" id="objetivos" aria-labelledby="objetivos-title" hidden>
+      <div class="lp-wrap">
+        <header class="lp-head lp-head-center">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="objetivos-title" data-slot="title"></h2>
+          <p class="lp-lead" data-slot="subtitle" hidden></p>
+        </header>
+        <div class="lp-goals" data-slot="cards"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Como funciona — bloco "como_funciona"
+         ============================================================ -->
+    <section class="lp-section" id="como-funciona" aria-labelledby="como-funciona-title" hidden>
+      <div class="lp-wrap">
+        <header class="lp-head lp-head-center">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="como-funciona-title" data-slot="title"></h2>
+          <p class="lp-lead" data-slot="subtitle" hidden></p>
+        </header>
+        <ol class="lp-steps" data-slot="items"></ol>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Planos — bloco "planos" + tabela plans
+         ============================================================ -->
+    <section class="lp-section lp-section-alt" id="planos" aria-labelledby="planos-title" hidden>
+      <div class="lp-wrap">
+        <header class="lp-head lp-head-center">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="planos-title" data-slot="title"></h2>
+          <p class="lp-lead" data-slot="subtitle" hidden></p>
+        </header>
+        <div class="lp-plans" data-slot="cards"></div>
+        <div class="lp-compare table-wrap" data-slot="compare" hidden></div>
+        <div class="lp-plans-note" data-slot="body" hidden></div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Tudo em um só lugar — bloco "tudo_em_um_lugar"
+         ============================================================ -->
+    <section class="lp-section" id="tudo-em-um-lugar" aria-labelledby="tudo-title" hidden>
+      <div class="lp-wrap">
+        <header class="lp-head lp-head-center">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="tudo-title" data-slot="title"></h2>
+          <p class="lp-lead" data-slot="subtitle" hidden></p>
+        </header>
+        <ul class="lp-everything" data-slot="items"></ul>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Depoimentos — bloco "depoimentos" + tabela testimonials
+         (a seção some quando não há depoimento cadastrado)
+         ============================================================ -->
+    <section class="lp-section lp-section-alt" id="depoimentos" aria-labelledby="depoimentos-title" hidden>
+      <div class="lp-wrap">
+        <header class="lp-head lp-head-center">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="depoimentos-title" data-slot="title"></h2>
+          <p class="lp-lead" data-slot="subtitle" hidden></p>
+        </header>
+        <ul class="lp-testimonials" data-slot="items"></ul>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Perguntas frequentes — bloco "faq" + tabela faqs
+         ============================================================ -->
+    <section class="lp-section" id="perguntas" aria-labelledby="perguntas-title" hidden>
+      <div class="lp-wrap lp-faq-wrap">
+        <header class="lp-head lp-head-center">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="perguntas-title" data-slot="title"></h2>
+          <p class="lp-lead" data-slot="subtitle" hidden></p>
+        </header>
+        <div class="lp-faq" data-slot="items"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Fechamento — bloco "fechamento"
+         ============================================================ -->
+    <section class="lp-cta" id="fechamento" aria-labelledby="fechamento-title" hidden>
+      <div class="lp-wrap">
+        <div class="lp-cta-inner">
+          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
+          <h2 id="fechamento-title" data-slot="title"></h2>
+          <p class="lp-lead" data-slot="subtitle" hidden></p>
+          <p class="lp-cta-motto" data-slot="body" hidden></p>
+          <div class="lp-cta-actions" data-slot="actions" hidden></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-footer">
+    <div class="lp-wrap">
+      <div class="lp-footer-main">
+        <div class="lp-footer-brand">
+          <img src="/assets/logo.svg" alt="Foco de Elite" width="168" height="40" loading="lazy">
+        </div>
+
+        <nav class="lp-footer-nav" aria-label="Rodapé">
+          <div class="lp-footer-col">
+            <h3>Plataforma</h3>
+            <ul>
+              <li><a href="#planos" data-nav-for="planos" hidden>Planos</a></li>
+              <li><a href="#como-funciona" data-nav-for="como-funciona" hidden>Como funciona</a></li>
+              <li><a href="#perguntas" data-nav-for="perguntas" hidden>Perguntas frequentes</a></li>
+            </ul>
+          </div>
+          <div class="lp-footer-col">
+            <h3>Conta</h3>
+            <ul>
+              <li><a href="/login">Entrar</a></li>
+              <li><a href="/cadastro">Criar conta</a></li>
+              <li><a href="/recuperar-senha">Recuperar senha</a></li>
+            </ul>
+          </div>
+          <div class="lp-footer-col">
+            <h3>Suporte</h3>
+            <ul>
+              <li id="footer-support" hidden></li>
+            </ul>
+          </div>
+        </nav>
+      </div>
+
+      <div class="lp-footer-bottom">
+        <p>&copy; <span data-year></span> <span id="footer-brand">Foco de Elite</span>. Todos os direitos reservados.</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

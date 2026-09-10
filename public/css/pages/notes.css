@@ -1,0 +1,233 @@
+/* =====================================================================
+   Estilos específicos: Meus Resumos (.nt-), Favoritos (.fv-) e Busca (.se-).
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   Resumos — filtros
+   --------------------------------------------------------------------- */
+.nt-filters-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(140px, 1fr)) auto;
+  gap: var(--s-3);
+  align-items: end;
+}
+
+.nt-filters-body .field {
+  margin: 0;
+}
+
+.nt-search {
+  width: 100%;
+}
+
+.nt-clear {
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------
+   Resumos — cartões
+   --------------------------------------------------------------------- */
+.nt-grid {
+  align-items: stretch;
+}
+
+.nt-card {
+  padding: 0;
+  height: 100%;
+}
+
+.nt-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  height: 100%;
+  padding: var(--s-5);
+  color: inherit;
+  text-decoration: none;
+}
+
+.nt-card-link:hover .nt-card-title {
+  color: var(--primary-2);
+}
+
+.nt-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.nt-card-star {
+  color: var(--gold);
+  display: inline-flex;
+}
+
+.nt-card-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  margin: 0;
+  transition: color var(--t-fast);
+}
+
+.nt-card-text {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  margin: 0;
+}
+
+.nt-card-meta {
+  margin-top: auto;
+  padding-top: var(--s-3);
+}
+
+/* ---------------------------------------------------------------------
+   Resumo — editor
+   --------------------------------------------------------------------- */
+.nt-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.nt-editor-tabs {
+  margin: var(--s-4) 0 var(--s-3);
+}
+
+.nt-preview {
+  min-height: 220px;
+  padding: var(--s-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-2);
+}
+
+/* ---------------------------------------------------------------------
+   Favoritos
+   --------------------------------------------------------------------- */
+.fv-grid {
+  align-items: stretch;
+}
+
+.fv-card {
+  padding: 0;
+  height: 100%;
+}
+
+.fv-card-body {
+  position: relative;
+  height: 100%;
+}
+
+.fv-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  height: 100%;
+  padding: var(--s-5);
+  padding-right: var(--s-12);
+  color: inherit;
+  text-decoration: none;
+}
+
+.fv-card-link:hover .fv-card-title {
+  color: var(--primary-2);
+}
+
+.fv-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.fv-card-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  margin: 0;
+  transition: color var(--t-fast);
+}
+
+.fv-card-text {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  margin: 0;
+}
+
+.fv-card .meta {
+  margin-top: auto;
+  padding-top: var(--s-3);
+}
+
+.fv-remove {
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-3);
+  color: var(--text-3);
+}
+
+.fv-remove:hover {
+  color: var(--gold);
+}
+
+/* ---------------------------------------------------------------------
+   Busca
+   --------------------------------------------------------------------- */
+.se-form {
+  max-width: 640px;
+}
+
+.se-form .btn {
+  flex: none;
+}
+
+.se-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.se-group .card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.se-question {
+  font-weight: 400;
+  line-height: var(--lh);
+}
+
+/* ---------------------------------------------------------------------
+   Responsivo
+   --------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  .nt-filters-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nt-search {
+    grid-column: 1 / -1;
+  }
+
+  .nt-clear {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 600px) {
+  .nt-filters-body {
+    grid-template-columns: 1fr;
+  }
+
+  .nt-card-link,
+  .fv-card-link {
+    padding: var(--s-4);
+  }
+
+  .fv-card-link {
+    padding-right: var(--s-10);
+  }
+}

@@ -1,0 +1,220 @@
+'use strict';
+
+/**
+ * Matérias — segundo nível da biblioteca. Cada matéria pertence a uma área,
+ * tem um ícone do sprite public/assets/icons.svg (nomes Lucide, id `i-<nome>`)
+ * e uma cor própria, usada nos cards, gráficos e no cronograma.
+ *
+ * Chave de idempotência: `slug`. A ordem (`sort_order`) segue a área.
+ */
+module.exports = [
+  // ---------------------------------------------------------------- Linguagens
+  {
+    slug: 'lingua-portuguesa',
+    area: 'linguagens',
+    name: 'Língua Portuguesa',
+    description: 'Leitura, variação linguística, gêneros textuais, semântica e funções da linguagem.',
+    icon: 'book-open',
+    color: '#4DA3FF',
+    sort_order: 10,
+  },
+  {
+    slug: 'interpretacao-de-texto',
+    area: 'linguagens',
+    name: 'Interpretação de Texto',
+    description: 'Compreensão, inferência, intertextualidade e análise de textos verbais e não verbais.',
+    icon: 'file-text',
+    color: '#38BDF8',
+    sort_order: 11,
+  },
+  {
+    slug: 'gramatica',
+    area: 'linguagens',
+    name: 'Gramática',
+    description: 'Fonologia, morfologia, sintaxe, concordância, regência, crase e pontuação.',
+    icon: 'scroll-text',
+    color: '#60A5FA',
+    sort_order: 12,
+  },
+  {
+    slug: 'literatura',
+    area: 'linguagens',
+    name: 'Literatura',
+    description: 'Escolas literárias, autores, obras obrigatórias e leitura de poesia e prosa.',
+    icon: 'library',
+    color: '#A78BFA',
+    sort_order: 13,
+  },
+  {
+    slug: 'artes',
+    area: 'linguagens',
+    name: 'Artes',
+    description: 'Linguagens artísticas, movimentos, arte brasileira e leitura de imagens.',
+    icon: 'palette',
+    color: '#F472B6',
+    sort_order: 14,
+  },
+  {
+    slug: 'educacao-fisica',
+    area: 'linguagens',
+    name: 'Educação Física',
+    description: 'Corpo, saúde, esporte, jogos, lazer e cultura corporal de movimento.',
+    icon: 'dumbbell',
+    color: '#FB923C',
+    sort_order: 15,
+  },
+  {
+    slug: 'ingles',
+    area: 'linguagens',
+    name: 'Inglês',
+    description: 'Leitura e interpretação em língua inglesa, vocabulário e estruturas gramaticais.',
+    icon: 'languages',
+    color: '#34D399',
+    sort_order: 16,
+  },
+  {
+    slug: 'espanhol',
+    area: 'linguagens',
+    name: 'Espanhol',
+    description: 'Leitura e interpretação em língua espanhola, falsos cognatos e estruturas básicas.',
+    icon: 'message-circle',
+    color: '#FBBF24',
+    sort_order: 17,
+  },
+  {
+    slug: 'tic',
+    area: 'linguagens',
+    name: 'Tecnologias da Informação e Comunicação',
+    description: 'Cultura digital, redes sociais, hipertexto, ética e impactos das tecnologias.',
+    icon: 'monitor',
+    color: '#22D3EE',
+    sort_order: 18,
+  },
+
+  // ---------------------------------------------------------------- Matemática
+  {
+    slug: 'matematica',
+    area: 'matematica',
+    name: 'Matemática',
+    description: 'Aritmética, álgebra, funções, geometria, trigonometria, estatística e probabilidade.',
+    icon: 'calculator',
+    color: '#2F80ED',
+    sort_order: 20,
+  },
+
+  // ---------------------------------------------------------------- Ciências Humanas
+  {
+    slug: 'historia',
+    area: 'ciencias-humanas',
+    name: 'História',
+    description: 'História do Brasil e História Geral, da Antiguidade ao mundo contemporâneo.',
+    icon: 'landmark',
+    color: '#F59E0B',
+    sort_order: 30,
+  },
+  {
+    slug: 'geografia',
+    area: 'ciencias-humanas',
+    name: 'Geografia',
+    description: 'Geografia física e humana, geopolítica, urbanização, economia e meio ambiente.',
+    icon: 'globe',
+    color: '#10B981',
+    sort_order: 31,
+  },
+  {
+    slug: 'filosofia',
+    area: 'ciencias-humanas',
+    name: 'Filosofia',
+    description: 'Da filosofia antiga à contemporânea: ética, política, conhecimento e ciência.',
+    icon: 'brain',
+    color: '#C084FC',
+    sort_order: 32,
+  },
+  {
+    slug: 'sociologia',
+    area: 'ciencias-humanas',
+    name: 'Sociologia',
+    description: 'Clássicos da sociologia, cultura, trabalho, desigualdade, Estado e movimentos sociais.',
+    icon: 'users',
+    color: '#F97316',
+    sort_order: 33,
+  },
+
+  // ---------------------------------------------------------------- Ciências da Natureza
+  {
+    slug: 'biologia',
+    area: 'ciencias-natureza',
+    name: 'Biologia',
+    description: 'Citologia, genética, evolução, ecologia, fisiologia humana e biotecnologia.',
+    icon: 'dna',
+    color: '#2ECC71',
+    sort_order: 40,
+  },
+  {
+    slug: 'fisica',
+    area: 'ciencias-natureza',
+    name: 'Física',
+    description: 'Mecânica, termologia, óptica, ondas, eletricidade e física moderna.',
+    icon: 'atom',
+    color: '#818CF8',
+    sort_order: 41,
+  },
+  {
+    slug: 'quimica',
+    area: 'ciencias-natureza',
+    name: 'Química',
+    description: 'Química geral, inorgânica, físico-química, orgânica e química ambiental.',
+    icon: 'flask-conical',
+    color: '#14B8A6',
+    sort_order: 42,
+  },
+
+  // ---------------------------------------------------------------- Redação
+  {
+    slug: 'redacao',
+    area: 'redacao',
+    name: 'Redação',
+    description: 'Estrutura dissertativo-argumentativa, repertório, coesão, proposta de intervenção e gêneros de vestibular.',
+    icon: 'pen-line',
+    color: '#EAB308',
+    sort_order: 50,
+  },
+
+  // ---------------------------------------------------------------- Conhecimentos Específicos
+  {
+    slug: 'informatica',
+    area: 'especificas',
+    name: 'Informática',
+    description: 'Noções de informática para concursos: sistema operacional, editores, planilhas, internet e segurança.',
+    icon: 'cpu',
+    color: '#06B6D4',
+    sort_order: 60,
+  },
+  {
+    slug: 'administracao-publica',
+    area: 'especificas',
+    name: 'Administração Pública',
+    description: 'Princípios constitucionais da administração, organização administrativa, agentes e atos administrativos.',
+    icon: 'briefcase',
+    color: '#A3E635',
+    sort_order: 61,
+  },
+  {
+    slug: 'atualidades',
+    area: 'especificas',
+    name: 'Atualidades',
+    description: 'Fatos políticos, econômicos, sociais, ambientais e tecnológicos do Brasil e do mundo.',
+    icon: 'newspaper',
+    color: '#F87171',
+    sort_order: 62,
+  },
+  {
+    slug: 'legislacao',
+    area: 'especificas',
+    name: 'Legislação',
+    description: 'Noções de direito constitucional, direitos humanos, segurança pública e estatuto dos policiais militares.',
+    icon: 'gavel',
+    color: '#FCD34D',
+    sort_order: 63,
+  },
+];

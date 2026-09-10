@@ -1,0 +1,602 @@
+'use strict';
+
+/**
+ * Pagamentos com provedor selecionável (Asaas e Stripe).
+ *
+ *   NODE_ENV=test node --test tests/payments.test.js
+ *
+ * Cobre o que não pode quebrar: sem chave nenhuma o checkout responde 503 e o status diz
+ * que não há provedor; o webhook recusa token inválido; um pagamento confirmado cria a
+ * assinatura, soma o bônus de meses e libera o acesso; o mesmo evento reprocessado não
+ * duplica nada; o cancelamento marca a assinatura; e os planos públicos nunca expõem
+ * identificadores do provedor de pagamento.
+ *
+ * Nenhum teste toca a API real: o transporte HTTP do Asaas é injetado (setHttpClient).
+ */
+const { describe, it, before, after, beforeEach } = require('node:test');
+const assert = require('node:assert/strict');
+const { createTestContext } = require('./helpers');
+const settings = require('../server/services/settings');
+const payments = require('../server/services/payments');
+const asaas = require('../server/services/payments/asaas');
+
+const WEBHOOK_TOKEN = 'token-de-webhook-do-asaas';
+const PAYMENT_ENV_KEYS = ['ASAAS_API_KEY', 'ASAAS_ENV', 'ASAAS_WEBHOOK_TOKEN', 'PAYMENT_PROVIDER'];
+
+/** Guarda e restaura as variáveis de ambiente de pagamento. */
+function snapshotEnv() {
+  const saved = {};
+  for (const key of PAYMENT_ENV_KEYS) saved[key] = process.env[key];
+  return () => {
+    for (const key of PAYMENT_ENV_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  };
+}
+
+function clearPaymentEnv() {
+  for (const key of PAYMENT_ENV_KEYS) delete process.env[key];
+}
+
+// ---------------------------------------------------------------------------
+// Cliente HTTP falso do Asaas
+// ---------------------------------------------------------------------------
+const jsonResponse = (status, data) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  text: async () => (data === undefined ? '' : JSON.stringify(data)),
+});
+
+/**
+ * @param {Array<{ method: string, match: RegExp, body: object|Function, status?: number }>} routes
+ */
+function fakeAsaasApi(routes) {
+  const calls = [];
+  const client = async (url, init = {}) => {
+    const method = String(init.method || 'GET').toUpperCase();
+    const path = String(url).replace(/^https?:\/\/[^/]+(?:\/api)?\/v3/, '');
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ method, path, body, token: init.headers && init.headers.access_token });
+
+    const route = routes.find((item) => item.method === method && item.match.test(path));
+    if (!route) {
+      return jsonResponse(404, { errors: [{ description: `rota não simulada: ${method} ${path}` }] });
+    }
+    const payload = typeof route.body === 'function' ? route.body(body, path) : route.body;
+    return jsonResponse(route.status || 200, payload);
+  };
+  return { calls, client, find: (method, re) => calls.find((c) => c.method === method && re.test(c.path)) };
+}
+
+const defaultRoutes = () => [
+  { method: 'GET', match: /^\/customers\?/, body: { data: [], totalCount: 0 } },
+  { method: 'POST', match: /^\/customers$/, body: { id: 'cus_000001', object: 'customer' } },
+  {
+    method: 'POST',
+    match: /^\/subscriptions$/,
+    body: (sent) => ({ id: 'sub_000001', object: 'subscription', cycle: sent.cycle, nextDueDate: sent.nextDueDate }),
+  },
+  { method: 'PUT', match: /^\/subscriptions\/sub_000001$/, body: { id: 'sub_000001', object: 'subscription' } },
+  {
+    method: 'GET',
+    match: /^\/subscriptions\/sub_000001\/payments/,
+    body: {
+      data: [{ id: 'pay_000001', status: 'PENDING', invoiceUrl: 'https://sandbox.asaas.com/i/pay_000001' }],
+    },
+  },
+  {
+    method: 'GET',
+    match: /^\/payments\?/,
+    body: {
+      data: [
+        {
+          id: 'pay_000001',
+          status: 'CONFIRMED',
+          value: 359.9,
+          dueDate: '2026-03-10',
+          paymentDate: '2026-03-10',
+          billingType: 'PIX',
+          invoiceUrl: 'https://sandbox.asaas.com/i/pay_000001',
+        },
+      ],
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Dados
+// ---------------------------------------------------------------------------
+async function seedPlans(db) {
+  const monthly = await db.one(
+    `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count,
+                        duration_months, bonus_months, features, highlight, active, sort_order)
+     VALUES ('mensal', 'Mensal', 'Acesso completo mês a mês', 4490, 'brl', 'month', 1, 1, 0,
+             '["Aulas","Simulados"]', false, true, 1)
+     RETURNING id`
+  );
+  const yearly = await db.one(
+    `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count,
+                        duration_months, bonus_months, compare_price_cents, badge,
+                        stripe_product_id, stripe_price_id, provider_plan_id,
+                        features, highlight, active, sort_order)
+     VALUES ('15-meses', '15 meses', 'Pague 12, estude 15', 35990, 'brl', 'year', 1, 12, 3, 53880, 'MELHOR OFERTA',
+             'prod_secreto', 'price_secreto', 'asaas_secreto',
+             '["Tudo do mensal","3 meses de bônus"]', true, true, 3)
+     RETURNING id`
+  );
+  return { monthly: monthly.id, yearly: yearly.id };
+}
+
+/** Corpo de webhook do Asaas para um evento de cobrança. */
+function paymentEvent(type, { id, reference, subscription = 'sub_000001', customer = 'cus_000001', overrides = {} }) {
+  return {
+    id,
+    event: type,
+    dateCreated: '2026-03-10 09:00:00',
+    payment: {
+      object: 'payment',
+      id: 'pay_000001',
+      customer,
+      subscription,
+      value: 359.9,
+      billingType: 'PIX',
+      status: 'CONFIRMED',
+      dueDate: '2026-03-10',
+      paymentDate: '2026-03-10',
+      confirmedDate: '2026-03-10',
+      externalReference: reference,
+      invoiceUrl: 'https://sandbox.asaas.com/i/pay_000001',
+      ...overrides,
+    },
+  };
+}
+
+describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
+  let ctx;
+  let restoreEnv;
+
+  before(async () => {
+    ctx = await createTestContext();
+    restoreEnv = snapshotEnv();
+  });
+
+  after(async () => {
+    asaas.setHttpClient(null);
+    restoreEnv();
+    await ctx.close();
+  });
+
+  // -------------------------------------------------------------------------
+  describe('cálculo de datas e ciclos', () => {
+    it('deriva o ciclo do Asaas a partir da duração do plano', () => {
+      assert.equal(asaas.cycleFor(1), 'MONTHLY');
+      assert.equal(asaas.cycleFor(6), 'SEMIANNUALLY');
+      assert.equal(asaas.cycleFor(12), 'YEARLY');
+      assert.equal(asaas.cycleFor(15), 'YEARLY');
+    });
+
+    it('soma o bônus na data da próxima cobrança do plano de 15 meses', () => {
+      const plan = { duration_months: 12, bonus_months: 3 };
+      const schedule = asaas.planSchedule(plan, new Date('2026-01-15T09:00:00.000Z'));
+      assert.equal(schedule.cycle, 'YEARLY');
+      assert.equal(schedule.first_due_date, '2026-01-15');
+      assert.equal(schedule.next_due_date, '2027-04-15');
+      assert.equal(schedule.access_months, 15);
+      assert.equal(asaas.accessMonths(plan, { first: true }), 15);
+      // o bônus vale uma única vez: a renovação libera só os meses pagos
+      assert.equal(asaas.accessMonths(plan, { first: false }), 12);
+    });
+
+    it('não estoura o fim do mês ao somar meses', () => {
+      assert.equal(asaas.toISODate(asaas.addMonths(new Date('2026-01-31T12:00:00.000Z'), 1)), '2026-02-28');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('sem provedor configurado', () => {
+    let student;
+
+    before(async () => {
+      await ctx.resetDb();
+      clearPaymentEnv();
+      await seedPlans(ctx.db);
+      student = await ctx.registerStudent();
+    });
+
+    it('o status informa que não há provedor de pagamento', async () => {
+      const res = await student.agent.get('/api/billing/status');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.payment_provider, 'none');
+      assert.equal(res.body.payments_configured, false);
+      assert.equal(res.body.stripe_configured, false);
+      assert.equal(res.body.portal_available, false);
+    });
+
+    it('o checkout responde 503 com mensagem em português', async () => {
+      const plans = await ctx.request('GET', '/api/billing/plans');
+      const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.body[0].id });
+      assert.equal(res.status, 503);
+      assert.equal(res.body.error.code, 'payments_unavailable');
+      assert.match(res.body.error.message, /provedor de pagamento/i);
+    });
+
+    it('o portal também responde 503', async () => {
+      const res = await student.agent.post('/api/billing/portal', {});
+      assert.equal(res.status, 503);
+      assert.equal(res.body.error.code, 'payments_unavailable');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('planos públicos', () => {
+    before(async () => {
+      await ctx.resetDb();
+      clearPaymentEnv();
+      await seedPlans(ctx.db);
+    });
+
+    it('devolve duração, bônus, equivalente mensal e economia', async () => {
+      const res = await ctx.request('GET', '/api/billing/plans');
+      assert.equal(res.status, 200);
+      const yearly = res.body.find((plan) => plan.slug === '15-meses');
+      assert.ok(yearly, 'o plano de 15 meses precisa aparecer na vitrine');
+      assert.equal(yearly.duration_months, 12);
+      assert.equal(yearly.bonus_months, 3);
+      assert.equal(yearly.access_months, 15);
+      assert.equal(yearly.badge, 'MELHOR OFERTA');
+      assert.equal(yearly.compare_price_cents, 53880);
+      assert.equal(yearly.monthly_equivalent_cents, Math.round(35990 / 15));
+      assert.equal(yearly.savings_cents, 53880 - 35990);
+    });
+
+    it('omite economia e equivalente mensal quando o dado não existe no banco', async () => {
+      const res = await ctx.request('GET', '/api/billing/plans');
+      const monthly = res.body.find((plan) => plan.slug === 'mensal');
+      assert.equal(monthly.compare_price_cents, null);
+      assert.equal(monthly.savings_cents, null);
+      assert.equal(monthly.monthly_equivalent_cents, null);
+    });
+
+    it('nunca expõe identificadores do provedor de pagamento', async () => {
+      const res = await ctx.request('GET', '/api/billing/plans');
+      for (const plan of res.body) {
+        assert.equal(plan.stripe_product_id, undefined);
+        assert.equal(plan.stripe_price_id, undefined);
+        assert.equal(plan.provider_plan_id, undefined);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('checkout no Asaas', () => {
+    let student;
+    let plans;
+    let api;
+
+    beforeEach(async () => {
+      await ctx.resetDb();
+      clearPaymentEnv();
+      process.env.ASAAS_API_KEY = '$aact_chave_de_teste_1234';
+      process.env.ASAAS_ENV = 'sandbox';
+      plans = await seedPlans(ctx.db);
+      student = await ctx.registerStudent();
+      api = fakeAsaasApi(defaultRoutes());
+      asaas.setHttpClient(api.client);
+    });
+
+    after(() => {
+      asaas.setHttpClient(null);
+    });
+
+    it('o Asaas vira o provedor ativo assim que a chave existe', async () => {
+      assert.equal(await payments.getProvider(), 'asaas');
+      const status = await payments.status();
+      assert.equal(status.provider, 'asaas');
+      assert.equal(status.configured, true);
+      assert.equal(status.environment, 'sandbox');
+      assert.match(status.key_masked, /^••••/);
+      assert.equal(status.key_masked.includes('aact'), false);
+      assert.match(status.webhook_url, /\/api\/billing\/webhook$/);
+    });
+
+    it('cria cliente e assinatura e devolve o link da primeira cobrança', async () => {
+      const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, tax_id: '390.533.447-05' });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.provider, 'asaas');
+      assert.equal(res.body.url, 'https://sandbox.asaas.com/i/pay_000001');
+
+      const created = api.find('POST', /^\/customers$/);
+      assert.equal(created.body.externalReference, student.user.id);
+      assert.equal(created.body.cpfCnpj, '39053344705');
+
+      const subscription = api.find('POST', /^\/subscriptions$/);
+      assert.equal(subscription.body.billingType, 'UNDEFINED');
+      assert.equal(subscription.body.cycle, 'YEARLY');
+      assert.equal(subscription.body.value, 359.9);
+      assert.equal(subscription.body.externalReference, `${student.user.id}:${plans.yearly}`);
+      assert.equal(subscription.body.nextDueDate, asaas.toISODate(new Date()));
+
+      // com bônus, a renovação é empurrada para depois dos 15 meses de acesso
+      const postponed = api.find('PUT', /^\/subscriptions\/sub_000001$/);
+      assert.ok(postponed, 'a assinatura com bônus precisa ter a renovação adiada');
+      assert.equal(postponed.body.updatePendingPayments, false);
+      assert.equal(postponed.body.nextDueDate, asaas.toISODate(asaas.addMonths(new Date(), 15)));
+
+      const user = await ctx.db.one('SELECT provider_customer_id, tax_id FROM users WHERE id = $1', [student.user.id]);
+      assert.equal(user.provider_customer_id, 'cus_000001');
+      assert.equal(user.tax_id, '39053344705');
+    });
+
+    it('não adia a renovação de um plano sem bônus', async () => {
+      const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.monthly });
+      assert.equal(res.status, 200);
+      assert.equal(api.find('POST', /^\/subscriptions$/).body.cycle, 'MONTHLY');
+      assert.equal(api.find('PUT', /^\/subscriptions\/sub_000001$/), undefined);
+    });
+
+    it('traduz a recusa do Asaas em erro da API, sem vazar o corpo cru', async () => {
+      asaas.setHttpClient(
+        fakeAsaasApi([
+          { method: 'GET', match: /^\/customers\?/, body: { data: [] } },
+          { method: 'POST', match: /^\/customers$/, status: 400, body: { errors: [{ code: 'invalid_cpfCnpj', description: 'O CPF informado é inválido.' }] } },
+        ]).client
+      );
+      const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly });
+      assert.equal(res.status, 502);
+      assert.equal(res.body.error.code, 'payment_provider_error');
+      assert.match(res.body.error.message, /CPF informado é inválido/);
+    });
+
+    it('o portal do Asaas devolve as faturas e explica que não há portal do assinante', async () => {
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly });
+      const res = await student.agent.post('/api/billing/portal', {});
+      assert.equal(res.status, 200);
+      assert.equal(res.body.provider, 'asaas');
+      assert.equal(res.body.url, null); // a única fatura simulada já está confirmada
+      assert.equal(res.body.invoices.length, 1);
+      assert.equal(res.body.invoices[0].payment_method, 'pix');
+      assert.match(res.body.message, /portal do assinante/i);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('webhook do Asaas', () => {
+    let student;
+    let plans;
+    let reference;
+
+    const sendWebhook = (payload, { token = WEBHOOK_TOKEN } = {}) =>
+      ctx.request('POST', '/api/billing/webhook', {
+        raw: true,
+        body: JSON.stringify(payload),
+        headers: { 'content-type': 'application/json', 'asaas-access-token': token },
+      });
+
+    beforeEach(async () => {
+      await ctx.resetDb();
+      clearPaymentEnv();
+      process.env.ASAAS_API_KEY = '$aact_chave_de_teste_1234';
+      process.env.ASAAS_ENV = 'sandbox';
+      process.env.ASAAS_WEBHOOK_TOKEN = WEBHOOK_TOKEN;
+      asaas.setHttpClient(fakeAsaasApi(defaultRoutes()).client);
+      plans = await seedPlans(ctx.db);
+      student = await ctx.registerStudent();
+      reference = `${student.user.id}:${plans.yearly}`;
+      await settings.setSetting('require_subscription', true);
+    });
+
+    after(async () => {
+      asaas.setHttpClient(null);
+      await settings.setSetting('require_subscription', null);
+    });
+
+    it('recusa o webhook com token inválido', async () => {
+      const res = await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_token', reference }), { token: 'errado' });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'validation_error');
+      assert.match(res.body.error.message, /token/i);
+      assert.equal(await ctx.db.one('SELECT count(*)::int AS total FROM payment_events').then((r) => r.total), 0);
+    });
+
+    it('recusa o webhook sem cabeçalho de provedor', async () => {
+      const res = await ctx.request('POST', '/api/billing/webhook', {
+        raw: true,
+        body: JSON.stringify(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_sem_header', reference })),
+        headers: { 'content-type': 'application/json' },
+      });
+      assert.equal(res.status, 400);
+      assert.match(res.body.error.message, /provedor/i);
+    });
+
+    it('pagamento confirmado cria a assinatura, soma o bônus e libera o acesso', async () => {
+      const before = await student.agent.get('/api/billing/status');
+      assert.equal(before.body.access.allowed, false);
+      assert.equal(before.body.access.reason, 'no_subscription');
+
+      const res = await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_1', reference }));
+      assert.equal(res.status, 200);
+      assert.equal(res.body.provider, 'asaas');
+      assert.equal(res.body.processed, true);
+      assert.equal(res.body.duplicate, false);
+
+      const row = await ctx.db.one('SELECT * FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'active');
+      assert.equal(row.provider, 'asaas');
+      assert.equal(row.provider_subscription_id, 'sub_000001');
+      assert.equal(row.provider_customer_id, 'cus_000001');
+      assert.equal(row.plan_id, plans.yearly);
+      assert.equal(row.payment_method, 'pix');
+      assert.ok(row.last_payment_at, 'o pagamento precisa ficar registrado na assinatura');
+      // pago em 10/03/2026 com 12 meses pagos + 3 de bônus → acesso até 10/06/2027
+      assert.equal(new Date(row.current_period_end).toISOString().slice(0, 10), '2027-06-10');
+
+      const after = await student.agent.get('/api/billing/status');
+      assert.equal(after.body.access.allowed, true);
+      assert.equal(after.body.subscription.is_active, true);
+      assert.equal(after.body.subscription.provider, 'asaas');
+      assert.equal(after.body.subscription.payment_method, 'pix');
+    });
+
+    it('reprocessar o mesmo evento não duplica nada', async () => {
+      const event = paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_2', reference });
+      const first = await sendWebhook(event);
+      assert.equal(first.body.duplicate, false);
+
+      const second = await sendWebhook(event);
+      assert.equal(second.status, 200);
+      assert.equal(second.body.duplicate, true);
+      assert.equal(second.body.processed, false);
+
+      const counts = await ctx.db.one(
+        `SELECT (SELECT count(*)::int FROM subscriptions) AS subscriptions,
+                (SELECT count(*)::int FROM payment_events) AS events`
+      );
+      assert.equal(counts.subscriptions, 1);
+      assert.equal(counts.events, 1);
+    });
+
+    it('atraso marca a assinatura como em atraso e bloqueia o acesso', async () => {
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_3', reference }));
+      const res = await sendWebhook(
+        paymentEvent('PAYMENT_OVERDUE', { id: 'evt_atraso_3', reference, overrides: { status: 'OVERDUE' } })
+      );
+      assert.equal(res.status, 200);
+
+      const row = await ctx.db.one('SELECT status FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'past_due');
+
+      const status = await student.agent.get('/api/billing/status');
+      assert.equal(status.body.access.allowed, false);
+      assert.equal(status.body.access.reason, 'past_due');
+    });
+
+    it('cancelamento da assinatura mantém o período pago e agenda o encerramento', async () => {
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_4', reference }));
+      const res = await sendWebhook({
+        id: 'evt_cancelada_4',
+        event: 'SUBSCRIPTION_DELETED',
+        subscription: { object: 'subscription', id: 'sub_000001', customer: 'cus_000001', externalReference: reference },
+      });
+      assert.equal(res.status, 200);
+
+      const row = await ctx.db.one('SELECT * FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.ok(row.canceled_at, 'o cancelamento precisa ficar registrado');
+      assert.equal(row.cancel_at_period_end, true);
+      assert.equal(row.status, 'active'); // o aluno já pagou: o acesso segue até o fim do período
+    });
+
+    it('estorno encerra o acesso na hora', async () => {
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_5', reference }));
+      await sendWebhook(paymentEvent('PAYMENT_REFUNDED', { id: 'evt_estorno_5', reference, overrides: { status: 'REFUNDED' } }));
+
+      const row = await ctx.db.one('SELECT status, canceled_at FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'canceled');
+      assert.ok(row.canceled_at);
+
+      const status = await student.agent.get('/api/billing/status');
+      assert.equal(status.body.access.allowed, false);
+    });
+
+    it('evento sem tratamento é registrado e ignorado sem erro', async () => {
+      const res = await sendWebhook({
+        id: 'evt_desconhecido',
+        event: 'PAYMENT_CREATED',
+        payment: { id: 'pay_000001', subscription: 'sub_000001', customer: 'cus_000001', externalReference: reference },
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.processed, true);
+      assert.equal(await ctx.db.one('SELECT count(*)::int AS total FROM subscriptions').then((r) => r.total), 0);
+    });
+
+    it('corpo que não é JSON é recusado com 400', async () => {
+      const res = await ctx.request('POST', '/api/billing/webhook', {
+        raw: true,
+        body: 'isto não é json',
+        headers: { 'content-type': 'application/json', 'asaas-access-token': WEBHOOK_TOKEN },
+      });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'validation_error');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('painel administrativo', () => {
+    let admin;
+
+    before(async () => {
+      await ctx.resetDb();
+      clearPaymentEnv();
+      admin = await ctx.loginAdmin();
+    });
+
+    it('informa o provedor ativo sem expor a chave', async () => {
+      const res = await admin.agent.get('/api/admin/plans/provider-status');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.provider, 'none');
+      assert.equal(res.body.configured, false);
+      assert.match(res.body.webhook_url, /\/api\/billing\/webhook$/);
+      assert.equal(res.body.providers.asaas.configured, false);
+      assert.equal(res.body.providers.stripe.configured, false);
+    });
+
+    it('grava duração, bônus, preço de comparação e selo do plano', async () => {
+      const created = await admin.agent.post('/api/admin/plans', {
+        name: '15 meses',
+        description: 'Pague 12, estude 15',
+        price_cents: 35990,
+        currency: 'brl',
+        interval: 'year',
+        interval_count: 1,
+        trial_days: 0,
+        duration_months: 12,
+        bonus_months: 3,
+        compare_price_cents: 53880,
+        badge: 'MELHOR OFERTA',
+        features: ['Tudo do mensal', '3 meses de bônus'],
+        highlight: true,
+        active: true,
+        sort_order: 3,
+      });
+      assert.equal(created.status, 201);
+      assert.equal(created.body.duration_months, 12);
+      assert.equal(created.body.bonus_months, 3);
+      assert.equal(created.body.compare_price_cents, 53880);
+      assert.equal(created.body.badge, 'MELHOR OFERTA');
+
+      const updated = await admin.agent.put(`/api/admin/plans/${created.body.id}`, {
+        name: '15 meses',
+        price_cents: 35990,
+        currency: 'brl',
+        interval: 'year',
+        interval_count: 1,
+        trial_days: 0,
+        duration_months: 12,
+        bonus_months: 6,
+        compare_price_cents: null,
+        badge: null,
+        features: [],
+        highlight: true,
+        active: true,
+        sort_order: 3,
+      });
+      assert.equal(updated.status, 200);
+      assert.equal(updated.body.bonus_months, 6);
+      assert.equal(updated.body.compare_price_cents, null);
+      assert.equal(updated.body.badge, null);
+    });
+
+    it('sem provedor configurado a sincronização responde 503', async () => {
+      const plans = await admin.agent.get('/api/admin/plans');
+      const res = await admin.agent.post(`/api/admin/plans/${plans.body[0].id}/sync-provider`, {});
+      assert.equal(res.status, 503);
+      assert.equal(res.body.error.code, 'payments_unavailable');
+    });
+
+    it('nenhuma rota de pagamento do painel responde a um aluno', async () => {
+      const student = await ctx.registerStudent();
+      const res = await student.agent.get('/api/admin/plans/provider-status');
+      assert.equal(res.status, 401);
+    });
+  });
+});

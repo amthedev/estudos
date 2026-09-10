@@ -1,0 +1,334 @@
+/* =====================================================================
+   Foco Elite — Tutor IA (js/app/pages/tutor.js)
+   Prefixo: .tut-  (o chat em si usa as classes canônicas .chat* de components.css)
+   ===================================================================== */
+
+.tut-page {
+  display: flex;
+  flex-direction: column;
+}
+
+/* altura fixa: a página não rola, quem rola é a lista e o histórico de mensagens */
+.tut {
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  gap: var(--s-4);
+  height: calc(100dvh - var(--topbar-h) - 172px);
+  min-height: 460px;
+}
+
+/* ---------------------------------------------------------------------
+   Coluna das conversas
+   --------------------------------------------------------------------- */
+.tut-aside {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.tut-aside-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tut-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tut-search .icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.tut-search .input {
+  padding-left: 32px;
+}
+.tut-search .input::-webkit-search-cancel-button {
+  display: none;
+}
+.tut-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-2);
+  scrollbar-width: thin;
+}
+.tut-conv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tut-conv {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius);
+  transition: background var(--t-fast);
+}
+.tut-conv:hover {
+  background: var(--card-2);
+}
+.tut-conv.is-active {
+  background: var(--primary-soft);
+}
+.tut-conv-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.tut-conv-open:focus-visible {
+  outline: 2px solid var(--primary-2);
+  outline-offset: -2px;
+}
+.tut-conv-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--muted-soft);
+  color: var(--text-2);
+}
+.tut-conv-icon .icon {
+  width: 15px;
+  height: 15px;
+}
+.tut-conv.is-active .tut-conv-icon {
+  background: rgba(77, 163, 255, .18);
+  color: var(--primary-2);
+}
+.tut-conv-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tut-conv-title {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tut-conv.is-active .tut-conv-title {
+  color: var(--text);
+  font-weight: 600;
+}
+.tut-conv-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+  min-width: 0;
+}
+.tut-conv-context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
+}
+.tut-conv-context::after {
+  content: '·';
+  margin-left: 6px;
+}
+.tut-conv-del {
+  flex-shrink: 0;
+  opacity: 0;
+  color: var(--text-3);
+  transition: opacity var(--t-fast), color var(--t-fast);
+}
+.tut-conv:hover .tut-conv-del,
+.tut-conv.is-active .tut-conv-del,
+.tut-conv-del:focus-visible {
+  opacity: 1;
+}
+.tut-conv-del:hover {
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------------
+   Área de chat
+   --------------------------------------------------------------------- */
+.tut-chat {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.tut-box {
+  width: 100%;
+}
+.tut-placeholder {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--s-6);
+  overflow-y: auto;
+}
+.tut-back {
+  display: none;
+}
+.tut-head-main {
+  flex: 1;
+  min-width: 0;
+}
+.tut-head-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tut-head-trail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 3px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  min-width: 0;
+}
+.tut-head-trail a {
+  color: var(--primary-2);
+}
+.tut-head-sep {
+  display: inline-flex;
+  color: var(--text-3);
+}
+
+/* bolhas: coluna que segura bolha + horário */
+.tut-msg {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tut-bubble-error {
+  border-color: rgba(255, 107, 107, .4);
+  background: var(--danger-soft);
+  color: var(--text);
+}
+.tut-stream-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--warning);
+}
+
+/* mensagem inicial da conversa */
+.tut-welcome {
+  margin: auto;
+  max-width: 460px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-6) 0;
+}
+.tut-welcome-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  margin: 0;
+}
+.tut-welcome-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+/* sugestões rápidas */
+.tut-suggestions {
+  padding: var(--s-3) var(--s-4) 0;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  background: var(--bg-2);
+  border-top: 1px solid var(--border);
+}
+.tut-suggestions + .chat-composer {
+  border-top: 0;
+}
+.tut-suggestions::-webkit-scrollbar {
+  display: none;
+}
+.tut-chip {
+  height: 28px;
+  padding: 0 12px;
+  font-size: var(--fs-xs);
+}
+.tut-chip:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------
+   Responsivo: abaixo de 900px a lista e o chat se alternam
+   --------------------------------------------------------------------- */
+@media (max-width: 899px) {
+  .tut {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tut[data-pane='list'] .tut-chat,
+  .tut[data-pane='chat'] .tut-aside {
+    display: none;
+  }
+  .tut-back {
+    display: inline-flex;
+  }
+  .tut-conv-del {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 767px) {
+  .tut-page .page-subtitle {
+    display: none;
+  }
+  .tut-page .page-header {
+    margin-bottom: var(--s-4);
+  }
+  .tut {
+    height: calc(100dvh - var(--topbar-h) - var(--bottom-nav-h) - 116px);
+    min-height: 380px;
+  }
+  .tut-head-trail {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .tut-head-trail span,
+  .tut-head-trail a {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

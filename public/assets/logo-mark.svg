@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Foco de Elite">
+  <defs>
+    <linearGradient id="fe-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F0D28A"/>
+      <stop offset="0.55" stop-color="#D9B25C"/>
+      <stop offset="1" stop-color="#B8892E"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#fe-gold)" d="M14 8h12v48H14z"/>
+  <path fill="url(#fe-gold)" d="M26 8h30l-6 11H26z"/>
+  <path fill="url(#fe-gold)" d="M26 28h22l-6 11H26z"/>
+</svg>

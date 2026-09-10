@@ -1,0 +1,339 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: Promoção por tempo limitado
+      - paragraph [ref=e6]: "Essa oferta acaba em:"
+      - generic [ref=e8]:
+        - generic [ref=e9]: "23"
+        - generic [ref=e11]: ":"
+        - generic [ref=e12]: "59"
+        - generic [ref=e14]: ":"
+        - generic [ref=e15]: "58"
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Para quem quer Medicina, Direito e graduações concorridas
+        - heading "MÉDIA ALTA NO ENEM VEM DE ESTUDAR O QUE MAIS CAI." [level=1] [ref=e21]
+        - paragraph [ref=e22]: O MAPA RESUMO ENEM reúne os conteúdos que mais aparecem na prova em resumos visuais e mapas mentais — organizados por matéria, prontos para revisar com estratégia.
+        - list [ref=e23]:
+          - listitem [ref=e24]:
+            - generic [ref=e25]: ✓
+            - generic [ref=e26]: Resumos visuais e mapas mentais
+          - listitem [ref=e27]:
+            - generic [ref=e28]: ✓
+            - generic [ref=e29]: O que mais cai no ENEM
+          - listitem [ref=e30]:
+            - generic [ref=e31]: ✓
+            - generic [ref=e32]: Todas as matérias organizadas
+          - listitem [ref=e33]:
+            - generic [ref=e34]: ✓
+            - generic [ref=e35]: Material pronto, acesso imediato
+        - generic [ref=e36]:
+          - link "QUERO O MAPA RESUMO ENEM" [ref=e37] [cursor=pointer]:
+            - /url: "#ofertas"
+          - paragraph [ref=e41]: A partir de R$ 19,90 • acesso liberado após a confirmação do pagamento
+          - generic [ref=e43]:
+            - generic [ref=e44]: Garantia de 7 dias
+            - generic [ref=e48]: Pagamento 100% seguro
+            - generic [ref=e52]: Acesso imediato
+            - generic [ref=e56]: Disponível 24 horas
+            - generic [ref=e59]: Material pronto para estudar
+      - generic [ref=e63]:
+        - iframe [ref=e67]:
+          - generic [ref=f1e1]:
+            - generic "Player de vídeo do YouTube" [ref=f1e3]
+            - generic [ref=f1e5]:
+              - generic:
+                - generic:
+                  - generic [ref=f1e6] [cursor=pointer]
+                  - button "Assistir vídeo" [ref=f1e10] [cursor=pointer]
+                  - button "Ocultar controles do player" [ref=f1e14] [cursor=pointer]
+                  - generic [ref=f1e16]:
+                    - generic [ref=f1e21]:
+                      - generic [ref=f1e22]:
+                        - link "Mapa resumo enem" [ref=f1e23] [cursor=pointer]:
+                          - /url: https://www.youtube.com/watch?v=rFrrNhbDjjY
+                        - link "Códex Antigo" [ref=f1e24] [cursor=pointer]:
+                          - /url: /channel/UCidPgDq_o2oIjONRemTihCA
+                      - generic [ref=f1e26]:
+                        - button [ref=f1e27] [cursor=pointer]:
+                          - img "thumbnail-image" [ref=f1e28]
+                        - generic [ref=f1e30]:
+                          - generic: Códex Antigo
+                          - generic: 31 inscritos
+                    - generic [ref=f1e31]:
+                      - button "Compartilhar" [ref=f1e34] [cursor=pointer]
+                      - link "Assistir no YouTube" [ref=f1e45] [cursor=pointer]:
+                        - /url: https://www.youtube.com/watch?v=rFrrNhbDjjY
+                        - generic [ref=f1e46]: Assista no
+        - generic [ref=e68]: Assista ao vídeo de 60 segundos
+    - generic [ref=e70]:
+      - generic [ref=e72]:
+        - generic [ref=e73]: 7 bônus inclusos no Premium
+        - heading "VEJA TUDO QUE VOCÊ RECEBE" [level=2] [ref=e78]
+        - paragraph [ref=e79]: Além do Mapa Resumo completo, o plano Premium libera os 7 materiais que montam a estratégia de quem busca média alta.
+      - generic [ref=e80]:
+        - generic [ref=e82]:
+          - img "Capa do bônus Guia Redação Nota 1000" [ref=e83]
+          - generic [ref=e84]:
+            - paragraph [ref=e85]: Guia Redação Nota 1000
+            - paragraph [ref=e86]: Estrutura pronta, repertórios e modelos para escrever uma redação forte.
+        - generic [ref=e88]:
+          - img "Capa do bônus Mapa de Foco ENEM 800+" [ref=e89]
+          - generic [ref=e90]:
+            - paragraph [ref=e91]: Mapa de Foco ENEM 800+
+            - paragraph [ref=e92]: O que priorizar quando o tempo é curto e a meta é média alta.
+        - generic [ref=e94]:
+          - img "Capa do bônus Interpretação de Questões" [ref=e95]
+          - generic [ref=e96]:
+            - paragraph [ref=e97]: Interpretação de Questões
+            - paragraph [ref=e98]: Decifre enunciados, elimine alternativas e acerte mais questões.
+        - generic [ref=e100]:
+          - img "Capa do bônus 150 Erros que Custam Pontos" [ref=e101]
+          - generic [ref=e102]:
+            - paragraph [ref=e103]: 150 Erros que Custam Pontos
+            - paragraph [ref=e104]: As armadilhas mais comuns da prova — e como não cair nelas.
+        - generic [ref=e106]:
+          - img "Capa do bônus Cronograma de Estudos ENEM" [ref=e107]
+          - generic [ref=e108]:
+            - paragraph [ref=e109]: Cronograma de Estudos ENEM
+            - paragraph [ref=e110]: Rotina semanal pronta para organizar sua preparação.
+        - generic [ref=e112]:
+          - img "Capa do bônus Plano de Estudos Focado" [ref=e113]
+          - generic [ref=e114]:
+            - paragraph [ref=e115]: Plano de Estudos Focado
+            - paragraph [ref=e116]: Um plano direto ao ponto, focado no que mais cai.
+        - generic [ref=e118]:
+          - img "Capa do bônus Guia de Revisão Final ENEM" [ref=e119]
+          - generic [ref=e120]:
+            - paragraph [ref=e121]: Guia de Revisão Final ENEM
+            - paragraph [ref=e122]: A revisão da reta final para chegar afiado no dia da prova.
+        - generic [ref=e124]:
+          - paragraph [ref=e125]: 7 bônus inclusos
+          - paragraph [ref=e126]: Todos liberados junto com o Mapa Resumo Premium.
+          - link "QUERO OS BÔNUS" [ref=e127] [cursor=pointer]:
+            - /url: "#ofertas"
+    - generic [ref=e132]:
+      - generic [ref=e134]:
+        - generic [ref=e135]: Por dentro do material
+        - heading "VEJA COMO É O MAPA RESUMO POR DENTRO" [level=2] [ref=e138]
+        - paragraph [ref=e139]: Resumos visuais, mapas mentais e conexões claras entre os conteúdos que mais caem no ENEM.
+      - generic [ref=e140]:
+        - generic [ref=e142]:
+          - img "Sumário organizado do Mapa Resumo ENEM mostrando todas as matérias" [ref=e144]
+          - paragraph [ref=e147]: "Sumário completo: tudo organizado por matéria"
+        - generic [ref=e149]:
+          - img "Página de conteúdo do Mapa Resumo ENEM com mapa mental de História do Brasil" [ref=e151]
+          - paragraph [ref=e154]: "História visual: Brasil Colonial em mapa mental direto ao ponto"
+    - generic [ref=e157]:
+      - generic [ref=e161]:
+        - generic [ref=e162]: Risco zero
+        - heading "GARANTIA DE 7 DIAS" [level=2] [ref=e163]
+        - paragraph [ref=e164]: Se você sentir que o material não é para você, basta pedir o reembolso em até 7 dias. Sem burocracia, sem perguntas complicadas. Você pode testar o MAPA RESUMO ENEM com total tranquilidade.
+        - list [ref=e165]:
+          - listitem [ref=e166]: Acesso liberado logo após a confirmação do pagamento
+          - listitem [ref=e170]: Revisão dos principais conteúdos do ENEM
+          - listitem [ref=e174]: 7 dias para avaliar e decidir
+        - link "QUERO COMEÇAR HOJE" [ref=e178] [cursor=pointer]:
+          - /url: "#ofertas"
+      - generic [ref=e183]:
+        - generic [ref=e187]:
+          - paragraph [ref=e188]: "7"
+          - paragraph [ref=e189]: DIAS
+        - paragraph [ref=e193]: Sua decisão de estudar com mais estratégia está protegida. Se não gostar, devolvemos seu dinheiro.
+    - generic [ref=e195]:
+      - generic [ref=e196]:
+        - generic [ref=e197]:
+          - generic [ref=e198]: Promoção por tempo limitado — até 62% OFF
+          - generic [ref=e199]:
+            - paragraph [ref=e200]: A promoção acaba em
+            - generic [ref=e202]:
+              - generic [ref=e203]:
+                - generic [ref=e204]: "23"
+                - generic [ref=e205]: horas
+              - generic [ref=e206]: ":"
+              - generic [ref=e207]:
+                - generic [ref=e208]: "59"
+                - generic [ref=e209]: min
+              - generic [ref=e210]: ":"
+              - generic [ref=e211]:
+                - generic [ref=e212]: "58"
+                - generic [ref=e213]: seg
+        - heading "ESCOLHA SEU PLANO" [level=2] [ref=e214]
+        - paragraph [ref=e215]: Comece com o material completo ou vá direto para a estratégia Premium.
+      - generic [ref=e216]:
+        - generic [ref=e218]:
+          - generic [ref=e219]: Plano Básico
+          - heading "PLANO BÁSICO" [level=3] [ref=e220]
+          - generic [ref=e221]:
+            - generic [ref=e222]:
+              - generic [ref=e223]: R$ 49,90
+              - generic [ref=e224]: "-60%"
+            - generic [ref=e225]:
+              - generic [ref=e226]: por apenas
+              - paragraph [ref=e227]: R$ 19,90
+          - paragraph [ref=e228]: à vista ou em até 3x no cartão
+          - paragraph [ref=e229]: O Mapa Resumo ENEM completo com resumos e mapas mentais de todas as áreas do exame.
+          - list [ref=e230]:
+            - listitem [ref=e231]:
+              - generic [ref=e232]: ✓
+              - generic [ref=e233]: MAPA RESUMO ENEM COMPLETO
+            - listitem [ref=e234]:
+              - generic [ref=e235]: ✓
+              - generic [ref=e236]: TODAS AS MATÉRIAS DO ENEM
+          - generic [ref=e237]:
+            - paragraph [ref=e238]: Não inclui
+            - list [ref=e239]:
+              - listitem [ref=e240]:
+                - generic [ref=e245]: Guia Redação Nota 1000
+              - listitem [ref=e246]:
+                - generic [ref=e251]: Mapa de Foco ENEM 800+
+              - listitem [ref=e252]:
+                - generic [ref=e257]: Interpretação de Questões ENEM
+              - listitem [ref=e258]:
+                - generic [ref=e263]: 150 Erros que Custam Pontos
+              - listitem [ref=e264]:
+                - generic [ref=e269]: Cronograma e planos de estudo
+              - listitem [ref=e270]:
+                - generic [ref=e275]: Guia de Revisão Final ENEM
+          - paragraph [ref=e276]: Para quem quer o material principal completo para revisar todas as matérias do ENEM com direção.
+          - link "QUERO O BASIC — R$ 19,90" [ref=e277] [cursor=pointer]:
+            - /url: https://pay.cakto.com.br/3dqs2rc_1060677?utm_source=organic&utm_campaign=&utm_medium=&utm_content=&utm_term=
+        - generic [ref=e281]:
+          - generic [ref=e282]: MAIS ESCOLHIDO
+          - generic [ref=e283]:
+            - generic [ref=e284]: MELHOR CUSTO-BENEFÍCIO
+            - heading "MAPA RESUMO PREMIUM" [level=3] [ref=e285]
+            - generic [ref=e286]:
+              - generic [ref=e287]:
+                - generic [ref=e288]: R$ 79,90
+                - generic [ref=e289]: "-66%"
+              - generic [ref=e290]:
+                - generic [ref=e291]: por apenas
+                - paragraph [ref=e292]: R$ 26,90
+            - paragraph [ref=e293]: à vista ou em até 5x no cartão
+            - paragraph [ref=e294]: Tudo do Plano Básico + os materiais que montam a estratégia de ponta.
+            - list [ref=e295]:
+              - listitem [ref=e296]:
+                - generic [ref=e297]: ✓
+                - generic [ref=e298]: Tudo do Plano Básico
+              - listitem [ref=e299]:
+                - generic [ref=e300]: ✓
+                - generic [ref=e301]: Guia Redação Nota 1000
+              - listitem [ref=e302]:
+                - generic [ref=e303]: ✓
+                - generic [ref=e304]: Mapa de Foco ENEM 800+
+              - listitem [ref=e305]:
+                - generic [ref=e306]: ✓
+                - generic [ref=e307]: INTERPRETAÇÃO DE QUESTÕES ENEM — aprenda a decifrar enunciados, eliminar alternativas e buscar até 70% de acertos
+              - listitem [ref=e308]:
+                - generic [ref=e309]: ✓
+                - generic [ref=e310]: 150 Erros que Custam Pontos no ENEM
+              - listitem [ref=e311]:
+                - generic [ref=e312]: ✓
+                - generic [ref=e313]: Cronograma de Estudos ENEM
+              - listitem [ref=e314]:
+                - generic [ref=e315]: ✓
+                - generic [ref=e316]: Plano de Estudos Focado
+              - listitem [ref=e317]:
+                - generic [ref=e318]: ✓
+                - generic [ref=e319]: Guia de Revisão Final ENEM
+            - paragraph [ref=e320]: "Para quem quer estratégia completa: conteúdo, redação, foco 800+, interpretação de questões e cronograma."
+            - link "QUERO O PREMIUM — R$ 26,90" [ref=e321] [cursor=pointer]:
+              - /url: https://pay.cakto.com.br/37cgw95_1060670?utm_source=organic&utm_campaign=&utm_medium=&utm_content=&utm_term=
+      - table [ref=e328]:
+        - rowgroup [ref=e329]:
+          - row [ref=e330]:
+            - columnheader "O que está incluso" [ref=e331]
+            - columnheader "Basic" [ref=e332]
+            - columnheader "Premium" [ref=e333]
+        - rowgroup [ref=e334]:
+          - row [ref=e335]:
+            - cell "Mapa Resumo ENEM completo" [ref=e336]
+            - cell "✓" [ref=e337]
+            - cell "✓" [ref=e339]
+          - row [ref=e341]:
+            - cell "Todas as matérias do ENEM" [ref=e342]
+            - cell "✓" [ref=e343]
+            - cell "✓" [ref=e345]
+          - row [ref=e347]:
+            - cell "Guia Redação Nota 1000" [ref=e348]
+            - cell [ref=e349]
+            - cell "✓" [ref=e351]
+          - row [ref=e353]:
+            - cell "Mapa de Foco ENEM 800+" [ref=e354]
+            - cell [ref=e355]
+            - cell "✓" [ref=e357]
+          - row [ref=e359]:
+            - cell "Interpretação de Questões ENEM" [ref=e360]
+            - cell [ref=e361]
+            - cell "✓" [ref=e363]
+          - row [ref=e365]:
+            - cell "150 Erros que Custam Pontos" [ref=e366]
+            - cell [ref=e367]
+            - cell "✓" [ref=e369]
+          - row [ref=e371]:
+            - cell "Cronograma de Estudos ENEM" [ref=e372]
+            - cell [ref=e373]
+            - cell "✓" [ref=e375]
+          - row [ref=e377]:
+            - cell "Plano de Estudos Focado" [ref=e378]
+            - cell [ref=e379]
+            - cell "✓" [ref=e381]
+          - row [ref=e383]:
+            - cell "Guia de Revisão Final ENEM" [ref=e384]
+            - cell [ref=e385]
+            - cell "✓" [ref=e387]
+      - generic [ref=e391]:
+        - generic [ref=e392]:
+          - paragraph [ref=e393]: Pagamento simples e seguro
+          - generic [ref=e394]:
+            - generic [ref=e395]: Pix
+            - generic [ref=e398]: Cartão de crédito
+            - generic [ref=e401]: Boleto
+        - list [ref=e404]:
+          - listitem [ref=e405]: Pagamento 100% seguro
+          - listitem [ref=e409]: Acesso imediato após a confirmação do pagamento
+          - listitem [ref=e412]: Pagamento processado pela Cakto
+      - generic [ref=e418]:
+        - generic [ref=e419]: Garantia de 7 dias
+        - generic [ref=e423]: Pagamento 100% seguro
+        - generic [ref=e427]: Acesso imediato
+        - generic [ref=e431]: Disponível 24 horas
+        - generic [ref=e434]: Material pronto para estudar
+    - generic [ref=e439]:
+      - heading "PERGUNTAS FREQUENTES" [level=2] [ref=e441]
+      - generic [ref=e443]:
+        - heading [level=3] [ref=e445]:
+          - button "O material é físico?" [ref=e446] [cursor=pointer]
+        - heading [level=3] [ref=e450]:
+          - button "O conteúdo inclui todas as matérias?" [ref=e451] [cursor=pointer]
+        - heading [level=3] [ref=e455]:
+          - button "Serve para quem está começando agora e para revisão?" [ref=e456] [cursor=pointer]
+        - heading [level=3] [ref=e460]:
+          - button "Esse material garante 800 pontos?" [ref=e461] [cursor=pointer]
+        - heading [level=3] [ref=e465]:
+          - button "Serve para quem quer Medicina?" [ref=e466] [cursor=pointer]
+        - heading [level=3] [ref=e470]:
+          - button "Qual a diferença entre os dois planos?" [ref=e471] [cursor=pointer]
+        - heading [level=3] [ref=e475]:
+          - button "Como recebo?" [ref=e476] [cursor=pointer]
+        - heading [level=3] [ref=e480]:
+          - button "Tem garantia?" [ref=e481] [cursor=pointer]
+    - generic [ref=e485]:
+      - generic [ref=e486]:
+        - paragraph [ref=e487]: MAPA RESUMO ENEM
+        - paragraph [ref=e488]: Material destinado exclusivamente ao aluno. É proibida a reprodução, redistribuição, compartilhamento, revenda ou disponibilização não autorizada do conteúdo.
+      - generic [ref=e489]:
+        - navigation [ref=e490]:
+          - link "Termos de Uso" [ref=e491] [cursor=pointer]:
+            - /url: "#"
+          - link "Política de Privacidade" [ref=e492] [cursor=pointer]:
+            - /url: "#"
+          - link "Contato" [ref=e493] [cursor=pointer]:
+            - /url: "#"
+        - paragraph [ref=e494]: © 2026 MAPA RESUMO ENEM. Todos os direitos reservados.
+  - complementary "Edit with Lovable" [ref=e495]:
+    - link "Edit with Lovable" [ref=e496] [cursor=pointer]:
+      - /url: https://lovable.dev/projects/lovp_4svjh0hczh835rt338nh9renp7?utm_source=organic&utm_campaign=&utm_medium=&utm_content=&utm_term=
+      - generic [ref=e497]: Edit with
+    - button "Dismiss" [ref=e503] [cursor=pointer]

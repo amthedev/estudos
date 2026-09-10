@@ -1,0 +1,21 @@
+/* Shell do aluno */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import './layout.css';
+@import './utilities.css';
+/* páginas do aluno */
+@import './pages/dashboard.css';
+@import './pages/onboarding.css';
+@import './pages/schedule.css';
+@import './pages/subjects.css';
+@import './pages/lesson.css';
+@import './pages/questions.css';
+@import './pages/simulados.css';
+@import './pages/essays.css';
+@import './pages/tutor.css';
+@import './pages/performance.css';
+@import './pages/notes.css';
+@import './pages/profile.css';
+@import './pages/tutoring.css';
+@import './pages/misc.css';

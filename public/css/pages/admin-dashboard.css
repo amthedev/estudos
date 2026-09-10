@@ -1,0 +1,93 @@
+/* =====================================================================
+   Foco Elite — Painel administrativo: visão geral (js/admin/pages/dashboard.js)
+   Prefixo: .adash-  ·  usa apenas tokens de tokens.css.
+   ===================================================================== */
+
+.adash-page > * + * {
+  margin-top: var(--s-5);
+}
+
+/* ---------------------------------------------------------------------
+   Números da operação
+   --------------------------------------------------------------------- */
+.adash-stats {
+  gap: var(--s-3);
+}
+
+/* ---------------------------------------------------------------------
+   Consumo de IA
+   --------------------------------------------------------------------- */
+.adash-ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-3);
+}
+.adash-ai-value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  flex-wrap: wrap;
+}
+.adash-ai-value strong {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.adash-ai-value span {
+  font-size: var(--fs-sm);
+}
+
+/* ---------------------------------------------------------------------
+   Gráficos
+   --------------------------------------------------------------------- */
+.adash-chart {
+  position: relative;
+  height: 260px;
+}
+.adash-chart canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ---------------------------------------------------------------------
+   Listas de últimos alunos e redações
+   --------------------------------------------------------------------- */
+.adash-lists .card-body {
+  padding-top: var(--s-3);
+}
+.adash-row {
+  text-decoration: none;
+  color: inherit;
+}
+.adash-row .list-item-meta {
+  gap: var(--s-2);
+}
+.adash-row-end {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+.adash-score {
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--success);
+}
+
+@media (max-width: 639px) {
+  .adash-chart {
+    height: 220px;
+  }
+  .adash-row-end {
+    align-items: flex-end;
+  }
+  .adash-row .list-item-meta {
+    flex-wrap: wrap;
+  }
+}

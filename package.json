@@ -1,0 +1,45 @@
+{
+  "name": "focoelite",
+  "version": "1.0.0",
+  "description": "Foco Elite — plataforma de estudos para ENEM, Academia do Barro Branco e vestibulares",
+  "private": true,
+  "main": "server/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch --watch-path=server server/index.js",
+    "migrate": "node server/db/migrate.js",
+    "seed": "node server/db/seed/run.js",
+    "seed:demo": "node server/db/seed/run.js --demo",
+    "create-admin": "node scripts/create-admin.js",
+    "setup": "npm run migrate && npm run seed",
+    "test": "NODE_ENV=test node --test --test-concurrency=1 'tests/**/*.test.js'",
+    "build:icons": "node scripts/build-icons.js",
+    "vendor": "node scripts/vendor.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "nodemailer": "^6.9.14",
+    "openai": "^4.56.0",
+    "pg": "^8.12.0",
+    "stripe": "^16.8.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "chart.js": "^4.4.3",
+    "dompurify": "^3.1.6",
+    "lucide-static": "^0.428.0",
+    "marked": "^14.0.0"
+  }
+}

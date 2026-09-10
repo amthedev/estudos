@@ -1,0 +1,212 @@
+'use strict';
+
+/**
+ * Fábrica do Express.
+ *
+ *   const { createApp } = require('./app');
+ *   const app = createApp();
+ *
+ * Ordem dos middlewares: segurança (helmet/CSP) → compressão → cookies → parsers de corpo
+ * (raw para o webhook do Stripe, JSON para o resto) → log → rate limit e CSRF em /api →
+ * rotas de API (auto-mount de server/routes/*.js e server/routes/admin/*.js) → estáticos →
+ * páginas HTML → 404 → errorHandler.
+ */
+const fs = require('node:fs');
+const path = require('node:path');
+const express = require('express');
+const helmet = require('helmet');
+const compression = require('compression');
+const cookieParser = require('cookie-parser');
+const morgan = require('morgan');
+
+const config = require('./config');
+const { requireAdmin } = require('./middleware/auth');
+const { apiLimiter } = require('./middleware/rateLimit');
+const { AppError, notFound, errorHandler } = require('./middleware/errors');
+
+const ROUTES_DIR = path.join(__dirname, 'routes');
+const ADMIN_ROUTES_DIR = path.join(ROUTES_DIR, 'admin');
+const WEBHOOK_PATH = '/api/billing/webhook';
+const CSRF_HEADER_VALUE = 'FocoElite';
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+const PAGES = [
+  { paths: ['/'], file: 'index.html' },
+  { paths: ['/login'], file: 'login.html' },
+  { paths: ['/cadastro'], file: 'cadastro.html' },
+  { paths: ['/recuperar-senha'], file: 'recuperar-senha.html' },
+  { paths: ['/redefinir-senha'], file: 'redefinir-senha.html' },
+  { paths: ['/app', '/app/*'], file: 'app.html' },
+  { paths: ['/admin/login'], file: 'admin-login.html' },
+  { paths: ['/admin', '/admin/*'], file: 'admin.html' },
+];
+
+function buildCsp() {
+  const directives = {
+    'default-src': ["'self'"],
+    'base-uri': ["'self'"],
+    'object-src': ["'none'"],
+    'frame-ancestors': ["'self'"],
+    'form-action': ["'self'"],
+    'script-src': ["'self'", 'https://js.stripe.com'],
+    'script-src-attr': ["'none'"],
+    // 'unsafe-inline' em estilos permite atributos style="" (barras de progresso, gráficos);
+    // fontes carregadas via @import do Google Fonts em app.css/admin.css
+    'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+    'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
+    'img-src': ["'self'", 'https:', 'data:', 'blob:'],
+    'media-src': ["'self'", 'https:', 'blob:'],
+    'frame-src': [
+      'https://www.youtube.com',
+      'https://www.youtube-nocookie.com',
+      'https://player.vimeo.com',
+      'https://js.stripe.com',
+      'https://checkout.stripe.com',
+    ],
+    'connect-src': ["'self'", 'https://api.stripe.com', 'https://js.stripe.com'],
+    'worker-src': ["'self'", 'blob:'],
+    'manifest-src': ["'self'"],
+  };
+  if (config.isProd) directives['upgrade-insecure-requests'] = [];
+  return { useDefaults: false, directives };
+}
+
+/** Carrega os módulos de rota de um diretório; arquivos ausentes ou com erro são ignorados com log. */
+function loadRouteModules(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const entries = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
+    .map((entry) => entry.name)
+    .sort();
+
+  const modules = [];
+  for (const name of entries) {
+    const file = path.join(dir, name);
+    const label = path.relative(config.rootDir, file);
+    try {
+      const mod = require(file);
+      if (!mod || typeof mod.basePath !== 'string' || !mod.basePath.startsWith('/api') || typeof mod.router !== 'function') {
+        throw new Error('o módulo deve exportar { basePath: "/api/...", router }');
+      }
+      modules.push({ name, file, label, basePath: mod.basePath, router: mod.router });
+    } catch (err) {
+      console.error(`[rotas] ignorando ${label}: ${err.message}`);
+      if (!config.isProd && err.stack && !/Cannot find module/.test(err.message)) {
+        console.error(err.stack.split('\n').slice(1, 4).join('\n'));
+      }
+    }
+  }
+  return modules;
+}
+
+function csrfGuard(req, res, next) {
+  if (!MUTATING_METHODS.has(req.method)) return next();
+  if (req.originalUrl.split('?')[0] === WEBHOOK_PATH) return next();
+  if (req.get('x-requested-with') !== CSRF_HEADER_VALUE) {
+    return next(new AppError(403, 'forbidden', 'Requisição bloqueada: cabeçalho de proteção ausente.'));
+  }
+  next();
+}
+
+function sendPage(file) {
+  const absolute = path.join(config.publicDir, file);
+  return (req, res, next) => {
+    res.sendFile(absolute, { headers: { 'Cache-Control': 'no-store' } }, (err) => {
+      if (!err) return;
+      if (err.code === 'ENOENT') {
+        console.warn(`[páginas] arquivo ausente: public/${file}`);
+        return next(new AppError(404, 'not_found', 'Página não encontrada.'));
+      }
+      next(err);
+    });
+  };
+}
+
+function createApp() {
+  const app = express();
+
+  app.disable('x-powered-by');
+  app.set('trust proxy', config.trustProxy);
+  app.set('etag', 'weak');
+  app.locals.version = config.version;
+  app.locals.brandName = config.brandName;
+
+  // ---- segurança e utilitários ---------------------------------------------
+  app.use(
+    helmet({
+      contentSecurityPolicy: buildCsp(),
+      crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+      crossOriginResourcePolicy: { policy: 'same-origin' },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      strictTransportSecurity: config.isProd ? { maxAge: 15552000, includeSubDomains: true } : false,
+    })
+  );
+  app.use(compression());
+  app.use(cookieParser());
+
+  // ---- corpo da requisição ---------------------------------------------------
+  // O webhook do Stripe precisa do corpo bruto para validar a assinatura.
+  app.use(WEBHOOK_PATH, express.raw({ type: 'application/json', limit: '2mb' }));
+  app.use((req, res, next) => {
+    if (req.originalUrl.split('?')[0] === WEBHOOK_PATH) return next();
+    express.json({ limit: '2mb' })(req, res, next);
+  });
+
+  if (config.isDev) {
+    app.use(
+      morgan('dev', {
+        skip: (req) => /^\/(assets|vendor|css|js)\//.test(req.path),
+      })
+    );
+  }
+
+  // ---- API ---------------------------------------------------------------------
+  app.use('/api', apiLimiter, csrfGuard);
+
+  const publicRoutes = loadRouteModules(ROUTES_DIR);
+  const adminRoutes = loadRouteModules(ADMIN_ROUTES_DIR);
+
+  for (const mod of publicRoutes) app.use(mod.basePath, mod.router);
+
+  // /api/admin/auth precisa ficar acessível sem sessão de admin (login);
+  // todo o restante de /api/admin exige requireAdmin.
+  const adminAuth = adminRoutes.find((mod) => mod.name === 'auth.js');
+  if (adminAuth) app.use(adminAuth.basePath, adminAuth.router);
+  app.use('/api/admin', requireAdmin);
+  for (const mod of adminRoutes) {
+    if (mod === adminAuth) continue;
+    app.use(mod.basePath, mod.router);
+  }
+
+  if (!config.isTest) {
+    const mounted = [...publicRoutes, ...adminRoutes].map((mod) => mod.basePath);
+    console.log(`[rotas] ${mounted.length} módulo(s) montado(s): ${mounted.join(', ')}`);
+  }
+
+  app.use('/api', notFound);
+
+  // ---- estáticos e páginas ------------------------------------------------------
+  app.get('/favicon.ico', (req, res) => res.redirect(301, '/assets/favicon.svg'));
+  app.use(
+    express.static(config.publicDir, {
+      index: false,
+      dotfiles: 'ignore',
+      maxAge: config.isProd ? '5m' : 0,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+      },
+    })
+  );
+
+  for (const page of PAGES) app.get(page.paths, sendPage(page.file));
+
+  // ---- erros ------------------------------------------------------------------------
+  app.use(notFound);
+  app.use(errorHandler);
+
+  return app;
+}
+
+module.exports = { createApp, loadRouteModules, CSRF_HEADER_VALUE, WEBHOOK_PATH };

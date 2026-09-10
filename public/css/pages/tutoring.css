@@ -1,0 +1,197 @@
+/* =====================================================================
+   Estilos específicos: Aulas Particulares. Prefixo .tu-
+   ===================================================================== */
+
+.tu-filter {
+  max-width: 320px;
+}
+
+.tu-teachers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: var(--s-4);
+  align-items: start;
+}
+
+.tu-teacher .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.tu-teacher-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.tu-teacher-id {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tu-teacher-id .card-title {
+  margin-bottom: var(--s-2);
+}
+
+.tu-teacher-subjects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+
+.tu-teacher-price {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  white-space: nowrap;
+}
+
+.tu-teacher-price strong {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+}
+
+.tu-teacher-bio {
+  font-size: var(--fs-sm);
+  margin: 0;
+}
+
+.tu-teacher-actions {
+  display: flex;
+  gap: var(--s-2);
+}
+
+/* ---------------------------------------------------------------------
+   Horários livres
+   --------------------------------------------------------------------- */
+.tu-slots {
+  border-top: 1px solid var(--border);
+  padding-top: var(--s-3);
+}
+
+.tu-slots-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
+}
+
+.tu-slots-empty {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.tu-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.tu-day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.tu-day-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.tu-day-weekday {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  text-transform: lowercase;
+}
+
+.tu-day-date {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.tu-day-slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.tu-slot {
+  width: 100%;
+  justify-content: center;
+  padding-inline: var(--s-1);
+}
+
+.tu-day-empty {
+  text-align: center;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  padding: var(--s-2) 0;
+}
+
+/* ---------------------------------------------------------------------
+   Confirmação e agendamentos
+   --------------------------------------------------------------------- */
+.tu-confirm {
+  margin-bottom: var(--s-4);
+}
+
+.tu-booking-end {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ---------------------------------------------------------------------
+   Responsivo
+   --------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .tu-teachers {
+    grid-template-columns: 1fr;
+  }
+
+  .tu-days {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .tu-filter {
+    max-width: none;
+  }
+
+  .tu-teacher-head {
+    flex-wrap: wrap;
+  }
+
+  .tu-teacher-price {
+    text-align: left;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--s-2);
+  }
+
+  .tu-days {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tu-booking {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .tu-booking-end {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}

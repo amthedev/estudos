@@ -1,0 +1,213 @@
+- generic [ref=f6e1]:
+  - link "Pular para o conteúdo" [ref=f6e2] [cursor=pointer]:
+    - /url: "#conteudo"
+  - banner [ref=f6e3]:
+    - strong [ref=f6e6]:
+      - text: ENEM
+      - generic [ref=f6e7]: •
+      - text: Barro Branco
+      - generic [ref=f6e8]: •
+      - text: Vestibulares
+    - generic [ref=f6e10]:
+      - link "Foco de Elite — página inicial" [ref=f6e11] [cursor=pointer]:
+        - /url: /
+        - img "Foco de Elite" [ref=f6e12]
+      - button "Abrir menu" [active] [ref=f6e229] [cursor=pointer]
+  - main [ref=f6e14]:
+    - region [ref=f6e15]:
+      - img "Estudante concentrada durante uma sessão de estudos" [ref=f6e18]
+      - generic [ref=f6e21]:
+        - paragraph [ref=f6e22]: Preparação para sua prova
+        - heading "Foco de Elite. Estude com direção." [level=1] [ref=f6e24]:
+          - generic [ref=f6e25]: Foco de Elite.
+          - generic [ref=f6e26]:
+            - text: Estude com
+            - emphasis [ref=f6e27]: direção.
+        - paragraph [ref=f6e28]: Plano claro. Rotina em movimento.
+        - generic [ref=f6e29]:
+          - link "Começar agora" [ref=f6e30] [cursor=pointer]:
+            - /url: /cadastro
+          - link "Ver planos" [ref=f6e31] [cursor=pointer]:
+            - /url: "#planos"
+        - generic "Recursos da plataforma" [ref=f6e32]:
+          - generic [ref=f6e33]: Plano de estudos
+          - generic [ref=f6e34]: Questões
+          - generic [ref=f6e35]: Simulados
+    - generic "Ciclo de preparação" [ref=f6e36]:
+      - generic [ref=f6e37]:
+        - generic [ref=f6e38]: Estudar
+        - generic [ref=f6e39]: Praticar
+        - generic [ref=f6e40]: Revisar
+        - generic [ref=f6e41]: Evoluir
+    - region [ref=f6e42]:
+      - generic [ref=f6e43]:
+        - generic [ref=f6e45]:
+          - paragraph [ref=f6e46]: Plataforma
+          - heading "Tudo para avançar." [level=2] [ref=f6e47]
+        - generic [ref=f6e48]:
+          - figure [ref=f6e49]:
+            - text: Sua rotina organizada
+            - img "Mesa organizada com cronograma, caderno e materiais de estudo" [ref=f6e50]
+          - generic [ref=f6e51]:
+            - article [ref=f6e52]:
+              - text: "01"
+              - generic [ref=f6e53]: Videoaulas
+            - article [ref=f6e54]:
+              - text: "02"
+              - generic [ref=f6e55]: Questões
+            - article [ref=f6e56]:
+              - text: "03"
+              - generic [ref=f6e57]: Simulados
+            - article [ref=f6e58]:
+              - text: "04"
+              - generic [ref=f6e59]: Cronograma
+            - article [ref=f6e60]:
+              - text: "05"
+              - generic [ref=f6e61]: Redação
+            - article [ref=f6e62]:
+              - text: "06"
+              - generic [ref=f6e63]: Desempenho
+    - region [ref=f6e64]:
+      - generic [ref=f6e65]:
+        - generic [ref=f6e67]:
+          - paragraph [ref=f6e68]: Provas
+          - heading "Escolha sua prova." [level=2] [ref=f6e69]
+        - generic [ref=f6e70]:
+          - generic [ref=f6e71]:
+            - article [ref=f6e72]:
+              - generic [ref=f6e76]:
+                - text: "01"
+                - heading "ENEM" [level=3] [ref=f6e77]
+                - paragraph [ref=f6e78]: Aulas, questões, simulados e redação.
+            - article [ref=f6e79]:
+              - generic [ref=f6e83]:
+                - text: "02"
+                - heading "Barro Branco" [level=3] [ref=f6e84]
+                - paragraph [ref=f6e85]: Conteúdo e prática para a VUNESP.
+            - article [ref=f6e86]:
+              - generic [ref=f6e90]:
+                - text: "03"
+                - heading "Vestibulares" [level=3] [ref=f6e91]
+                - paragraph [ref=f6e92]: FUVEST, UNICAMP e UNESP.
+          - figure [ref=f6e93]:
+            - text: Um foco. Uma direção.
+            - img "Materiais organizados para diferentes tipos de prova" [ref=f6e94]
+    - region [ref=f6e95]:
+      - generic [ref=f6e96]:
+        - generic [ref=f6e98]:
+          - paragraph [ref=f6e99]: Método
+          - heading "Do objetivo à rotina." [level=2] [ref=f6e100]
+        - generic [ref=f6e101]:
+          - figure [ref=f6e102]:
+            - text: Foco. Rota. Progresso.
+            - img "Cartões com alvo, rota e progresso formando três etapas de estudo" [ref=f6e103]
+          - list [ref=f6e104]:
+            - listitem [ref=f6e105]:
+              - generic [ref=f6e106]: "01"
+              - heading "Escolha sua prova" [level=3] [ref=f6e109]
+            - listitem [ref=f6e110]:
+              - generic [ref=f6e111]: "02"
+              - heading "Receba seu plano" [level=3] [ref=f6e114]
+            - listitem [ref=f6e115]:
+              - generic [ref=f6e116]: "03"
+              - heading "Estude e avance" [level=3] [ref=f6e119]
+    - generic [ref=f6e121]:
+      - generic [ref=f6e123]:
+        - paragraph [ref=f6e124]: Planos
+        - heading "Mais tempo. Menor valor." [level=2] [ref=f6e125]
+      - generic [ref=f6e126]:
+        - article [ref=f6e127]:
+          - generic [ref=f6e128]: Mensal
+          - generic [ref=f6e129]:
+            - generic [ref=f6e130]: R$ 44,90
+            - generic [ref=f6e131]: por mês
+          - list [ref=f6e132]:
+            - listitem [ref=f6e133]:
+              - generic [ref=f6e134]: Acesso completo à plataforma
+            - listitem [ref=f6e135]:
+              - generic [ref=f6e136]: Aulas, resumos e questões
+            - listitem [ref=f6e137]:
+              - generic [ref=f6e138]: Cronograma + revisões
+          - link "Escolher Mensal" [ref=f6e139] [cursor=pointer]:
+            - /url: /cadastro?plan=mensal
+        - article [ref=f6e140]:
+          - generic [ref=f6e141]: 6 meses
+          - generic [ref=f6e142]:
+            - generic [ref=f6e143]: R$ 219,90
+            - generic [ref=f6e144]: por 6 meses
+          - generic [ref=f6e145]: Equivale a R$ 36,65 por mês
+          - list [ref=f6e146]:
+            - listitem [ref=f6e147]:
+              - generic [ref=f6e148]: 6 meses de acesso completo
+            - listitem [ref=f6e149]:
+              - generic [ref=f6e150]: Economia de R$ 49,50 em relação ao mensal
+            - listitem [ref=f6e151]:
+              - generic [ref=f6e152]: Tudo do plano Mensal
+          - link "Escolher 6 meses" [ref=f6e153] [cursor=pointer]:
+            - /url: /cadastro?plan=seis-meses
+        - article [ref=f6e154]:
+          - generic [ref=f6e155]: Melhor oferta
+          - generic [ref=f6e156]: 15 meses
+          - generic [ref=f6e157]:
+            - generic [ref=f6e158]: R$ 359,90
+            - generic [ref=f6e159]: por 15 meses
+          - generic [ref=f6e160]: Equivale a R$ 23,99 por mês
+          - list [ref=f6e161]:
+            - listitem [ref=f6e162]:
+              - generic [ref=f6e163]: 3 meses de bônus
+            - listitem [ref=f6e164]:
+              - generic [ref=f6e165]: 15 meses de acesso completo
+            - listitem [ref=f6e166]:
+              - generic [ref=f6e167]: Economia de R$ 313,60 em relação ao mensal
+          - link "Escolher 15 meses" [ref=f6e168] [cursor=pointer]:
+            - /url: /cadastro?plan=anual
+    - region [ref=f6e169]:
+      - generic [ref=f6e170]:
+        - generic [ref=f6e171]:
+          - paragraph [ref=f6e172]: Dúvidas
+          - heading "Respostas rápidas." [level=2] [ref=f6e173]
+        - generic [ref=f6e174]:
+          - group [ref=f6e175]:
+            - generic "Quais provas?" [ref=f6e176] [cursor=pointer]
+          - group [ref=f6e178]:
+            - generic "O que encontro na plataforma?" [ref=f6e179] [cursor=pointer]
+          - group [ref=f6e181]:
+            - generic "Funciona no celular?" [ref=f6e182] [cursor=pointer]
+          - group [ref=f6e184]:
+            - generic "Qual plano vale mais?" [ref=f6e185] [cursor=pointer]
+          - group [ref=f6e187]:
+            - generic "Como começo?" [ref=f6e188] [cursor=pointer]
+    - generic [ref=f6e191]:
+      - generic [ref=f6e192]:
+        - paragraph [ref=f6e193]: Foco de Elite
+        - heading "A prova vai chegar. Chegue preparado." [level=2] [ref=f6e194]:
+          - text: A prova vai chegar.
+          - generic [ref=f6e195]: Chegue preparado.
+      - link "Começar agora" [ref=f6e197] [cursor=pointer]:
+        - /url: /cadastro
+  - contentinfo [ref=f6e198]:
+    - generic [ref=f6e199]:
+      - generic [ref=f6e200]:
+        - img "Foco de Elite" [ref=f6e202]
+        - navigation "Navegação do rodapé" [ref=f6e203]:
+          - generic [ref=f6e204]:
+            - heading "Plataforma" [level=2] [ref=f6e205]
+            - link "Recursos" [ref=f6e206] [cursor=pointer]:
+              - /url: "#plataforma"
+            - link "Método" [ref=f6e207] [cursor=pointer]:
+              - /url: "#metodo"
+            - link "Planos" [ref=f6e208] [cursor=pointer]:
+              - /url: "#planos"
+            - link "Dúvidas" [ref=f6e209] [cursor=pointer]:
+              - /url: "#faq"
+          - generic [ref=f6e210]:
+            - heading "Conta" [level=2] [ref=f6e211]
+            - link "Entrar" [ref=f6e212] [cursor=pointer]:
+              - /url: /login
+            - link "Criar conta" [ref=f6e213] [cursor=pointer]:
+              - /url: /cadastro
+          - generic [ref=f6e214]:
+            - heading "Contato" [level=2] [ref=f6e215]
+            - link "E-mail" [ref=f6e216] [cursor=pointer]:
+              - /url: mailto:contato@focoelite.com.br
+      - generic [ref=f6e217]: © 2026 Foco de Elite.

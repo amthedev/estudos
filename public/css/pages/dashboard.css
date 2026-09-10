@@ -1,0 +1,471 @@
+/* =====================================================================
+   Foco Elite — Início do aluno (js/app/pages/dashboard.js)
+   Prefixo: .dash-  ·  usa apenas tokens de tokens.css.
+   ===================================================================== */
+
+/* frase do dia — discreta, logo abaixo da saudação */
+.dash-quote {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: calc(var(--s-4) * -1) 0 var(--s-5);
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  font-style: italic;
+}
+.dash-quote .icon {
+  color: var(--gold);
+  flex-shrink: 0;
+}
+
+.dash-exam-chip .chip-label {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------------
+   Próxima atividade
+   --------------------------------------------------------------------- */
+.dash-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-6);
+  padding: var(--s-6);
+  margin-bottom: var(--s-4);
+  background:
+    linear-gradient(180deg, rgba(47, 128, 237, .10), rgba(47, 128, 237, 0) 60%),
+    var(--card);
+  border-color: rgba(77, 163, 255, .28);
+}
+.dash-next-body {
+  min-width: 0;
+}
+.dash-next-tag {
+  margin-bottom: var(--s-3);
+}
+.dash-next-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  margin: 0;
+}
+.dash-next-meta {
+  margin-top: var(--s-2);
+}
+.dash-next-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s-2);
+  flex-shrink: 0;
+}
+.dash-next-action .btn-lg {
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+}
+.dash-next-empty {
+  display: block;
+  padding: var(--s-2);
+}
+
+/* ---------------------------------------------------------------------
+   Plano de estudos e métricas
+   --------------------------------------------------------------------- */
+.dash-plan {
+  margin-bottom: var(--s-4);
+}
+.dash-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-bottom: var(--s-3);
+}
+.dash-plan-value {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-2);
+}
+.dash-plan-hint,
+.dash-goal-hint {
+  margin: var(--s-3) 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--s-4);
+  margin-bottom: var(--s-4);
+}
+
+.dash-grid {
+  align-items: start;
+}
+.dash-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------
+   Continue estudando
+   --------------------------------------------------------------------- */
+.dash-continue-body {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+.dash-thumb {
+  position: relative;
+  width: 132px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+}
+.dash-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.dash-thumb-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--dash-color, var(--primary-2));
+  background: var(--muted-soft);
+}
+.dash-thumb-placeholder .icon {
+  width: 22px;
+  height: 22px;
+}
+.dash-continue-main {
+  flex: 1;
+  min-width: 0;
+}
+.dash-continue-subject {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.dash-continue-title {
+  margin: 4px 0 6px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* ---------------------------------------------------------------------
+   Anéis por matéria
+   --------------------------------------------------------------------- */
+.dash-rings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--s-5) var(--s-3);
+  text-align: center;
+}
+.dash-ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+.dash-ring:hover {
+  text-decoration: none;
+}
+.dash-ring:hover .dash-ring-name {
+  color: var(--primary-2);
+}
+.dash-ring-name {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.3;
+  transition: color var(--t-fast);
+}
+.dash-ring-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* ---------------------------------------------------------------------
+   Roteiro de hoje
+   --------------------------------------------------------------------- */
+.dash-today-body {
+  padding: var(--s-2) 0;
+}
+.dash-today-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dash-today-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 8px var(--s-5);
+  transition: background var(--t-fast);
+}
+.dash-today-item + .dash-today-item {
+  border-top: 1px solid var(--border);
+}
+.dash-today-item:hover {
+  background: rgba(148, 163, 184, .05);
+}
+.dash-check {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-3);
+  background: transparent;
+  color: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.dash-check:hover {
+  border-color: var(--success);
+  color: var(--text-3);
+}
+.dash-check:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.dash-today-item.is-done .dash-check {
+  background: var(--success);
+  border-color: var(--success);
+  color: #06210F;
+}
+.dash-today-link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.dash-today-link:hover {
+  text-decoration: none;
+}
+.dash-today-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--dash-color, var(--primary-2)) 16%, transparent);
+  color: var(--dash-color, var(--primary-2));
+}
+.dash-today-main {
+  min-width: 0;
+  display: block;
+}
+.dash-today-title {
+  display: block;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-today-item.is-done .dash-today-title {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.dash-today-item.is-missed .dash-today-title {
+  color: var(--text-3);
+}
+.dash-today-footer {
+  justify-content: flex-start;
+}
+.dash-today-summary {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------
+   Checklist, meta, revisões e matérias difíceis
+   --------------------------------------------------------------------- */
+.dash-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.dash-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  color: var(--text-2);
+  font-size: var(--fs-base);
+}
+.dash-checklist-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-2);
+  background: var(--card-2);
+  color: var(--text-3);
+}
+.dash-checklist-item.is-done {
+  color: var(--text);
+}
+.dash-checklist-item.is-done .dash-checklist-mark {
+  background: var(--success-soft);
+  border-color: transparent;
+  color: var(--success);
+}
+
+.dash-reviews {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  color: inherit;
+  text-decoration: none;
+}
+.dash-reviews:hover {
+  text-decoration: none;
+}
+.dash-reviews-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--primary-soft);
+  color: var(--primary-2);
+}
+.dash-reviews-main {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+.dash-reviews-value {
+  display: block;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.dash-reviews-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.dash-reviews > .icon:last-child {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.dash-weak-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.dash-weak-name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.dash-weak-name:hover {
+  color: var(--primary-2);
+  text-decoration: none;
+}
+.dash-weak-name strong {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.dash-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--dash-color, var(--primary-2));
+}
+
+/* ---------------------------------------------------------------------
+   Responsivo
+   --------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  .dash-next {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s-4);
+    padding: var(--s-5);
+  }
+  .dash-next-action {
+    align-items: stretch;
+  }
+  .dash-next-action .btn-lg {
+    width: 100%;
+    justify-content: center;
+  }
+  .dash-next-action .link-sm {
+    text-align: center;
+  }
+  .dash-next-title {
+    font-size: var(--fs-xl);
+  }
+  .dash-stats {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--s-3);
+  }
+  .dash-continue-body {
+    flex-wrap: wrap;
+  }
+  .dash-thumb {
+    width: 104px;
+  }
+  .dash-continue-body .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .dash-today-item {
+    padding: 8px var(--s-4);
+  }
+  .dash-rings-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+}
+
+@media (max-width: 400px) {
+  .dash-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+}
