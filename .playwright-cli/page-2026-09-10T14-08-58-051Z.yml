@@ -1,0 +1,21 @@
+- generic [ref=f2e2]:
+  - link "Pular para o conteúdo" [ref=f2e3] [cursor=pointer]:
+    - /url: "#page"
+  - main [ref=f2e6]:
+    - generic [ref=f2e344]:
+      - heading "Seu cronograma está pronto" [level=1] [ref=f2e346]
+      - paragraph [ref=f2e347]: Montamos 29 atividades para as próximas semanas.
+      - generic [ref=f2e348]:
+        - generic [ref=f2e349]: Primeira atividade
+        - generic [ref=f2e352]:
+          - strong [ref=f2e353]: "Porcentagem: do conceito ao fator multiplicativo"
+          - generic [ref=f2e354]:
+            - generic [ref=f2e355]: Aula
+            - generic [ref=f2e356]: · Matemática
+            - generic [ref=f2e357]: · 45min
+      - generic [ref=f2e358]:
+        - link "Começar a estudar" [ref=f2e359] [cursor=pointer]:
+          - /url: /app/aulas/70e2f0a5-25f5-44c0-8ebd-0f57cb0ce69d
+        - link "Ir para o meu painel" [ref=f2e361] [cursor=pointer]:
+          - /url: /app
+      - paragraph [ref=f2e363]: Levando você ao painel em instantes…

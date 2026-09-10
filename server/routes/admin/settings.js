@@ -61,7 +61,9 @@ const settingsBody = z
     daily_quotes: dailyQuotes.optional(),
     // provedor de pagamento ativo: as chaves ficam no ambiente, aqui só a escolha
     payment_provider: z
-      .enum(['asaas', 'stripe', 'none'], { errorMap: () => ({ message: 'Escolha Asaas, Stripe ou nenhum.' }) })
+      .enum(['auto', 'asaas', 'stripe', 'none'], {
+        errorMap: () => ({ message: 'Escolha automático, Asaas, Stripe ou nenhum.' }),
+      })
       .optional(),
   })
   .strict()

@@ -44,6 +44,13 @@ const DEFAULTS = Object.freeze({
     simulado_every_days: 14,
   },
   private_lessons_enabled: true,
+  // 'auto' = usa o provedor que tiver chave no ambiente; asaas/stripe/none forçam
+  payment_provider: 'auto',
+  daily_quotes: [
+    'Disciplina transforma sonhos em realidade.',
+    'Disciplina hoje, aprovação amanhã.',
+    'Pequenas evoluções, grandes conquistas.',
+  ],
 });
 
 let cache = null; // Map<key, value>

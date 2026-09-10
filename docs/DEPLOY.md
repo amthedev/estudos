@@ -324,6 +324,34 @@ pg_restore --dbname="postgres://focoelite:SENHA@localhost:5432/focoelite_restore
 Teste a restauração pelo menos uma vez. Backup que nunca foi restaurado é uma suposição, não uma
 garantia.
 
+### Arquivos enviados pelo painel
+
+O que a equipe envia pelo painel (logo dos vestibulares, prints de depoimento, PDFs de edital e de
+prova) fica em `/opt/focoelite/app/uploads`, servido em `https://focoelite.com.br/uploads`. Essa pasta
+**não está no Git** e **não entra no dump do banco**: o banco guarda só o caminho do arquivo. Sem
+backup dela, uma restauração devolve a plataforma com todas as imagens quebradas.
+
+Inclua a pasta no backup:
+
+```bash
+# junto do dump diário, na mesma janela do cron
+tar -czf /var/backups/focoelite/uploads-$(date +%Y%m%d).tar.gz -C /opt/focoelite/app uploads
+```
+
+Confira também que ela sobrevive à atualização. Se você publicar clonando o repositório em uma pasta
+nova a cada versão, mantenha os arquivos fora dela e crie um atalho:
+
+```bash
+sudo mkdir -p /var/lib/focoelite/uploads
+sudo chown focoelite:focoelite /var/lib/focoelite/uploads
+sudo -u focoelite ln -s /var/lib/focoelite/uploads /opt/focoelite/app/uploads
+```
+
+Limites em vigor: imagens até 5 MB, PDF até 20 MB. O tipo é conferido pelos primeiros bytes do
+arquivo, não pelo que o navegador declara, e SVG é recusado de propósito, por ser executável. Se o
+Nginx estiver na frente, o `client_max_body_size` precisa acompanhar (o arquivo de site já vem com
+`25m`; confirme antes de subir um edital grande).
+
 ---
 
 ## 8. Atualizar a aplicação

@@ -1,0 +1,51 @@
+- generic [ref=f2e2]:
+  - link "Pular para o conteúdo" [ref=f2e3] [cursor=pointer]:
+    - /url: "#page"
+  - main [ref=f2e6]:
+    - generic [ref=f2e221]:
+      - generic [ref=f2e222]:
+        - img "Foco de Elite" [ref=f2e223]
+        - paragraph [ref=f2e224]: Vamos montar o seu plano de estudos
+      - generic [ref=f2e225]:
+        - generic [ref=f2e226]:
+          - list [ref=f2e227]:
+            - listitem [ref=f2e228]:
+              - generic [ref=f2e230]: Prova
+            - listitem [ref=f2e231]:
+              - generic [ref=f2e233]: Rotina
+            - listitem [ref=f2e234]:
+              - generic [ref=f2e236]: Nível
+            - listitem [ref=f2e237]:
+              - generic [ref=f2e238]: "4"
+              - generic [ref=f2e239]: Objetivo
+            - listitem [ref=f2e240]:
+              - generic [ref=f2e241]: "5"
+              - generic [ref=f2e242]: Resumo
+          - generic [ref=f2e243]:
+            - generic [ref=f2e244]:
+              - generic [ref=f2e245]: Etapa 4 de 5
+              - strong [ref=f2e246]: 80%
+            - progressbar "Etapa 4 de 5" [ref=f2e247]
+        - generic [ref=f2e249]:
+          - heading "Qual é o seu objetivo?" [level=1] [ref=f2e250]
+          - paragraph [ref=f2e251]: Essas informações aparecem no seu painel e ajustam a intensidade do plano.
+          - generic [ref=f2e253]:
+            - generic [ref=f2e254]:
+              - generic [ref=f2e255] [cursor=pointer]: Curso que você quer
+              - textbox "Curso que você quer" [ref=f2e256]:
+                - /placeholder: "Ex.: Medicina"
+            - generic [ref=f2e257]:
+              - generic [ref=f2e258] [cursor=pointer]: Universidade dos seus sonhos
+              - textbox "Universidade dos seus sonhos" [ref=f2e259]:
+                - /placeholder: "Ex.: USP"
+            - generic [ref=f2e260]:
+              - generic [ref=f2e261] [cursor=pointer]: Nota desejada
+              - textbox "Nota desejada" [ref=f2e262]:
+                - /placeholder: "Ex.: 800 pontos"
+            - generic [ref=f2e263]:
+              - generic [ref=f2e264] [cursor=pointer]: Data da prova
+              - textbox "Data da prova" [ref=f2e265]: 2026-11-08
+              - paragraph [ref=f2e266]: Pré-preenchida com a data prevista do ENEM.
+        - generic [ref=f2e267]:
+          - button "Voltar" [ref=f2e268] [cursor=pointer]
+          - button "Continuar" [ref=f2e270] [cursor=pointer]

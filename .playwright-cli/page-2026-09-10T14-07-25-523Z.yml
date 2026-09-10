@@ -1,0 +1,47 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - link "Foco de Elite — página inicial" [ref=e4] [cursor=pointer]:
+      - /url: /
+      - img "Foco de Elite" [ref=e5]
+    - generic [ref=e6]:
+      - paragraph [ref=e7]: Plataforma de estudos
+      - heading "O sistema diz o que estudar hoje. Você só executa." [level=1] [ref=e8]:
+        - text: O sistema diz o que estudar hoje.
+        - generic [ref=e9]: Você só executa.
+      - list [ref=e10]:
+        - listitem [ref=e11]:
+          - strong [ref=e13]: Cronograma adaptativo
+        - listitem [ref=e14]:
+          - strong [ref=e16]: Questões com resolução
+        - listitem [ref=e17]:
+          - strong [ref=e19]: Redação e tutor com IA
+    - paragraph [ref=e20]: ENEM · Academia do Barro Branco · Vestibulares
+  - main [ref=e21]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - heading "Entrar" [level=1] [ref=e24]
+        - paragraph [ref=e25]: Acesse sua conta para continuar de onde parou.
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28] [cursor=pointer]: E-mail
+          - textbox "E-mail" [active] [ref=e29]
+        - generic [ref=e30]:
+          - generic [ref=e31]:
+            - generic [ref=e32] [cursor=pointer]: Senha
+            - link "Esqueci minha senha" [ref=e33] [cursor=pointer]:
+              - /url: /recuperar-senha
+          - generic [ref=e34]:
+            - textbox "Senha" [ref=e35]
+            - button "Mostrar senha" [ref=e36] [cursor=pointer]
+        - generic [ref=e38] [cursor=pointer]:
+          - checkbox "Lembrar meu e-mail" [ref=e39]
+          - generic [ref=e40]: Lembrar meu e-mail
+        - button "Entrar" [ref=e41] [cursor=pointer]
+      - paragraph [ref=e42]:
+        - text: Ainda não tem conta?
+        - link "Criar conta" [ref=e43] [cursor=pointer]:
+          - /url: /cadastro
+    - paragraph [ref=e44]:
+      - text: © 2026 Foco de Elite ·
+      - link "Voltar ao site" [ref=e45] [cursor=pointer]:
+        - /url: /

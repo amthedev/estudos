@@ -20,6 +20,7 @@ const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 
 const config = require('./config');
+const uploads = require('./services/uploads');
 const { requireAdmin } = require('./middleware/auth');
 const { apiLimiter } = require('./middleware/rateLimit');
 const { AppError, notFound, errorHandler } = require('./middleware/errors');
@@ -27,6 +28,10 @@ const { AppError, notFound, errorHandler } = require('./middleware/errors');
 const ROUTES_DIR = path.join(__dirname, 'routes');
 const ADMIN_ROUTES_DIR = path.join(ROUTES_DIR, 'admin');
 const WEBHOOK_PATH = '/api/billing/webhook';
+// O envio de arquivos do painel chega como corpo bruto (sem multipart).
+const UPLOAD_PATH = '/api/admin/uploads';
+// margem sobre o maior arquivo aceito, para o erro vir do serviço com mensagem clara
+const uploadLimit = `${Math.ceil(uploads.MAX_BYTES / (1024 * 1024)) + 1}mb`;
 const CSRF_HEADER_VALUE = 'FocoElite';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -149,8 +154,13 @@ function createApp() {
   // ---- corpo da requisição ---------------------------------------------------
   // O webhook do Stripe precisa do corpo bruto para validar a assinatura.
   app.use(WEBHOOK_PATH, express.raw({ type: 'application/json', limit: '2mb' }));
+  // POST de arquivo: qualquer tipo, guardado como Buffer. O DELETE do mesmo
+  // caminho continua em JSON, por isso o parser bruto só vale para POST.
+  app.post(UPLOAD_PATH, express.raw({ type: () => true, limit: uploadLimit }));
   app.use((req, res, next) => {
-    if (req.originalUrl.split('?')[0] === WEBHOOK_PATH) return next();
+    const path = req.originalUrl.split('?')[0];
+    if (path === WEBHOOK_PATH) return next();
+    if (path === UPLOAD_PATH && req.method === 'POST') return next();
     express.json({ limit: '2mb' })(req, res, next);
   });
 
@@ -196,6 +206,20 @@ function createApp() {
       maxAge: config.isProd ? '5m' : 0,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+      },
+    })
+  );
+
+  // arquivos enviados pelo painel (logos, prints, editais em PDF)
+  app.use(
+    '/uploads',
+    express.static(uploads.UPLOADS_DIR, {
+      index: false,
+      dotfiles: 'deny',
+      maxAge: config.isProd ? '30d' : 0,
+      setHeaders: (res) => {
+        // nada aqui é executável: o navegador não deve tentar adivinhar o tipo
+        res.setHeader('X-Content-Type-Options', 'nosniff');
       },
     })
   );

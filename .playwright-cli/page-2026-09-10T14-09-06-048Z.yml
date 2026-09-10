@@ -1,0 +1,64 @@
+- generic [ref=f3e2]:
+  - link "Pular para o conteúdo" [ref=f3e3] [cursor=pointer]:
+    - /url: "#page"
+  - generic [ref=f3e4]:
+    - complementary "Menu principal" [ref=f3e5]:
+      - link "Foco de Elite — Início" [ref=f3e7] [cursor=pointer]:
+        - /url: /app
+        - img "Foco de Elite" [ref=f3e8]
+      - navigation "Seções" [ref=f3e9]:
+        - generic [ref=f3e10]:
+          - generic [ref=f3e11]: Hoje
+          - link "Início" [ref=f3e12] [cursor=pointer]:
+            - /url: /app
+          - link "Meu Cronograma" [ref=f3e14] [cursor=pointer]:
+            - /url: /app/cronograma
+          - generic [ref=f3e16]: Estudar
+          - link "Matérias" [ref=f3e17] [cursor=pointer]:
+            - /url: /app/materias
+          - link "Aulas" [ref=f3e19] [cursor=pointer]:
+            - /url: /app/aulas
+          - link "Questões" [ref=f3e21] [cursor=pointer]:
+            - /url: /app/questoes
+          - link "Simulados" [ref=f3e23] [cursor=pointer]:
+            - /url: /app/simulados
+          - link "Redação IA" [ref=f3e25] [cursor=pointer]:
+            - /url: /app/redacao
+          - link "Tutor IA" [ref=f3e27] [cursor=pointer]:
+            - /url: /app/tutor
+          - generic [ref=f3e29]: Acompanhar
+          - link "Provas Anteriores" [ref=f3e30] [cursor=pointer]:
+            - /url: /app/provas-anteriores
+          - link "Revisões" [ref=f3e32] [cursor=pointer]:
+            - /url: /app/revisoes
+          - link "Caderno de Erros" [ref=f3e34] [cursor=pointer]:
+            - /url: /app/caderno-de-erros
+          - link "Meu Desempenho" [ref=f3e36] [cursor=pointer]:
+            - /url: /app/desempenho
+          - link "Meus Resumos" [ref=f3e38] [cursor=pointer]:
+            - /url: /app/resumos
+          - link "Favoritos" [ref=f3e40] [cursor=pointer]:
+            - /url: /app/favoritos
+          - generic [ref=f3e42]: Conta e suporte
+          - link "Aulas Particulares" [ref=f3e43] [cursor=pointer]:
+            - /url: /app/aulas-particulares
+          - link "Perfil" [ref=f3e45] [cursor=pointer]:
+            - /url: /app/perfil
+      - generic [ref=f3e47]:
+        - link "ED Estudante Design ENEM" [ref=f3e48] [cursor=pointer]:
+          - /url: /app/perfil
+          - generic [ref=f3e49]: ED
+          - generic [ref=f3e50]: Estudante Design ENEM
+        - button "Recolher menu" [ref=f3e51] [cursor=pointer]
+        - button "Sair" [ref=f3e53] [cursor=pointer]
+    - banner [ref=f3e55]:
+      - search [ref=f3e57]:
+        - searchbox "Busca global" [ref=f3e58]
+        - generic [aria-hidden]: /
+      - generic [ref=f3e59]:
+        - link "ENEM · 59 dias" [ref=f3e60] [cursor=pointer]:
+          - /url: /app/perfil
+          - generic [ref=f3e61]: ENEM
+          - generic [ref=f3e62]: · 59 dias
+        - button "Menu da conta" [ref=f3e64] [cursor=pointer]: ED
+    - main [ref=f3e66]

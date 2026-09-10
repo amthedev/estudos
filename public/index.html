@@ -3,298 +3,222 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Foco de Elite — plataforma de estudos para ENEM, Barro Branco e vestibulares</title>
-  <meta name="description" content="Plataforma de estudos com videoaulas, questões, simulados, cronograma personalizado, redação, resumos e acompanhamento de desempenho para o ENEM, a Academia do Barro Branco e outros vestibulares.">
+  <title>Foco de Elite — ENEM, Barro Branco e vestibulares</title>
+  <meta name="description" content="Estude com direção para o ENEM, Barro Branco e vestibulares.">
   <meta name="theme-color" content="#07111F">
   <meta property="og:type" content="website">
-  <meta property="og:locale" content="pt_BR">
-  <meta property="og:site_name" content="Foco de Elite">
-  <meta property="og:title" content="Foco de Elite — pare de estudar sem direção">
-  <meta property="og:description" content="Uma preparação organizada para a sua prova: videoaulas, questões, simulados, cronograma, redação e acompanhamento da sua evolução.">
+  <meta property="og:title" content="Foco de Elite — Preparação para sua prova">
+  <meta property="og:description" content="ENEM, Barro Branco e vestibulares.">
   <meta property="og:url" content="https://focoelite.com.br/">
-  <meta property="og:image" content="https://focoelite.com.br/assets/og-cover.svg">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
+  <meta property="og:image" content="https://focoelite.com.br/assets/hero-study-desktop-v4.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Foco de Elite — pare de estudar sem direção">
-  <meta name="twitter:description" content="Uma preparação organizada para a sua prova, do primeiro assunto até o dia da prova.">
-  <meta name="twitter:image" content="https://focoelite.com.br/assets/og-cover.svg">
+  <meta name="twitter:title" content="Foco de Elite — Preparação para sua prova">
+  <meta name="twitter:description" content="ENEM, Barro Branco e vestibulares.">
+  <meta name="twitter:image" content="https://focoelite.com.br/assets/hero-study-desktop-v4.jpg">
   <link rel="canonical" href="https://focoelite.com.br/">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@500;600;700;800&amp;family=Montserrat:wght@600;700&amp;family=Poppins:wght@500;600;700&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@500;600;700;800&amp;family=Montserrat:wght@600;700&amp;family=Poppins:wght@500;600;700&amp;family=Roboto:wght@400;500&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/landing.css">
   <script type="module" src="/js/landing.js"></script>
 </head>
 <body data-page="landing">
-  <a class="lp-skip" href="#conteudo">Pular para o conteúdo</a>
+  <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
 
-  <!-- ==============================================================
-       Navegação fixa. Os links de seção só aparecem quando a seção
-       correspondente tem conteúdo cadastrado (public/js/landing.js).
-       ============================================================== -->
-  <header class="lp-nav" id="nav">
-    <div class="lp-wrap lp-nav-inner">
-      <a class="lp-nav-brand" href="/" aria-label="Foco de Elite — página inicial">
-        <img src="/assets/logo.svg" alt="Foco de Elite" width="184" height="44" fetchpriority="high">
-      </a>
-
-      <nav class="lp-nav-links" id="nav-links" aria-label="Seções da página">
-        <a href="#planos" data-nav-for="planos" hidden>Planos</a>
-        <a href="#como-funciona" data-nav-for="como-funciona" hidden>Como funciona</a>
-        <a href="#perguntas" data-nav-for="perguntas" hidden>Perguntas</a>
-        <div class="lp-nav-mobile-actions">
-          <a class="btn btn-secondary btn-block" href="/login">Entrar</a>
-          <a class="btn btn-primary btn-block" href="/cadastro">Começar agora</a>
-        </div>
-      </nav>
-
-      <div class="lp-nav-actions">
-        <a class="btn btn-ghost" href="/login">Entrar</a>
-        <a class="btn btn-primary" href="/cadastro">Começar agora</a>
+  <header class="nav" id="nav">
+    <div class="nav-rail">
+      <div class="wrap nav-rail-inner">
+        <span class="nav-rail-label">Preparação em movimento</span>
+        <strong>ENEM <i>•</i> Barro Branco <i>•</i> Vestibulares</strong>
       </div>
-
-      <button type="button" class="btn btn-icon btn-ghost lp-nav-toggle" id="nav-toggle"
-              aria-label="Abrir menu" aria-controls="nav-links" aria-expanded="false">
-        <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-menu"></use></svg>
-      </button>
+    </div>
+    <div class="nav-shell">
+      <div class="wrap nav-inner">
+        <a class="nav-brand" href="/" aria-label="Foco de Elite — página inicial">
+          <img src="/assets/logo.svg" alt="Foco de Elite" width="220" height="48">
+        </a>
+        <nav class="nav-links" id="nav-links" aria-label="Seções do site">
+          <a href="#plataforma">Plataforma</a>
+          <a href="#provas">Provas</a>
+          <a href="#metodo">Método</a>
+          <a href="#planos" data-plans-link hidden>Planos</a>
+          <a href="#faq">Dúvidas</a>
+          <div class="nav-mobile-actions">
+            <a class="btn btn-secondary" href="/login">Entrar</a>
+            <a class="btn btn-primary" href="/cadastro">Criar conta</a>
+          </div>
+        </nav>
+        <div class="nav-actions">
+          <a class="btn btn-ghost" href="/login">Entrar</a>
+          <a class="btn btn-primary" href="/cadastro">Começar agora</a>
+        </div>
+        <button type="button" class="btn btn-icon btn-ghost nav-toggle" id="nav-toggle" aria-label="Abrir menu" aria-controls="nav-links" aria-expanded="false">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-menu"></use></svg>
+        </button>
+      </div>
+      <span class="scroll-progress" id="scroll-progress" aria-hidden="true"></span>
     </div>
   </header>
 
   <main id="conteudo">
-    <!-- ============================================================
-         Hero — bloco "hero"
-         ============================================================ -->
-    <section class="lp-hero" id="inicio" aria-labelledby="hero-title">
-      <div class="lp-wrap lp-hero-inner">
-        <div class="lp-hero-copy">
-          <p class="lp-eyebrow" id="hero-eyebrow" hidden></p>
-
-          <h1 id="hero-title" data-state="loading">
-            <span class="skeleton lp-skel lp-skel-title"></span>
-            <span class="skeleton lp-skel lp-skel-title lp-skel-short"></span>
-          </h1>
-
-          <p class="lp-lead" id="hero-subtitle" data-state="loading">
-            <span class="skeleton lp-skel lp-skel-line"></span>
-            <span class="skeleton lp-skel lp-skel-line"></span>
-            <span class="skeleton lp-skel lp-skel-line lp-skel-short"></span>
-          </p>
-
-          <div class="lp-alert alert alert-danger" id="landing-error" role="alert" hidden>
-            <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-triangle-alert"></use></svg>
-            <div class="alert-body">
-              <p class="alert-title">Não foi possível carregar o conteúdo da página.</p>
-              <p class="alert-text">Verifique sua conexão e tente novamente.</p>
-              <div class="alert-actions">
-                <button type="button" class="btn btn-secondary btn-sm" id="landing-retry">Tentar novamente</button>
-              </div>
-            </div>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-media-wrap">
+        <picture>
+          <source media="(max-width: 600px)" srcset="/assets/hero-study-mobile-v4.jpg">
+          <source media="(max-width: 1023px)" srcset="/assets/hero-study-tablet-v4.jpg">
+          <img class="hero-media" src="/assets/hero-study-desktop-v4.jpg" alt="Estudante concentrada durante uma sessão de estudos" width="1672" height="941" fetchpriority="high" decoding="async">
+        </picture>
+      </div>
+      <div class="hero-shade" aria-hidden="true"></div>
+      <div class="wrap hero-content">
+        <div class="hero-copy">
+          <p class="hero-kicker"><span aria-hidden="true"></span> Preparação para sua prova</p>
+          <h1 id="hero-title"><span class="hero-brand">Foco de Elite.</span><span class="hero-promise">Estude com <em>direção.</em></span></h1>
+          <p class="hero-lead">Plano claro. Rotina em movimento.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="/cadastro">Começar agora <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-right"></use></svg></a>
+            <a class="btn btn-hero-quiet btn-lg" href="#planos" data-plans-link hidden>Ver planos</a>
           </div>
-
-          <div class="lp-hero-actions" id="hero-actions" hidden></div>
-
-          <ul class="lp-hero-items" id="hero-items" aria-label="Recursos da plataforma" hidden></ul>
+          <div class="hero-proof" aria-label="Recursos da plataforma"><span>Plano de estudos</span><span>Questões</span><span>Simulados</span></div>
         </div>
+      </div>
+      <a class="hero-scroll" href="#plataforma" aria-label="Ir para a seção Plataforma">
+        <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-down"></use></svg>
+      </a>
+    </section>
 
-        <!-- Composição da tela do aluno: apenas HTML e CSS, sem números.
-             A rotina exibida vem dos passos cadastrados no bloco "como_funciona". -->
-        <div class="lp-hero-visual" id="hero-visual" role="img"
-             aria-label="Ilustração da área do aluno: rotina de estudos organizada dentro da plataforma">
-          <div class="lp-mock" aria-hidden="true">
-            <div class="lp-mock-chrome">
-              <span class="lp-mock-dot"></span>
-              <span class="lp-mock-dot"></span>
-              <span class="lp-mock-dot"></span>
-              <span class="lp-mock-brand" id="mock-brand"></span>
-            </div>
-            <div class="lp-mock-body">
-              <div class="lp-mock-rail">
-                <span class="lp-mock-rail-item is-active">
-                  <svg class="icon"><use href="/assets/icons.svg#i-house"></use></svg>
-                </span>
-                <span class="lp-mock-rail-item">
-                  <svg class="icon"><use href="/assets/icons.svg#i-calendar-days"></use></svg>
-                </span>
-                <span class="lp-mock-rail-item">
-                  <svg class="icon"><use href="/assets/icons.svg#i-square-play"></use></svg>
-                </span>
-                <span class="lp-mock-rail-item">
-                  <svg class="icon"><use href="/assets/icons.svg#i-file-text"></use></svg>
-                </span>
-                <span class="lp-mock-rail-item">
-                  <svg class="icon"><use href="/assets/icons.svg#i-chart-column"></use></svg>
-                </span>
-              </div>
+    <div class="study-rhythm" aria-label="Ciclo de preparação">
+      <div class="wrap study-rhythm-track">
+        <span><b>01</b> Estudar</span><span><b>02</b> Praticar</span><span><b>03</b> Revisar</span><span><b>04</b> Evoluir</span>
+      </div>
+    </div>
 
-              <div class="lp-mock-main">
-                <div class="lp-mock-progress">
-                  <span class="lp-mock-progress-label"></span>
-                  <span class="lp-mock-progress-track"><span class="lp-mock-progress-fill"></span></span>
-                </div>
-                <ul class="lp-mock-routine" id="mock-routine"></ul>
-              </div>
-            </div>
+    <section class="section platform-summary" id="plataforma" aria-labelledby="platform-title">
+      <div class="wrap">
+        <div class="section-intro section-intro-single reveal">
+          <div><p class="eyebrow">Plataforma</p><h2 id="platform-title">Tudo para <span>avançar.</span></h2></div>
+        </div>
+        <div class="platform-showcase">
+          <figure class="section-visual reveal" data-label="Sua rotina organizada">
+            <img src="/assets/platform-study-v2.jpg" srcset="/assets/platform-study-v2-640.jpg 640w, /assets/platform-study-v2-960.jpg 960w, /assets/platform-study-v2.jpg 1536w" sizes="(max-width: 767px) calc(100vw - 36px), (max-width: 1023px) calc(100vw - 56px), 560px" alt="Mesa organizada com cronograma, caderno e materiais de estudo" width="1536" height="1024" loading="lazy" decoding="async">
+          </figure>
+          <div class="platform-tool-grid">
+            <article class="platform-tool reveal" data-index="01" data-tone="blue"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-video"></use></svg><span>Videoaulas</span></article>
+            <article class="platform-tool reveal" data-index="02" data-tone="gold"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-file-text"></use></svg><span>Questões</span></article>
+            <article class="platform-tool reveal" data-index="03" data-tone="green"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-target"></use></svg><span>Simulados</span></article>
+            <article class="platform-tool reveal" data-index="04" data-tone="coral"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-calendar"></use></svg><span>Cronograma</span></article>
+            <article class="platform-tool reveal" data-index="05" data-tone="teal"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-pen-line"></use></svg><span>Redação</span></article>
+            <article class="platform-tool reveal" data-index="06" data-tone="indigo"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-bar-chart-3"></use></svg><span>Desempenho</span></article>
           </div>
-          <div class="lp-mock-glow" aria-hidden="true"></div>
         </div>
       </div>
     </section>
 
-    <!-- ============================================================
-         Dores — bloco "dores"
-         ============================================================ -->
-    <section class="lp-section" id="dores" aria-labelledby="dores-title" hidden>
-      <div class="lp-wrap">
-        <header class="lp-head">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="dores-title" data-slot="title"></h2>
-        </header>
-        <ul class="lp-pains" data-slot="items"></ul>
-        <div class="lp-pains-note" data-slot="body" hidden></div>
-      </div>
-    </section>
-
-    <!-- ============================================================
-         Escolha seu objetivo — bloco "objetivos" + provas em destaque
-         ============================================================ -->
-    <section class="lp-section lp-section-alt" id="objetivos" aria-labelledby="objetivos-title" hidden>
-      <div class="lp-wrap">
-        <header class="lp-head lp-head-center">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="objetivos-title" data-slot="title"></h2>
-          <p class="lp-lead" data-slot="subtitle" hidden></p>
-        </header>
-        <div class="lp-goals" data-slot="cards"></div>
-      </div>
-    </section>
-
-    <!-- ============================================================
-         Como funciona — bloco "como_funciona"
-         ============================================================ -->
-    <section class="lp-section" id="como-funciona" aria-labelledby="como-funciona-title" hidden>
-      <div class="lp-wrap">
-        <header class="lp-head lp-head-center">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="como-funciona-title" data-slot="title"></h2>
-          <p class="lp-lead" data-slot="subtitle" hidden></p>
-        </header>
-        <ol class="lp-steps" data-slot="items"></ol>
-      </div>
-    </section>
-
-    <!-- ============================================================
-         Planos — bloco "planos" + tabela plans
-         ============================================================ -->
-    <section class="lp-section lp-section-alt" id="planos" aria-labelledby="planos-title" hidden>
-      <div class="lp-wrap">
-        <header class="lp-head lp-head-center">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="planos-title" data-slot="title"></h2>
-          <p class="lp-lead" data-slot="subtitle" hidden></p>
-        </header>
-        <div class="lp-plans" data-slot="cards"></div>
-        <div class="lp-compare table-wrap" data-slot="compare" hidden></div>
-        <div class="lp-plans-note" data-slot="body" hidden></div>
-      </div>
-    </section>
-
-    <!-- ============================================================
-         Tudo em um só lugar — bloco "tudo_em_um_lugar"
-         ============================================================ -->
-    <section class="lp-section" id="tudo-em-um-lugar" aria-labelledby="tudo-title" hidden>
-      <div class="lp-wrap">
-        <header class="lp-head lp-head-center">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="tudo-title" data-slot="title"></h2>
-          <p class="lp-lead" data-slot="subtitle" hidden></p>
-        </header>
-        <ul class="lp-everything" data-slot="items"></ul>
-      </div>
-    </section>
-
-    <!-- ============================================================
-         Depoimentos — bloco "depoimentos" + tabela testimonials
-         (a seção some quando não há depoimento cadastrado)
-         ============================================================ -->
-    <section class="lp-section lp-section-alt" id="depoimentos" aria-labelledby="depoimentos-title" hidden>
-      <div class="lp-wrap">
-        <header class="lp-head lp-head-center">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="depoimentos-title" data-slot="title"></h2>
-          <p class="lp-lead" data-slot="subtitle" hidden></p>
-        </header>
-        <ul class="lp-testimonials" data-slot="items"></ul>
-      </div>
-    </section>
-
-    <!-- ============================================================
-         Perguntas frequentes — bloco "faq" + tabela faqs
-         ============================================================ -->
-    <section class="lp-section" id="perguntas" aria-labelledby="perguntas-title" hidden>
-      <div class="lp-wrap lp-faq-wrap">
-        <header class="lp-head lp-head-center">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="perguntas-title" data-slot="title"></h2>
-          <p class="lp-lead" data-slot="subtitle" hidden></p>
-        </header>
-        <div class="lp-faq" data-slot="items"></div>
-      </div>
-    </section>
-
-    <!-- ============================================================
-         Fechamento — bloco "fechamento"
-         ============================================================ -->
-    <section class="lp-cta" id="fechamento" aria-labelledby="fechamento-title" hidden>
-      <div class="lp-wrap">
-        <div class="lp-cta-inner">
-          <p class="lp-eyebrow" data-slot="eyebrow" hidden></p>
-          <h2 id="fechamento-title" data-slot="title"></h2>
-          <p class="lp-lead" data-slot="subtitle" hidden></p>
-          <p class="lp-cta-motto" data-slot="body" hidden></p>
-          <div class="lp-cta-actions" data-slot="actions" hidden></div>
+    <section class="section exams-section" id="provas" aria-labelledby="exams-title">
+      <div class="wrap">
+        <div class="section-intro section-intro-single reveal">
+          <div><p class="eyebrow">Provas</p><h2 id="exams-title">Escolha sua <span>prova.</span></h2></div>
         </div>
+        <div class="exams-showcase">
+          <div class="exam-grid">
+            <article class="exam-card reveal" data-tone="blue">
+              <div class="exam-art" aria-hidden="true"><svg class="icon"><use href="/assets/icons.svg#i-target"></use></svg><i></i><i></i></div>
+              <div class="exam-card-copy"><span>01</span><h3>ENEM</h3><p>Aulas, questões, simulados e redação.</p></div>
+            </article>
+            <article class="exam-card reveal" data-tone="gold">
+              <div class="exam-art" aria-hidden="true"><svg class="icon"><use href="/assets/icons.svg#i-shield"></use></svg><i></i><i></i></div>
+              <div class="exam-card-copy"><span>02</span><h3>Barro Branco</h3><p>Conteúdo e prática para a VUNESP.</p></div>
+            </article>
+            <article class="exam-card reveal" data-tone="green">
+              <div class="exam-art" aria-hidden="true"><svg class="icon"><use href="/assets/icons.svg#i-library"></use></svg><i></i><i></i></div>
+              <div class="exam-card-copy"><span>03</span><h3>Vestibulares</h3><p>FUVEST, UNICAMP e UNESP.</p></div>
+            </article>
+          </div>
+          <figure class="section-visual reveal" data-label="Um foco. Uma direção.">
+            <img src="/assets/exams-study-v2.jpg" srcset="/assets/exams-study-v2-640.jpg 640w, /assets/exams-study-v2-960.jpg 960w, /assets/exams-study-v2.jpg 1536w" sizes="(max-width: 767px) calc(100vw - 36px), (max-width: 1023px) calc(100vw - 56px), 560px" alt="Materiais organizados para diferentes tipos de prova" width="1536" height="1024" loading="lazy" decoding="async">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section method-section" id="metodo" aria-labelledby="method-title">
+      <div class="wrap">
+        <div class="section-intro section-intro-single reveal">
+          <div><p class="eyebrow">Método</p><h2 id="method-title">Do objetivo à <span>rotina.</span></h2></div>
+        </div>
+        <div class="method-showcase">
+          <figure class="section-visual reveal" data-label="Foco. Rota. Progresso.">
+            <img src="/assets/method-study-v2.jpg" srcset="/assets/method-study-v2-640.jpg 640w, /assets/method-study-v2-960.jpg 960w, /assets/method-study-v2.jpg 1536w" sizes="(max-width: 767px) calc(100vw - 36px), (max-width: 1023px) calc(100vw - 56px), 560px" alt="Cartões com alvo, rota e progresso formando três etapas de estudo" width="1536" height="1024" loading="lazy" decoding="async">
+          </figure>
+          <ol class="method-flow reveal">
+            <li class="reveal"><span>01</span><div class="method-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-target"></use></svg></div><div><h3>Escolha sua prova</h3></div></li>
+            <li class="reveal"><span>02</span><div class="method-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-route"></use></svg></div><div><h3>Receba seu plano</h3></div></li>
+            <li class="reveal"><span>03</span><div class="method-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-trending-up"></use></svg></div><div><h3>Estude e avance</h3></div></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="section plans-section" id="planos" hidden>
+      <div class="wrap">
+        <div class="section-intro section-intro-single reveal">
+          <div><p class="eyebrow">Planos</p><h2>Mais tempo. <span>Menor valor.</span></h2></div>
+        </div>
+        <div class="plans-grid" id="plans-grid"></div>
+      </div>
+    </section>
+
+    <section class="section faq-section" id="faq" aria-labelledby="faq-title">
+      <div class="wrap faq-layout">
+        <div class="faq-heading reveal">
+          <p class="eyebrow">Dúvidas</p>
+          <h2 id="faq-title">Respostas <span>rápidas.</span></h2>
+        </div>
+        <div class="faq-list reveal">
+          <details class="faq-item">
+            <summary><span>Quais provas?</span><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg></summary>
+            <div class="faq-answer"><p>ENEM, Barro Branco e principais vestibulares.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary><span>O que encontro na plataforma?</span><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg></summary>
+            <div class="faq-answer"><p>Aulas, questões, simulados, cronograma, redação e desempenho.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary><span>Funciona no celular?</span><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg></summary>
+            <div class="faq-answer"><p>Sim. Acesse pelo celular, tablet ou computador.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary><span>Qual plano vale mais?</span><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg></summary>
+            <div class="faq-answer"><p>O de 15 meses tem o menor valor mensal e 3 meses de bônus.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary><span>Como começo?</span><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg></summary>
+            <div class="faq-answer"><p>Crie sua conta e escolha sua prova.</p></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="wrap final-cta-inner reveal">
+        <div><p class="eyebrow">Foco de Elite</p><h2>A prova vai chegar. <span>Chegue preparado.</span></h2></div>
+        <div class="final-cta-action"><a class="btn btn-primary btn-lg" href="/cadastro">Começar agora <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-right"></use></svg></a></div>
       </div>
     </section>
   </main>
 
-  <footer class="lp-footer">
-    <div class="lp-wrap">
-      <div class="lp-footer-main">
-        <div class="lp-footer-brand">
-          <img src="/assets/logo.svg" alt="Foco de Elite" width="168" height="40" loading="lazy">
-        </div>
-
-        <nav class="lp-footer-nav" aria-label="Rodapé">
-          <div class="lp-footer-col">
-            <h3>Plataforma</h3>
-            <ul>
-              <li><a href="#planos" data-nav-for="planos" hidden>Planos</a></li>
-              <li><a href="#como-funciona" data-nav-for="como-funciona" hidden>Como funciona</a></li>
-              <li><a href="#perguntas" data-nav-for="perguntas" hidden>Perguntas frequentes</a></li>
-            </ul>
-          </div>
-          <div class="lp-footer-col">
-            <h3>Conta</h3>
-            <ul>
-              <li><a href="/login">Entrar</a></li>
-              <li><a href="/cadastro">Criar conta</a></li>
-              <li><a href="/recuperar-senha">Recuperar senha</a></li>
-            </ul>
-          </div>
-          <div class="lp-footer-col">
-            <h3>Suporte</h3>
-            <ul>
-              <li id="footer-support" hidden></li>
-            </ul>
-          </div>
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-main">
+        <div class="footer-brand"><img src="/assets/logo.svg" alt="Foco de Elite" width="220" height="48"></div>
+        <nav class="footer-nav" aria-label="Navegação do rodapé">
+          <div><h2>Plataforma</h2><a href="#plataforma">Recursos</a><a href="#metodo">Método</a><a href="#planos">Planos</a><a href="#faq">Dúvidas</a></div>
+          <div><h2>Conta</h2><a href="/login">Entrar</a><a href="/cadastro">Criar conta</a></div>
+          <div><h2>Contato</h2><a href="mailto:contato@focoelite.com.br">E-mail</a></div>
         </nav>
       </div>
-
-      <div class="lp-footer-bottom">
-        <p>&copy; <span data-year></span> <span id="footer-brand">Foco de Elite</span>. Todos os direitos reservados.</p>
-      </div>
+      <div class="footer-bottom"><span>© <span data-year>2026</span> Foco de Elite.</span></div>
     </div>
   </footer>
 </body>

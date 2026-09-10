@@ -207,15 +207,30 @@ function mountForms() {
   state.forms.push(buildForm(qs('#aset-form-access', state.el), [
     { key: 'require_subscription', label: 'Exigir assinatura ativa para estudar', type: 'switch', width: 'full', hint: 'Com a opção desligada, todo aluno cadastrado tem acesso completo. Liberações manuais continuam valendo nos dois casos.' },
     { key: 'private_lessons_enabled', label: 'Oferecer aulas particulares aos alunos', type: 'switch', width: 'full', hint: 'Desligue para esconder a tela de agendamento na área do aluno.' },
+    {
+      key: 'payment_provider',
+      label: 'Meio de cobrança das assinaturas',
+      type: 'select',
+      width: 'full',
+      options: [
+        { value: 'auto', label: 'Automático (usa o que estiver configurado no servidor)' },
+        { value: 'asaas', label: 'Asaas (cartão, pix e boleto)' },
+        { value: 'stripe', label: 'Stripe (cartão internacional)' },
+        { value: 'none', label: 'Nenhum (assinatura desligada)' },
+      ],
+      hint: 'As chaves de acesso ficam no servidor, nunca aqui. Esta opção só decide qual serviço será usado na hora de cobrar.',
+    },
   ], {
     values: {
       require_subscription: Boolean(s.require_subscription),
       private_lessons_enabled: s.private_lessons_enabled !== false,
+      payment_provider: s.payment_provider || 'auto',
     },
     submitLabel: 'Salvar acesso',
     onSubmit: (values) => save({
       require_subscription: Boolean(values.require_subscription),
       private_lessons_enabled: Boolean(values.private_lessons_enabled),
+      payment_provider: values.payment_provider || 'auto',
     }, 'Regras de acesso atualizadas.'),
   }));
 
