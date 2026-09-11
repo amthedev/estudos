@@ -566,8 +566,15 @@ base64 -i ca-certificate.crt | tr -d '\n'   # cole em PGSSL_CA
 ```
 
 Se preferir arquivos, suba os dois pelo gerenciador de arquivos do painel e aponte
-`PGSSL_CERT_FILE` e `PGSSL_CA_FILE` para eles — o caminho é relativo à raiz da aplicação. Nesse caso,
-confira depois de cada republicação se os arquivos continuam lá.
+`PGSSL_CERT_FILE` e `PGSSL_CA_FILE` para eles — o caminho é relativo à raiz da aplicação, então basta
+`PGSSL_CERT_FILE=certificate.pem`. Nesse caso, confira depois de cada republicação se os arquivos
+continuam lá. É também a saída mais simples quando colar o conteúdo der errado.
+
+Colar certificado em campo de painel costuma dar problema, e a aplicação já absorve o que dá para
+absorver: aspas em volta, `\n` escrito literalmente, quebras de linha viradas espaço e base64 em
+várias linhas chegam todos ao mesmo certificado. O que ela recusa é valor **cortado** — um PEM
+truncado ainda mostra o `-----BEGIN`, e sem essa checagem a aplicação subiria para falhar só ao
+conectar, com uma mensagem do OpenSSL que não diz onde está o erro.
 
 **Nunca versione esses arquivos.** São credenciais e o repositório é público; o `.gitignore` bloqueia
 `.pem`, `.key` e `.crt` justamente para que um `git add` distraído não vaze a chave do banco.

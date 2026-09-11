@@ -228,26 +228,76 @@ function resolvePort(value) {
  * `certificate.pem` como certificado e chave ao mesmo tempo, então bastam dois:
  * PGSSL_CERT com o .pem e PGSSL_CA com o .crt.
  */
+/** Um PEM truncado ainda mostra o -----BEGIN; sem o -----END ele está cortado. */
+function pemCompleto(texto) {
+  const inicios = (texto.match(/-----BEGIN /g) || []).length;
+  const fins = (texto.match(/-----END /g) || []).length;
+  return inicios > 0 && inicios === fins;
+}
+
 function readPem(nomeInline, inline, nomeFile, file) {
-  const raw = (() => {
-    if (inline) return inline.includes('-----BEGIN') ? inline : Buffer.from(inline, 'base64').toString('utf8');
-    if (!file) return '';
+  if (!inline && !file) return null;
+
+  if (!inline) {
     const full = path.isAbsolute(file) ? file : path.join(rootDir, file);
     if (!fs.existsSync(full)) {
       throw new Error(`${nomeFile} aponta para um arquivo que não existe: ${full}`);
     }
-    return fs.readFileSync(full, 'utf8');
-  })();
+    const doArquivo = fs.readFileSync(full, 'utf8').trim();
+    if (!pemCompleto(doArquivo)) {
+      throw new Error(`O arquivo apontado por ${nomeFile} não é um PEM completo: falta -----BEGIN ou -----END. (${full})`);
+    }
+    return doArquivo;
+  }
 
-  const pem = raw.trim();
-  if (!pem) return null;
-  if (!pem.includes('-----BEGIN')) {
+  // Campo de painel maltrata texto colado: pode vir entre aspas, com o "\n"
+  // escrito literalmente no lugar da quebra de linha, ou com a quebra virando
+  // espaço. Nada disso é erro de quem configurou, então é tratado aqui.
+  const limpo = inline.trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
+
+  if (limpo.includes('-----BEGIN')) {
+    if (!pemCompleto(limpo)) {
+      throw new Error(
+        `${nomeInline} chegou cortado: começa com -----BEGIN mas o -----END não veio junto. ` +
+          `Recebi ${limpo.length} caractere(s). Copie o conteúdo inteiro do arquivo, ` +
+          `ou use ${nomeFile} apontando para ele.`
+      );
+    }
+    // PEM colado direto. Se as quebras viraram espaço, o conteúdo em base64
+    // entre os cabeçalhos é remontado — o OpenSSL aceita a linha única.
+    return limpo.includes('\n') ? limpo : limpo.replace(/(-----)\s+/g, '$1\n').replace(/\s+(-----)/g, '\n$1');
+  }
+
+  const semEspaco = limpo.replace(/\s+/g, '');
+  const decodificado = Buffer.from(semEspaco.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+    .toString('utf8')
+    .trim();
+  if (pemCompleto(decodificado)) return decodificado;
+
+  // Decodificou mas veio pela metade: o valor foi cortado na hora de colar.
+  // Isso precisa falhar aqui, senão o erro só apareceria na conexão com o
+  // banco, com uma mensagem do OpenSSL que não ajuda ninguém.
+  if (decodificado.includes('-----BEGIN')) {
     throw new Error(
-      `${inline ? nomeInline : nomeFile} não parece ser um PEM válido: falta o bloco -----BEGIN. ` +
-        'Use o conteúdo do arquivo, em texto ou em base64.'
+      `${nomeInline} chegou cortado: o conteúdo começa certo, com -----BEGIN, mas o -----END não veio junto. ` +
+        `Recebi ${limpo.length} caractere(s) — o valor foi truncado ao ser colado. ` +
+        `Copie o conteúdo inteiro, ou apague ${nomeInline} e use ${nomeFile}=certificate.pem apontando para o arquivo.`
     );
   }
-  return pem;
+
+  // Não deu: o diagnóstico descreve o valor sem imprimi-lo. É certificado, e o
+  // log de deploy fica guardado no painel da hospedagem.
+  const pistas = [`${limpo.length} caractere(s)`];
+  if (/^[A-Za-z0-9+/=_-]+$/.test(semEspaco)) pistas.push('parece base64');
+  else pistas.push('tem caracteres que não existem em base64 — provavelmente não é o conteúdo do arquivo');
+  if (limpo.length >= 4000) pistas.push('perto do limite de 4096 do painel, pode ter sido cortado');
+
+  throw new Error(
+    `${nomeInline} não é um certificado válido: nem em texto nem em base64 aparece o bloco -----BEGIN. ` +
+      `Recebi ${pistas.join('; ')}. ` +
+      `Se o arquivo já está na aplicação, o caminho mais simples é apagar ${nomeInline} e usar ` +
+      `${nomeFile} com o nome do arquivo, por exemplo ${nomeFile}=certificate.pem.`
+  );
 }
 
 const deepFreeze = (obj) => {

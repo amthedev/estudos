@@ -26,6 +26,7 @@ const { execFileSync } = require('node:child_process');
 const raiz = path.join(__dirname, '..');
 
 const PEM_FALSO = ['-----BEGIN CERTIFICATE-----', 'Zm9jbyBkZSBlbGl0ZSAtIHRlc3Rl', '-----END CERTIFICATE-----'].join('\n');
+const base64De = (texto) => Buffer.from(texto, 'utf8').toString('base64');
 
 describe('Certificado do banco na configuração', () => {
   let temp;
@@ -112,5 +113,33 @@ describe('Certificado do banco na configuração', () => {
     const { erro } = carrega({ PGSSL_CA: 'isto-nao-e-um-certificado' });
     assert.match(erro, /PGSSL_CA/);
     assert.match(erro, /-----BEGIN/);
+  });
+
+  it('sobrevive ao que um campo de painel faz com texto colado', () => {
+    // Aspas em volta, o "\n" escrito literalmente, quebras de linha viradas
+    // espaço, base64 quebrado em várias linhas: nada disso é erro de quem
+    // configurou, e todos chegam ao mesmo certificado.
+    const variantes = {
+      'entre aspas': `"${PEM_FALSO}"`,
+      'com \\n literal': PEM_FALSO.replace(/\n/g, '\\n'),
+      'base64 em várias linhas': `${base64De(PEM_FALSO).slice(0, 20)}\n${base64De(PEM_FALSO).slice(20)}`,
+    };
+    for (const [nome, valor] of Object.entries(variantes)) {
+      const { ok, erro } = carrega({ PGSSL_CERT: valor });
+      assert.ok(ok, `${nome} deveria ser aceito, mas deu: ${erro}`);
+      assert.match(ok.cert, /-----BEGIN CERTIFICATE-----/, nome);
+      assert.match(ok.cert, /-----END CERTIFICATE-----/, nome);
+    }
+  });
+
+  it('recusa um certificado que chegou pela metade', () => {
+    // Um valor cortado ao colar ainda mostra o -----BEGIN. Sem esta checagem
+    // a aplicação subiria e só quebraria ao conectar no banco, com uma
+    // mensagem do OpenSSL que não diz onde está o problema.
+    const cortado = base64De(PEM_FALSO).slice(0, 30);
+    const { erro } = carrega({ PGSSL_CERT: cortado });
+    assert.match(erro, /PGSSL_CERT/);
+    assert.match(erro, /cortado/);
+    assert.match(erro, /-----END/);
   });
 });
