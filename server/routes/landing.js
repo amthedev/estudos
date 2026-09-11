@@ -16,7 +16,7 @@
  * Regras:
  *   - Nada de texto de venda, preço, percentual ou depoimento fixo em código: tudo vem do banco.
  *     Se uma tabela estiver vazia, a chave chega vazia e a página omite a seção.
- *   - Identificadores do provedor de pagamento (stripe_*, provider_plan_id) NUNCA saem daqui.
+ *   - Identificadores internos do provedor de pagamento NUNCA saem daqui.
  *   - O marcador {{planos}} (usado nas respostas de perguntas frequentes e nos textos dos blocos)
  *     é substituído pela lista dos planos ativos formatada, uma linha por plano:
  *     "Mensal — R$ 44,90".

@@ -4,7 +4,7 @@
  * Camada única de pagamentos: o resto do sistema fala só com este módulo.
  *
  *   const payments = require('../services/payments');
- *   await payments.getProvider();                                  // 'asaas' | 'stripe' | 'none'
+ *   await payments.getProvider();                                  // 'asaas' | 'none'
  *   await payments.isConfigured();
  *   await payments.status();                                       // para o painel
  *   await payments.createCheckout({ user, plan, successUrl, cancelUrl });  // → { url, provider }
@@ -12,22 +12,20 @@
  *   await payments.syncPlan(plan);
  *   await payments.handleWebhook({ provider, rawBody, headers });
  *
- * Escolha do provedor: a configuração `payment_provider` manda; na falta dela vale
- * PAYMENT_PROVIDER do ambiente; sem nenhuma das duas, usa o Asaas quando ASAAS_API_KEY
- * existir, senão o Stripe quando STRIPE_SECRET_KEY existir, senão 'none'.
+ * O Asaas é o único provedor de cobrança. A configuração `payment_provider=none`
+ * permite desligar pagamentos temporariamente; qualquer outro valor usa o Asaas.
  *
- * A gravação em subscriptions é comum aos dois provedores (applySubscription) e a
- * idempotência do webhook passa pela tabela payment_events (provider + event_id).
+ * A gravação em subscriptions passa por applySubscription e a idempotência do
+ * webhook usa payment_events (provider + event_id).
  */
 const config = require('../../config');
 const db = require('../../db/pool');
 const { getSetting } = require('../settings');
 const asaas = require('./asaas');
-const stripe = require('./stripe');
 
-const ADAPTERS = { asaas, stripe };
-const PROVIDER_NAMES = ['asaas', 'stripe', 'none'];
-const LABELS = { asaas: asaas.label, stripe: stripe.label, none: 'Nenhum' };
+const ADAPTERS = { asaas };
+const PROVIDER_NAMES = ['asaas', 'none'];
+const LABELS = { asaas: asaas.label, none: 'Nenhum' };
 
 const UNAVAILABLE_MESSAGE =
   'Pagamentos indisponíveis no momento: a plataforma ainda não tem um provedor de pagamento configurado. Fale com o suporte.';
@@ -54,14 +52,12 @@ function getAdapter(name) {
 
 /**
  * Provedor ativo: configuração do painel → variável de ambiente → detecção pelas chaves.
- * @returns {Promise<'asaas'|'stripe'|'none'>}
+ * @returns {Promise<'asaas'|'none'>}
  */
 async function getProvider() {
-  const chosen = normalizeName(await getSetting('payment_provider', '')) || normalizeName(process.env.PAYMENT_PROVIDER);
-  if (chosen) return chosen;
-  if (asaas.isConfigured()) return 'asaas';
-  if (stripe.isConfigured()) return 'stripe';
-  return 'none';
+  const stored = normalizeName(await getSetting('payment_provider'));
+  const environment = normalizeName(process.env.PAYMENT_PROVIDER);
+  return stored || environment || 'asaas';
 }
 
 /** Adaptador ativo. Lança 'payments_not_configured' quando não há provedor utilizável. */
@@ -94,7 +90,8 @@ async function status() {
     webhook_configured: Boolean(active && active.webhook_configured),
     webhook_url: `${config.appUrl}/api/billing/webhook`,
     portal_available: Boolean(active && active.portal_available),
-    providers: { asaas: asaas.status(), stripe: stripe.status() },
+    payment_methods: active && Array.isArray(active.payment_methods) ? active.payment_methods : ['credit_card'],
+    providers: { asaas: asaas.status() },
   };
 }
 
@@ -110,9 +107,9 @@ async function ensureCustomer(user) {
  * Abre o checkout do provedor ativo.
  * @returns {Promise<{ url: string, provider: string }>}
  */
-async function createCheckout({ user, plan, successUrl, cancelUrl }) {
+async function createCheckout({ user, plan, paymentMethod, successUrl, cancelUrl }) {
   const adapter = await requireAdapter();
-  const result = await adapter.createCheckout({ user, plan, successUrl, cancelUrl });
+  const result = await adapter.createCheckout({ user, plan, paymentMethod, successUrl, cancelUrl });
   return { provider: adapter.name, ...result };
 }
 
@@ -137,8 +134,8 @@ async function syncPlan(plan) {
 // Gravação comum das assinaturas
 // ---------------------------------------------------------------------------
 /**
- * Cria ou atualiza a assinatura do aluno. Vale para qualquer provedor: a linha é
- * identificada por (provider, provider_subscription_id).
+ * Cria ou atualiza a assinatura Asaas do aluno. A linha é identificada por
+ * (provider, provider_subscription_id).
  * Campos nulos não apagam o que já estava gravado.
  */
 async function applySubscription(tx, data) {
@@ -148,10 +145,9 @@ async function applySubscription(tx, data) {
   return tx.one(
     `INSERT INTO subscriptions (
        user_id, plan_id, provider, provider_customer_id, provider_subscription_id,
-       stripe_customer_id, stripe_subscription_id, status,
-       current_period_start, current_period_end, cancel_at_period_end, canceled_at,
-       last_payment_at, payment_method
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       status, current_period_start, current_period_end, cancel_at_period_end,
+       canceled_at, last_payment_at, payment_method
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (provider, provider_subscription_id) WHERE provider_subscription_id IS NOT NULL
      DO UPDATE SET
        user_id = EXCLUDED.user_id,
@@ -171,8 +167,6 @@ async function applySubscription(tx, data) {
       data.provider,
       data.provider_customer_id ?? null,
       data.provider_subscription_id,
-      data.stripe_customer_id ?? null,
-      data.stripe_subscription_id ?? null,
       data.status,
       data.current_period_start ?? null,
       data.current_period_end ?? null,
@@ -189,7 +183,6 @@ async function applySubscription(tx, data) {
 // ---------------------------------------------------------------------------
 /** Descobre o provedor pelo cabeçalho da requisição. */
 function detectProvider(headers = {}) {
-  if (headers['stripe-signature'] || headers['Stripe-Signature']) return 'stripe';
   if (headers['asaas-access-token'] || headers['Asaas-Access-Token']) return 'asaas';
   return null;
 }
@@ -220,9 +213,13 @@ async function resolveUser(tx, { current, reference, customerId }) {
   return null;
 }
 
-async function resolvePlan(tx, { current, reference }) {
+async function resolvePlan(tx, { current, reference, checkout }) {
   if (reference.plan_id) {
     const row = await tx.one('SELECT * FROM plans WHERE id = $1', [reference.plan_id]);
+    if (row) return row;
+  }
+  if (checkout && checkout.plan_id) {
+    const row = await tx.one('SELECT * FROM plans WHERE id = $1', [checkout.plan_id]);
     if (row) return row;
   }
   if (current && current.plan_id) {
@@ -230,6 +227,47 @@ async function resolvePlan(tx, { current, reference }) {
     if (row) return row;
   }
   return null;
+}
+
+/** Checkout mais provável para um evento cuja assinatura ainda não foi ligada localmente. */
+async function findRelatedCheckout(tx, { userId, planId, subscriptionId, paymentMethod }) {
+  if (!userId) return null;
+  return tx.one(
+    `SELECT *
+       FROM payment_checkouts
+      WHERE provider = 'asaas'
+        AND user_id = $1
+        AND (provider_subscription_id = $2 OR provider_subscription_id IS NULL)
+        AND ($3::text IS NULL OR payment_method = $3)
+        AND ($4::uuid IS NULL OR plan_id = $4)
+        AND status IN ('pending', 'completed', 'paid')
+      ORDER BY CASE WHEN provider_subscription_id = $2 THEN 0 ELSE 1 END,
+               created_at DESC
+      LIMIT 1`,
+    [userId, subscriptionId, paymentMethod || null, planId || null]
+  );
+}
+
+/** Atualiza apenas o estado operacional do checkout; acesso depende da assinatura/pagamento. */
+async function applyAsaasCheckoutEvent(tx, event) {
+  const info = asaas.normalizeEvent(event.payload);
+  if (!info.checkout_id) return { skipped: 'evento sem checkout vinculado' };
+
+  const nextStatus = {
+    CHECKOUT_PAID: 'paid',
+    CHECKOUT_CANCELED: 'canceled',
+    CHECKOUT_EXPIRED: 'expired',
+  }[event.type];
+  if (!nextStatus) return { skipped: 'evento de checkout sem tratamento' };
+
+  const row = await tx.one(
+    `UPDATE payment_checkouts
+        SET status = $2, updated_at = now()
+      WHERE provider = 'asaas' AND provider_checkout_id = $1
+      RETURNING id, provider_checkout_id, status`,
+    [info.checkout_id, nextStatus]
+  );
+  return row || { skipped: 'checkout desconhecido' };
 }
 
 /**
@@ -250,7 +288,24 @@ async function applyAsaasEvent(tx, event) {
     console.warn(`[pagamentos] evento ${event.type} da assinatura ${info.subscription_id} sem aluno correspondente.`);
     return { skipped: 'sem aluno correspondente' };
   }
-  const plan = await resolvePlan(tx, { current, reference });
+  const checkout = await findRelatedCheckout(tx, {
+    userId,
+    planId: reference.plan_id,
+    subscriptionId: info.subscription_id,
+    paymentMethod: info.payment_method,
+  });
+  const plan = await resolvePlan(tx, { current, reference, checkout });
+
+  if (checkout && checkout.provider_subscription_id !== info.subscription_id) {
+    await tx.query(
+      `UPDATE payment_checkouts
+          SET provider_subscription_id = $1,
+              status = CASE WHEN status = 'pending' THEN 'completed' ELSE status END,
+              updated_at = now()
+        WHERE id = $2`,
+      [info.subscription_id, checkout.id]
+    );
+  }
 
   const now = new Date();
   const previousEnd = current && current.current_period_end ? new Date(current.current_period_end) : null;
@@ -263,9 +318,32 @@ async function applyAsaasEvent(tx, event) {
     provider_customer_id: info.customer_id || (current && current.provider_customer_id) || null,
     provider_subscription_id: info.subscription_id,
     cancel_at_period_end: Boolean(current && current.cancel_at_period_end),
+    payment_method: info.payment_method || (checkout && checkout.payment_method) || null,
   };
 
   switch (event.type) {
+    case 'SUBSCRIPTION_CREATED': {
+      const trialEnd = checkout && checkout.trial_ends_at ? new Date(checkout.trial_ends_at) : null;
+      const trialActive = Boolean(
+        checkout &&
+        checkout.payment_method === 'credit_card' &&
+        trialEnd &&
+        trialEnd.getTime() > now.getTime()
+      );
+      if (current && current.last_payment_at) {
+        // Webhooks podem chegar fora de ordem; nunca rebaixe uma cobrança já confirmada.
+        patch.status = current.status;
+        patch.current_period_start = current.current_period_start;
+        patch.current_period_end = current.current_period_end;
+        patch.cancel_at_period_end = current.cancel_at_period_end;
+      } else {
+        patch.status = trialActive ? 'trialing' : 'incomplete';
+        patch.current_period_start = trialActive ? now : null;
+        patch.current_period_end = trialActive ? trialEnd : null;
+        patch.cancel_at_period_end = false;
+      }
+      break;
+    }
     case 'PAYMENT_CONFIRMED':
     case 'PAYMENT_RECEIVED': {
       const paidAt = (info.payment && info.payment.paid_at) || now;
@@ -277,7 +355,7 @@ async function applyAsaasEvent(tx, event) {
       patch.current_period_start = paidAt;
       patch.current_period_end = asaas.addMonths(from, months);
       patch.last_payment_at = paidAt;
-      patch.payment_method = (info.payment && info.payment.method) || null;
+      patch.payment_method = (info.payment && info.payment.method) || patch.payment_method;
       patch.cancel_at_period_end = false;
       break;
     }
@@ -327,6 +405,21 @@ async function applyAsaasEvent(tx, event) {
   }
 
   const row = await applySubscription(tx, patch);
+
+  // No plano anual promocional, a renovação vem depois dos 3 meses de bônus.
+  if (event.type === 'SUBSCRIPTION_CREATED' && plan && Number(plan.bonus_months) > 0) {
+    const firstChargeAt = info.next_due_date || (checkout && checkout.trial_ends_at) || now;
+    const nextDueDate = asaas.toISODate(asaas.addMonths(firstChargeAt, asaas.accessMonths(plan)));
+    try {
+      await asaas.request('PUT', `/subscriptions/${encodeURIComponent(info.subscription_id)}`, {
+        nextDueDate,
+        updatePendingPayments: false,
+      });
+    } catch (err) {
+      console.error(`[asaas] não foi possível adiar a renovação de ${info.subscription_id}: ${err.message}`);
+    }
+  }
+
   return {
     subscription_id: row.id,
     status: row.status,
@@ -345,38 +438,21 @@ async function handleAsaasWebhook({ rawBody, headers }) {
     const base = { provider: 'asaas', event_id: event.event_id, type: event.type, handled };
     if (!isNew) return { ...base, processed: false, duplicate: true };
     if (!handled) return { ...base, processed: true, duplicate: false };
-    const result = await applyAsaasEvent(tx, event);
+    const result = event.type.startsWith('CHECKOUT_')
+      ? await applyAsaasCheckoutEvent(tx, event)
+      : await applyAsaasEvent(tx, event);
     return { ...base, processed: true, duplicate: false, result };
   });
 }
 
-/** Fluxo do webhook do Stripe: o serviço original faz o trabalho; aqui só o registro comum. */
-async function handleStripeWebhook({ rawBody, headers }) {
-  const outcome = await stripe.handleWebhook({ rawBody, headers });
-  try {
-    await db.query(
-      `INSERT INTO payment_events (provider, event_id, type, payload)
-       VALUES ('stripe', $1, $2, $3::jsonb)
-       ON CONFLICT (provider, event_id) DO NOTHING`,
-      [outcome.event_id, outcome.type, JSON.stringify(outcome.payload ?? null)]
-    );
-  } catch (err) {
-    // o registro é histórico: uma falha aqui não invalida o evento já processado
-    console.error(`[pagamentos] não foi possível registrar o evento ${outcome.event_id}: ${err.message}`);
-  }
-  const { payload, ...rest } = outcome;
-  return rest;
-}
-
 /**
- * Processa um evento de webhook do provedor indicado.
+ * Processa um evento de webhook do Asaas.
  * @param {{ provider: string, rawBody: Buffer|string, headers: object }} params
  * @returns {Promise<{ provider, event_id, type, processed, duplicate, handled, result? }>}
  */
 async function handleWebhook({ provider, rawBody, headers = {} }) {
   const name = normalizeName(provider) || detectProvider(headers);
   if (name === 'asaas') return handleAsaasWebhook({ rawBody, headers });
-  if (name === 'stripe') return handleStripeWebhook({ rawBody, headers });
   throw providerError('webhook_unknown_provider', 'Não foi possível identificar o provedor de pagamento deste webhook.');
 }
 

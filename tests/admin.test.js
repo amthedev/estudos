@@ -593,7 +593,7 @@ describe('Painel administrativo', () => {
 
     const integrations = await admin.agent.get('/api/admin/settings/integrations');
     assert.equal(integrations.status, 200);
-    for (const key of ['openrouter', 'stripe', 'smtp']) {
+    for (const key of ['openrouter', 'asaas', 'payments', 'smtp']) {
       assert.ok(integrations.body[key], `faltou o status de ${key}`);
       assert.equal(typeof integrations.body[key].configured, 'boolean');
     }

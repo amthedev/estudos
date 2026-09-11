@@ -3,9 +3,7 @@
 /**
  * Planos de assinatura. Preços em centavos (BRL).
  *
- * Os identificadores do Stripe ficam nulos no seed: o administrador cria/sincroniza
- * o produto e o preço pelo painel (POST /api/admin/plans/:id/sync-stripe) depois de
- * configurar STRIPE_SECRET_KEY no ambiente.
+ * O Asaas recebe preço e ciclo no momento do checkout, sem catálogo externo de planos.
  *
  * Chave de idempotência: `slug`. Planos são "administráveis": o seed só cria os que
  * faltam; para sobrescrever preço e descrição use `node server/db/seed/run.js --force`.
@@ -44,7 +42,7 @@ module.exports = [
     bonus_months: 0,
     // 6 meses no plano mensal custariam R$ 269,40
     compare_price_cents: 26940,
-    trial_days: 0,
+    trial_days: 1,
     highlight: false,
     sort_order: 2,
     features: [
@@ -68,7 +66,7 @@ module.exports = [
     // 15 meses no plano mensal custariam R$ 673,50
     compare_price_cents: 67350,
     badge: 'Melhor oferta',
-    trial_days: 0,
+    trial_days: 1,
     highlight: true,
     sort_order: 3,
     features: [

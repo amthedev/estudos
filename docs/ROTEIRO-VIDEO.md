@@ -224,15 +224,15 @@ rodar durante a gravação). Percorrer os critérios.
 
 ### 15. Assinatura (8:50 – 9:15)
 
-**O que fazer:** abrir **Perfil → Assinatura** (ou a tela de assinatura) e mostrar os planos e o
-portal de cobrança.
+**O que fazer:** abrir **Perfil → Assinatura** (ou a tela de assinatura) e mostrar os planos e as
+formas de pagamento.
 
 **Frases-guia:**
 * "Os planos são os que você cadastrou no painel."
-* "O pagamento é recorrente e acontece dentro do Stripe: nenhum dado de cartão passa pela
+* "O pagamento é recorrente e acontece dentro do Asaas: nenhum dado de cartão passa pela
   plataforma."
-* "Aqui o aluno troca o cartão, vê as faturas e cancela sozinho. Ao cancelar, ele fica com o acesso
-  até o fim do período já pago."
+* "Os planos de 6 e 12 meses têm 24 horas grátis quando o aluno cadastra o cartão. No Pix, o
+  pagamento é imediato."
 
 ---
 
@@ -348,7 +348,7 @@ de liberar acesso. Depois `/admin/configuracoes` — mostrar marca, acesso, e o 
 **Frases-guia:**
 * "É isso, Guilherme. Tudo o que você pediu está no ar e funcionando."
 * "O que falta do seu lado é o conteúdo: as aulas, os vídeos e as questões que vão entrar."
-* "Te mandei junto um checklist com o que preciso de você — chave do OpenRouter, conta do Stripe, domínio
+* "Te mandei junto um checklist com o que preciso de você — chave do OpenRouter, conta do Asaas, domínio
   e o e-mail — e um resumo item por item do que foi entregue."
 * "Qualquer dúvida, me chama que eu gravo um vídeo curto mostrando."
 

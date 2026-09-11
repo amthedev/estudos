@@ -120,7 +120,7 @@
 .aplan-summary {
   gap: var(--s-3);
 }
-.aplan-stripe-ok {
+.aplan-provider-ok {
   display: flex;
   align-items: center;
   gap: var(--s-2);

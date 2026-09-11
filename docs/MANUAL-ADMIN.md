@@ -30,7 +30,7 @@ O menu lateral segue a ordem do trabalho:
 | Vestibulares | `/admin/vestibulares` | Provas atendidas, pesos, conteúdo programático e matriz de redação. |
 | Simulados | `/admin/simulados` | Modelos de simulado prontos. |
 | Redação | `/admin/redacao` | Temas, critérios e redações corrigidas. |
-| Planos | `/admin/planos` | Planos de assinatura e integração com o Stripe. |
+| Planos | `/admin/planos` | Planos de assinatura e integração com o Asaas. |
 | Configurações | `/admin/configuracoes` | Marca, acesso, IA, e-mail e cronograma. |
 | Plataforma | `/admin/plataforma` | Saúde do sistema, uso de IA, erros e auditoria. |
 
@@ -445,10 +445,10 @@ Para desligar o recurso inteiro, use **Configurações › Aulas particulares ha
 Tela: **Planos** (`/admin/planos`).
 
 1. Cadastre cada plano com **nome**, **descrição**, **preço**, **intervalo** (mensal ou anual),
-   **dias de teste**, **lista de vantagens** (uma por linha) e **destaque** (o plano que aparece
+   **24h de teste no cartão** (somente para 6 ou 12 meses), **lista de vantagens** e **destaque** (o plano que aparece
    marcado como recomendado).
-2. Use **Sincronizar com o Stripe** para criar ou atualizar o produto e o preço correspondentes.
-   Sem chaves do Stripe configuradas, os planos ficam visíveis mas o pagamento não abre.
+2. Confira o status do **Asaas** no topo da tela. Sem `ASAAS_API_KEY`, os planos ficam visíveis,
+   mas cartão e Pix permanecem indisponíveis.
 3. A lista de assinaturas mostra quem está ativo, em teste, inadimplente ou cancelado.
 
 Para liberar um aluno específico sem cobrança, use **Alunos › liberar acesso até** — a liberação
@@ -475,7 +475,7 @@ Tela: **Configurações** (`/admin/configuracoes`).
 | **Aulas particulares habilitadas** | Liga ou desliga a área de aulas particulares para o aluno. |
 | **Frases do dia** | Frases motivacionais discretas exibidas no início do aluno. |
 
-Chaves e segredos (OpenRouter, Stripe, SMTP) **não** ficam no painel: vivem em variáveis de ambiente no
+Chaves e segredos (OpenRouter, Asaas, SMTP) **não** ficam no painel: vivem em variáveis de ambiente no
 servidor. A tela mostra apenas o status de cada integração e os últimos caracteres da chave, para
 você conferir que a configuração certa está no ar.
 

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Painel administrativo — assinaturas (somente leitura; a escrita vem dos webhooks do Stripe).
+ * Painel administrativo — assinaturas (somente leitura; a escrita vem dos webhooks do provedor).
  *
  *   GET /api/admin/subscriptions          lista paginada (q, status, plan_id, sort, dir)
  *   GET /api/admin/subscriptions/summary  { total, active, trialing, past_due, canceled, other, mrr_cents }
@@ -72,7 +72,7 @@ router.get(
     };
     if (query.q) {
       const p = add(likePattern(query.q.toLowerCase()));
-      where.push(`(lower(fe_unaccent(u.name)) LIKE fe_unaccent(${p}) OR lower(u.email) LIKE ${p} OR s.stripe_subscription_id LIKE ${p})`);
+      where.push(`(lower(fe_unaccent(u.name)) LIKE fe_unaccent(${p}) OR lower(u.email) LIKE ${p} OR s.provider_subscription_id LIKE ${p})`);
     }
     if (query.status) where.push(`s.status = ${add(query.status)}`);
     if (query.plan_id) where.push(`s.plan_id = ${add(query.plan_id)}`);
@@ -88,7 +88,8 @@ router.get(
       SELECT s.id, s.user_id, u.name AS user_name, u.email AS user_email, u.status AS user_status,
              s.plan_id, p.name AS plan_name, p.slug AS plan_slug, p.interval AS plan_interval, p.interval_count AS plan_interval_count,
              p.price_cents AS plan_price_cents, p.currency AS plan_currency,
-             s.status, s.stripe_subscription_id, s.stripe_customer_id, s.current_period_start, s.current_period_end,
+             s.status, s.provider, s.provider_subscription_id, s.provider_customer_id, s.payment_method,
+             s.current_period_start, s.current_period_end,
              s.cancel_at_period_end, s.canceled_at, s.created_at, s.updated_at,
              (s.status IN ('active','trialing') AND (s.current_period_end IS NULL OR s.current_period_end > now())) AS is_active
       ${fromSql}

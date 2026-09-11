@@ -1,14 +1,14 @@
 'use strict';
 
 /**
- * Assinaturas (provedor selecionável: Asaas ou Stripe).
+ * Assinaturas processadas pelo Asaas.
  *
  *   GET  /api/billing/plans      → planos ativos, sem identificadores do provedor           [pub]
  *   GET  /api/billing/status     → { require_subscription, access, subscription, payment_provider, ... }
- *   POST /api/billing/checkout   { plan_id, tax_id? } → { url, provider }
+ *   POST /api/billing/checkout   { plan_id, payment_method, tax_id? } → { url, provider }
  *   POST /api/billing/portal     → { url|null, provider, invoices }
- *   POST /api/billing/webhook    corpo cru, sem cookie e sem CSRF; o provedor é identificado
- *                                pelo cabeçalho (stripe-signature ou asaas-access-token)
+ *   POST /api/billing/webhook    corpo cru, sem cookie e sem CSRF; autenticado pelo
+ *                                cabeçalho asaas-access-token
  *
  * Sem provedor configurado, checkout e portal respondem 503 com mensagem clara em português.
  * As rotas de aluno NÃO usam requireAccess: quem está sem assinatura precisa chegar ao checkout.
@@ -23,7 +23,7 @@ const { computeAccess, isSubscriptionRequired, ACTIVE_STATUSES } = require('../m
 const { getSetting } = require('../services/settings');
 const payments = require('../services/payments');
 
-/** Colunas visíveis ao público. Nenhum id de provedor (stripe_*, provider_plan_id) sai daqui. */
+/** Colunas visíveis ao público. Nenhum identificador interno do provedor sai daqui. */
 const PUBLIC_PLAN_COLUMNS = [
   'id', 'slug', 'name', 'description', 'price_cents', 'currency', 'interval', 'interval_count',
   'trial_days', 'features', 'highlight', 'sort_order',
@@ -32,7 +32,7 @@ const PUBLIC_PLAN_COLUMNS = [
 
 /**
  * Traduz o erro do provedor em resposta da API.
- * Nada que venha do Asaas ou do Stripe chega cru ao aluno.
+ * Nada que venha do Asaas chega cru ao aluno.
  */
 function toApiError(err) {
   if (err instanceof AppError) return err;
@@ -50,6 +50,8 @@ function toApiError(err) {
       return new AppError(502, 'payment_provider_error', `O provedor de pagamento recusou a operação: ${err.message}`);
     case 'not_found':
       return new AppError(404, 'not_found', err.message);
+    case 'unsupported_payment_method':
+      return new AppError(422, 'validation_error', err.message);
     default:
       return null;
   }
@@ -167,12 +169,13 @@ function publicSubscription(subscription, extra = {}) {
 router.get(
   '/status',
   wrap(async (req, res) => {
-    const [access, required, provider, configured, supportEmail] = await Promise.all([
+    const [access, required, provider, configured, supportEmail, providerStatus] = await Promise.all([
       computeAccess(req.user.id),
       isSubscriptionRequired(),
       payments.getProvider(),
       payments.isConfigured(),
       getSetting('support_email'),
+      payments.status(),
     ]);
 
     // as colunas de provedor não vêm de computeAccess; são lidas só da assinatura em foco
@@ -191,9 +194,8 @@ router.get(
       payment_provider: provider,
       payment_provider_label: payments.LABELS[provider] || provider,
       portal_available: Boolean(configured && adapter && adapter.status().portal_available),
+      payment_methods: providerStatus.payment_methods,
       support_email: supportEmail || null,
-      // compatibilidade: a tela de assinatura usa esta chave para liberar o botão de checkout
-      stripe_configured: configured,
       access: {
         allowed: access.allowed,
         reason: access.reason,
@@ -208,6 +210,7 @@ router.get(
 const checkoutBody = z
   .object({
     plan_id: z.string().uuid(),
+    payment_method: z.enum(['credit_card', 'pix']).default('credit_card'),
     // CPF/CNPJ do pagador: o Asaas exige o documento para emitir pix e boleto
     tax_id: z
       .string()
@@ -245,6 +248,7 @@ router.post(
       payments.createCheckout({
         user: req.user,
         plan,
+        paymentMethod: req.valid.body.payment_method,
         successUrl: `${config.appUrl}/app/perfil?checkout=success`,
         cancelUrl: `${config.appUrl}/app/assinatura?checkout=cancel`,
       })
@@ -253,7 +257,13 @@ router.post(
     if (!checkout || !checkout.url) {
       throw new AppError(502, 'payment_provider_error', 'O provedor de pagamento não devolveu o link de pagamento. Tente novamente.');
     }
-    res.json({ url: checkout.url, provider: checkout.provider, session_id: checkout.session_id || null });
+    res.json({
+      url: checkout.url,
+      provider: checkout.provider,
+      session_id: checkout.session_id || null,
+      payment_method: checkout.payment_method || req.valid.body.payment_method,
+      trial_ends_at: checkout.trial_ends_at || null,
+    });
   })
 );
 

@@ -83,9 +83,6 @@ const envSchema = z.object({
   OPENROUTER_ESSAY_MODEL: z.string().default('qwen/qwen3.8-flash'),
   OPENROUTER_MONTHLY_TOKEN_LIMIT: z.coerce.number().int().nonnegative().default(5_000_000),
 
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
   REQUIRE_SUBSCRIPTION: boolFromEnv(true),
 
   SMTP_HOST: z.string().optional(),
@@ -350,13 +347,6 @@ const config = deepFreeze({
     essayModel: env.OPENROUTER_ESSAY_MODEL,
     monthlyTokenLimit: env.OPENROUTER_MONTHLY_TOKEN_LIMIT,
     enabled: Boolean(env.OPENROUTER_API_KEY),
-  },
-
-  stripe: {
-    secretKey: env.STRIPE_SECRET_KEY ?? null,
-    webhookSecret: env.STRIPE_WEBHOOK_SECRET ?? null,
-    publishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
-    enabled: Boolean(env.STRIPE_SECRET_KEY),
   },
 
   smtp: {

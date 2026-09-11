@@ -19,15 +19,15 @@ que **já está pronto e entregue**.
 | Proteção | Já existe um teto mensal de tokens na plataforma. Defina também um limite de crédito para a chave no painel do OpenRouter. |
 | Se faltar | A plataforma inteira continua funcionando. Só o tutor, a correção de redação e a geração de temas ficam indisponíveis, com aviso ao aluno. |
 
-### 2. Conta no Stripe (cobrança recorrente)
+### 2. Conta no Asaas (cobrança recorrente)
 
 | Item | Detalhe |
 |------|---------|
-| O que é | Conta em [stripe.com](https://stripe.com), com a ativação concluída (CNPJ ou CPF, dados da empresa e conta bancária de recebimento). |
-| Por que | É quem cobra a assinatura mensal e repassa o dinheiro para a sua conta. |
-| O que enviar | A chave secreta (`sk_live_...`) e a chave publicável (`pk_live_...`), por canal privado. |
-| Decisões suas | Os planos: nome, valor e período de cada um. Já existem três sugeridos (Mensal, 6 meses e 15 meses) e todos são editáveis no painel. |
-| Depois | Criamos o endpoint de webhook e sincronizamos os planos com o Stripe. Os passos estão em `docs/DEPLOY.md`, seção 10. |
+| O que é | Conta em [asaas.com](https://www.asaas.com/), com cadastro aprovado e conta bancária de recebimento. Crie também uma conta separada no Sandbox para homologação. |
+| Por que | É quem hospeda o Checkout, guarda o cartão, processa cartão e Pix e repassa o dinheiro. |
+| O que enviar | A chave de API de produção e um token forte exclusivo para o Webhook, por canal privado. |
+| Decisões suas | Os planos: nome, valor e período de cada um. Já existem três sugeridos (Mensal, 6 meses e 1 ano) e todos são editáveis no painel. |
+| Depois | Configuramos o Webhook do Asaas e homologamos cartão e Pix. Os passos estão em `docs/DEPLOY.md`, seção 10. |
 | Se faltar | Os planos aparecem na landing, mas o botão de assinar informa que o pagamento ainda não está disponível. |
 
 ### 3. Domínio e DNS
@@ -106,7 +106,7 @@ que **já está pronto e entregue**.
 - [x] Busca global
 - [x] Perfil com dados, metas, disponibilidade, troca de senha e situação da assinatura
 - [x] Aulas particulares: professores, horários e agendamento
-- [x] Assinatura com planos, checkout e portal de cobrança do Stripe
+- [x] Assinatura com planos, Checkout hospedado do Asaas, cartão e Pix
 - [x] Interface responsiva: funciona no computador, no tablet e no celular, com menu inferior próprio no celular
 
 ### Painel administrativo
@@ -122,7 +122,7 @@ que **já está pronto e entregue**.
 - [x] Simulados: modelos configuráveis
 - [x] Redação: temas, critérios por prova e acompanhamento das redações corrigidas
 - [x] Professores e agendamentos das aulas particulares
-- [x] Planos, com sincronização para o Stripe, e acompanhamento das assinaturas
+- [x] Planos e acompanhamento das assinaturas e tentativas de Checkout do Asaas
 - [x] Configurações: marca, exigência de assinatura, modelos de IA e status das integrações
 - [x] Plataforma: saúde do sistema, uso de IA por dia, por recurso e por aluno, erros e registro de auditoria
 
@@ -144,7 +144,7 @@ que **já está pronto e entregue**.
 2. Contratar o servidor (ou aprovar a opção Railway/Render).
 3. Apontar o DNS de `focoelite.com.br` para o servidor.
 4. Criar a chave do OpenRouter e definir o limite de gasto.
-5. Criar e ativar a conta no Stripe, e decidir os valores dos planos.
+5. Criar e ativar as contas Sandbox e produção do Asaas, e decidir os valores dos planos.
 6. Configurar o e-mail de envio, com SPF e DKIM.
 7. Publicação, HTTPS e backup diário configurados.
 8. Cadastrar a primeira matéria completa: aulas com vídeo e questões.

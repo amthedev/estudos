@@ -4,7 +4,7 @@
 // Lê GET /api/admin/settings e GET /api/admin/settings/integrations e grava
 // por seção em PUT /api/admin/settings (a API aceita envio parcial).
 //
-// Segredos (OpenRouter, Stripe, SMTP) NÃO passam por aqui: vivem em variáveis de
+// Segredos (OpenRouter, Asaas, SMTP) NÃO passam por aqui: vivem em variáveis de
 // ambiente no servidor. A tela mostra apenas o status e a chave mascarada.
 // =====================================================================
 import { api } from '../../core/api.js';
@@ -18,20 +18,24 @@ import { buildForm } from '../../components/form.js';
 
 let state = null;
 
-const STRIPE_EVENTS = [
-  'checkout.session.completed',
-  'customer.subscription.created',
-  'customer.subscription.updated',
-  'customer.subscription.deleted',
-  'invoice.paid',
-  'invoice.payment_failed',
+const ASAAS_EVENTS = [
+  'CHECKOUT_PAID',
+  'CHECKOUT_CANCELED',
+  'CHECKOUT_EXPIRED',
+  'SUBSCRIPTION_CREATED',
+  'SUBSCRIPTION_DELETED',
+  'PAYMENT_CONFIRMED',
+  'PAYMENT_RECEIVED',
+  'PAYMENT_OVERDUE',
+  'PAYMENT_REFUNDED',
+  'PAYMENT_DELETED',
 ];
 
 const SECTIONS = [
   { id: 'brand', label: 'Marca', icon: 'sparkles' },
   { id: 'access', label: 'Acesso', icon: 'shield-check' },
   { id: 'openrouter', label: 'OpenRouter', icon: 'bot' },
-  { id: 'stripe', label: 'Stripe', icon: 'credit-card' },
+  { id: 'asaas', label: 'Asaas', icon: 'credit-card' },
   { id: 'smtp', label: 'E-mail', icon: 'mail' },
   { id: 'schedule', label: 'Cronograma', icon: 'calendar-days' },
   { id: 'tutor', label: 'Tutor', icon: 'message-square' },
@@ -109,24 +113,24 @@ function openrouterAside() {
     </div>`;
 }
 
-function stripeSection() {
-  const stripe = (state.integrations && state.integrations.stripe) || {};
+function asaasSection() {
+  const asaas = (state.integrations && state.integrations.asaas) || {};
   const app = (state.integrations && state.integrations.app) || {};
   const webhookUrl = `${app.app_url || ''}/api/billing/webhook`;
   return html`
     <div class="aset-integration">
       <div class="aset-integration-head">
-        ${stripe.configured ? badge('Integração ativa', 'green', { icon: 'circle-check' }) : badge('Não configurada', 'red', { icon: 'circle-alert' })}
-        ${stripe.mode ? badge(stripe.mode === 'live' ? 'Produção' : 'Teste', stripe.mode === 'live' ? 'blue' : 'gray') : ''}
-        ${stripe.webhook_configured ? badge('Webhook configurado', 'green') : badge('Webhook pendente', 'orange')}
+        ${asaas.configured ? badge('Integração ativa', 'green', { icon: 'circle-check' }) : badge('Não configurada', 'red', { icon: 'circle-alert' })}
+        ${asaas.environment ? badge(asaas.environment === 'production' ? 'Produção' : 'Teste', asaas.environment === 'production' ? 'blue' : 'gray') : ''}
+        ${asaas.webhook_configured ? badge('Webhook configurado', 'green') : badge('Webhook pendente', 'orange')}
       </div>
       <dl class="kv aset-kv">
-        <dt>Chave secreta</dt>
-        <dd>${stripe.secret_key_last4 ? `•••• ${stripe.secret_key_last4}` : 'Não definida'}</dd>
-        <dt>Chave pública</dt>
-        <dd>${stripe.publishable_key ? stripe.publishable_key : 'Não definida'}</dd>
-        <dt>Segredo do webhook</dt>
-        <dd>${stripe.webhook_secret_last4 ? `•••• ${stripe.webhook_secret_last4}` : 'Não definido'}</dd>
+        <dt>Chave da API</dt>
+        <dd>${asaas.key_last4 ? `•••• ${asaas.key_last4}` : 'Não definida'}</dd>
+        <dt>Ambiente</dt>
+        <dd>${asaas.environment === 'production' ? 'Produção' : asaas.environment === 'sandbox' ? 'Sandbox' : 'Não definido'}</dd>
+        <dt>Token do webhook</dt>
+        <dd>${asaas.webhook_configured ? 'Configurado' : 'Não definido'}</dd>
       </dl>
       <div class="field aset-webhook">
         <label class="label" for="aset-webhook-url">URL do webhook</label>
@@ -134,16 +138,16 @@ function stripeSection() {
           <input class="input" id="aset-webhook-url" type="text" value="${webhookUrl}" readonly spellcheck="false">
           <button type="button" class="btn btn-secondary" data-action="copy-webhook">${icon('copy')}<span>Copiar</span></button>
         </div>
-        <p class="hint">Cadastre esta URL no painel do Stripe (Developers → Webhooks) e guarde o segredo em STRIPE_WEBHOOK_SECRET.</p>
+        <p class="hint">Cadastre esta URL em Integrações → Webhooks no Asaas e use o mesmo token definido em ASAAS_WEBHOOK_TOKEN.</p>
       </div>
       <div class="aset-events">
         <span class="label">Eventos necessários</span>
-        <ul class="aset-event-list">${STRIPE_EVENTS.map((event) => html`<li><code>${event}</code></li>`)}</ul>
+        <ul class="aset-event-list">${ASAAS_EVENTS.map((event) => html`<li><code>${event}</code></li>`)}</ul>
       </div>
       ${alertBox({
         type: 'info',
-        title: 'As chaves do Stripe ficam no servidor',
-        text: 'STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY e STRIPE_WEBHOOK_SECRET vêm das variáveis de ambiente. Os preços e planos são cadastrados em Planos.',
+        title: 'As chaves do Asaas ficam no servidor',
+        text: 'ASAAS_API_KEY e ASAAS_WEBHOOK_TOKEN vêm das variáveis de ambiente. Cartões são coletados somente no checkout seguro do Asaas.',
         actions: html`<a class="btn btn-secondary btn-sm" href="/admin/planos">${icon('credit-card')}<span>Ir para planos</span></a>`,
       })}
     </div>`;
@@ -213,9 +217,7 @@ function mountForms() {
       type: 'select',
       width: 'full',
       options: [
-        { value: 'auto', label: 'Automático (usa o que estiver configurado no servidor)' },
-        { value: 'asaas', label: 'Asaas (cartão, pix e boleto)' },
-        { value: 'stripe', label: 'Stripe (cartão internacional)' },
+        { value: 'asaas', label: 'Asaas (cartão e Pix)' },
         { value: 'none', label: 'Nenhum (assinatura desligada)' },
       ],
       hint: 'As chaves de acesso ficam no servidor, nunca aqui. Esta opção só decide qual serviço será usado na hora de cobrar.',
@@ -224,13 +226,13 @@ function mountForms() {
     values: {
       require_subscription: Boolean(s.require_subscription),
       private_lessons_enabled: s.private_lessons_enabled !== false,
-      payment_provider: s.payment_provider || 'auto',
+      payment_provider: s.payment_provider === 'none' ? 'none' : 'asaas',
     },
     submitLabel: 'Salvar acesso',
     onSubmit: (values) => save({
       require_subscription: Boolean(values.require_subscription),
       private_lessons_enabled: Boolean(values.private_lessons_enabled),
-      payment_provider: values.payment_provider || 'auto',
+      payment_provider: values.payment_provider || 'asaas',
     }, 'Regras de acesso atualizadas.'),
   }));
 
@@ -353,7 +355,7 @@ function paint() {
     ${sectionCard({ id: 'brand', title: 'Marca', subtitle: 'Nome, logo e contato de suporte.', icon: 'sparkles', aside: brandAside() })}
     ${sectionCard({ id: 'access', title: 'Acesso', subtitle: 'Quem pode estudar na plataforma.', icon: 'shield-check' })}
     ${sectionCard({ id: 'openrouter', title: 'OpenRouter', subtitle: 'Tutor, correção de redação e geração de temas.', icon: 'bot', aside: openrouterAside() })}
-    ${sectionCard({ id: 'stripe', title: 'Stripe', subtitle: 'Pagamentos e assinaturas.', icon: 'credit-card', body: stripeSection() })}
+    ${sectionCard({ id: 'asaas', title: 'Asaas', subtitle: 'Cartão, Pix e assinaturas.', icon: 'credit-card', body: asaasSection() })}
     ${sectionCard({ id: 'smtp', title: 'E-mail', subtitle: 'Envio de mensagens automáticas.', icon: 'mail', body: smtpSection() })}
     ${sectionCard({ id: 'schedule', title: 'Cronograma', subtitle: 'Revisões e blocos padrão do plano de estudos.', icon: 'calendar-days' })}
     ${sectionCard({ id: 'tutor', title: 'Tutor IA', subtitle: 'Como o tutor conversa com o aluno.', icon: 'message-square' })}

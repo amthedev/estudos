@@ -156,7 +156,7 @@ function planCard(plan) {
         <span class="period">por ${period}</span>
       </div>
       ${monthly ? html`<div class="plan-equiv">Equivale a ${fmtMoney(monthly)} por mês</div>` : ''}
-      ${trial ? html`<div class="plan-equiv">${trial} ${trial === 1 ? 'dia grátis' : 'dias grátis'} para testar</div>` : ''}
+      ${trial ? html`<div class="plan-equiv">24h grátis com cartão</div>` : ''}
       ${features.length
         ? html`<ul class="plan-features">${features.map((feature) => html`<li>${icon('check')}<span>${feature}</span></li>`)}</ul>`
         : html`<div class="plan-features"></div>`}

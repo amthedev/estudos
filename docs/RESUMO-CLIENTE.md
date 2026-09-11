@@ -11,7 +11,7 @@ que você pediu ficou dentro do sistema. É bem detalhado de propósito: assim v
 tudo sem precisar decorar nada e sabe exatamente onde clicar quando for usar.
 
 Junto com este resumo vão um vídeo em que percorro a plataforma inteira, um checklist do que ainda
-preciso de você para colocar no ar (chave do OpenRouter, conta do Stripe, domínio, e-mail, logo definitiva
+preciso de você para colocar no ar (chave do OpenRouter, conta do Asaas, domínio, e-mail, logo definitiva
 e os vídeos das aulas) e a documentação técnica.
 
 ---
@@ -253,7 +253,7 @@ Tudo o que aparece para o aluno é cadastrado por você, sem depender de program
   corrigidas.
 * **Professores e agendamentos** — cadastro dos professores, matérias, horários e as aulas
   particulares marcadas, para confirmar ou cancelar.
-* **Planos e assinaturas** — criação e edição dos planos, sincronização com o Stripe e a lista de
+* **Planos e assinaturas** — criação e edição dos planos, cobrança pelo Asaas e lista de
   assinaturas ativas.
 * **Configurações** — nome da marca, se a assinatura é obrigatória para usar a plataforma, modelos de
   inteligência artificial e o status das integrações.
@@ -276,16 +276,16 @@ pode fazer por minuto, para ninguém conseguir "torrar" a sua conta.
 O aluno vê os professores cadastrados, com matéria e horários disponíveis, e agenda. O agendamento
 aparece no seu painel para confirmar ou cancelar, e ele acompanha as aulas marcadas na própria tela.
 
-## 28. Pagamento recorrente pelo Stripe
+## 28. Pagamento recorrente pelo Asaas
 
-A assinatura é recorrente e processada pelo Stripe. **Nenhum dado de cartão passa pela plataforma** —
-o pagamento acontece dentro do ambiente do Stripe, que é quem guarda o cartão e cobra todo mês.
+A assinatura é recorrente e processada pelo Asaas. **Nenhum dado de cartão passa pela plataforma**:
+o Checkout hospedado pelo Asaas coleta o cartão ou processa o Pix.
 
 Os planos são cadastrados por você no painel, com nome, valor, período e o que está incluso, e
 aparecem automaticamente na página inicial e na tela de assinatura. Renovação, cobrança recusada e
 cancelamento chegam sozinhos à plataforma e liberam ou bloqueiam o acesso do aluno sem você precisar
-fazer nada. O aluno tem um portal onde troca o cartão, vê as faturas e cancela; ao cancelar, o acesso
-continua até o fim do período já pago.
+fazer nada. Nos planos de 6 e 12 meses, o aluno recebe 24h grátis ao cadastrar o cartão; no Pix, a
+cobrança é imediata e não há teste. A área de assinatura mostra a situação e as faturas disponíveis.
 
 Você também pode exigir ou não a assinatura para usar a plataforma, com uma chave no painel — útil no
 começo, para liberar acesso a um grupo de teste.
@@ -294,7 +294,7 @@ começo, para liberar acesso a um grupo de teste.
 
 ## O que preciso de você agora
 
-Está tudo no arquivo do checklist, mas em resumo: a chave do OpenRouter, a conta do Stripe ativada, o
+Está tudo no arquivo do checklist, mas em resumo: a chave do OpenRouter, a conta do Asaas ativada, o
 domínio apontado, o e-mail de envio, a logo definitiva em arquivo vetorial e os vídeos das aulas.
 
 Assim que isso chegar, coloco no ar e te mando o endereço funcionando.

@@ -29,7 +29,7 @@ Arquivos de apoio, todos neste diretório:
 8. [Atualizar a aplicação](#8-atualizar-a-aplicação)
 9. [Square Cloud (opção escolhida)](#9-square-cloud-opção-escolhida)
 9b. [Alternativa: Railway ou Render com Neon](#9b-alternativa-railway-ou-render-com-neon)
-10. [Stripe](#10-stripe)
+10. [Asaas](#10-asaas)
 11. [OpenRouter](#11-openrouter)
 12. [SMTP](#12-smtp)
 13. [DNS](#13-dns)
@@ -147,9 +147,10 @@ OPENROUTER_MODEL=qwen/qwen3.8-flash
 OPENROUTER_ESSAY_MODEL=qwen/qwen3.8-flash
 OPENROUTER_MONTHLY_TOKEN_LIMIT=5000000
 
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PUBLISHABLE_KEY=pk_live_...
+PAYMENT_PROVIDER=asaas
+ASAAS_API_KEY=$aact_prod_...
+ASAAS_ENV=production
+ASAAS_WEBHOOK_TOKEN=<token aleatório de 32 a 255 caracteres>
 REQUIRE_SUBSCRIPTION=true
 
 SMTP_HOST=smtp.seuprovedor.com
@@ -273,8 +274,8 @@ systemctl list-timers | grep certbot
 
 O que a configuração do Nginx resolve, e que não pode ser esquecido em nenhum outro proxy:
 
-* **`/api/billing/webhook`** passa sem buffering e com o corpo intacto — a assinatura do Stripe é
-  validada sobre os bytes originais; qualquer reescrita quebra a validação.
+* **`/api/billing/webhook`** passa sem buffering e recebe os eventos do Asaas. A aplicação valida o
+  token secreto enviado no cabeçalho `asaas-access-token` antes de processar qualquer evento.
 * **Streaming do tutor** (`/api/tutor/conversations/:id/messages`) roda com `proxy_buffering off` e
   timeout longo, senão a resposta chega toda de uma vez, no fim, em vez de aparecer palavra a palavra.
 * **Correção de redação** (`/api/essays/:id/submit`) recebe timeout de 180 s, porque é uma chamada
@@ -714,78 +715,53 @@ Pontos de atenção nas duas plataformas:
 
 ---
 
-## 10. Stripe
+## 10. Asaas
 
-### 10.1 Produtos e preços
+### 10.1 Conta e credenciais
 
-1. Entre no [dashboard do Stripe](https://dashboard.stripe.com) e conclua a ativação da conta (dados
-   da empresa, conta bancária, documento). Sem isso, só o modo de teste funciona.
-2. Deixe a moeda padrão em **BRL**.
-3. Para cada plano da plataforma, crie em **Produtos → Adicionar produto**:
-   * Nome igual ao do plano no painel administrativo (Mensal, 6 meses, 15 meses).
-   * Preço **recorrente**, no valor e no período correspondentes.
-4. Copie o `price_...` de cada preço.
+1. Crie uma conta separada no [Sandbox do Asaas](https://sandbox.asaas.com/) e gere uma chave de API.
+2. No servidor de homologação, configure `PAYMENT_PROVIDER=asaas`, `ASAAS_ENV=sandbox` e a chave de
+   Sandbox em `ASAAS_API_KEY`.
+3. Em produção, use `ASAAS_ENV=production` e uma chave criada na conta real. Chaves e dados dos dois
+   ambientes são independentes.
 
-O caminho mais prático é o inverso: cadastre os planos em **/admin/planos**, com nome, descrição,
-valor, período e itens inclusos, e use o botão **Sincronizar com o Stripe**
-(`POST /api/admin/plans/:id/sync-stripe`), que cria produto e preço na conta e grava os identificadores
-no banco. Assim, painel e Stripe nascem consistentes.
+Os planos e preços são administrados dentro da própria plataforma em **/admin/planos**. O Asaas recebe
+os itens, o valor e o ciclo a cada Checkout, por isso não existe catálogo externo para sincronizar.
 
 ### 10.2 Webhook
 
-O webhook é o que faz a assinatura liberar e bloquear o acesso do aluno automaticamente.
+O webhook é a fonte de verdade que libera o teste, confirma pagamentos e bloqueia inadimplentes.
 
-1. **Desenvolvedores → Webhooks → Adicionar endpoint**.
-2. URL: **`https://focoelite.com.br/api/billing/webhook`**
-3. Versão da API: a mais recente oferecida.
-4. Eventos a assinar (exatamente estes seis):
+1. No Asaas, abra **Menu do usuário → Integrações → Webhooks** e crie um Webhook.
+2. Use a URL **`https://focoelite.com.br/api/billing/webhook`** e a versão 3 da API.
+3. Gere um token forte exclusivo, de 32 a 255 caracteres, e coloque o mesmo valor em
+   `ASAAS_WEBHOOK_TOKEN`. Não reutilize a chave da API.
+4. Selecione estes eventos:
 
    | Evento | O que a plataforma faz |
    |--------|------------------------|
-   | `checkout.session.completed` | Vincula o cliente do Stripe ao aluno e registra a assinatura recém-criada. |
-   | `customer.subscription.created` | Grava status, plano e período da assinatura. |
-   | `customer.subscription.updated` | Atualiza status, troca de plano, renovação e cancelamento agendado. |
-   | `customer.subscription.deleted` | Marca a assinatura como cancelada e encerra o acesso ao fim do período. |
-   | `invoice.paid` | Confirma o pagamento e estende o período de acesso. |
-   | `invoice.payment_failed` | Marca a assinatura como inadimplente para a cobrança ser reavaliada. |
+   | `CHECKOUT_PAID` | Registra a conclusão do Checkout. |
+   | `CHECKOUT_CANCELED` / `CHECKOUT_EXPIRED` | Encerra a tentativa correspondente. |
+   | `SUBSCRIPTION_CREATED` | Vincula a assinatura ao aluno e inicia as 24h grátis quando elegível. |
+   | `SUBSCRIPTION_DELETED` | Cancela a renovação e preserva somente o período já pago. |
+   | `PAYMENT_CONFIRMED` / `PAYMENT_RECEIVED` | Confirma a cobrança e libera o período contratado. |
+   | `PAYMENT_OVERDUE` | Marca a assinatura como atrasada. |
+   | `PAYMENT_REFUNDED` / `PAYMENT_DELETED` | Revoga ou reavalia o acesso da cobrança. |
 
-5. Copie o **Signing secret** (`whsec_...`) para `STRIPE_WEBHOOK_SECRET` no `.env` e recarregue a
-   aplicação (`pm2 reload focoelite`).
+O token chega no cabeçalho `asaas-access-token`. Todos os eventos são registrados por ID antes de
+alterar a assinatura, então uma reentrega do Asaas não duplica acesso nem pagamento.
 
-Cada evento é validado pela assinatura criptográfica e registrado, de modo que uma reentrega do Stripe
-não processa o mesmo evento duas vezes. Esta é a única rota da API que não exige o cabeçalho de
-proteção contra CSRF, justamente porque é autenticada pela assinatura.
+### 10.3 Homologar o fluxo
 
-### 10.3 Testar com a CLI
+1. Publique a aplicação com credenciais de Sandbox e configure o Webhook de Sandbox.
+2. Crie um aluno e abra **Assinatura**.
+3. Confirme que o plano mensal cobra imediatamente no cartão e no Pix.
+4. Confirme que os planos de 6 e 12 meses oferecem 24h apenas no cartão; no Pix, a cobrança é imediata.
+5. Conclua o Checkout e confira o evento no painel de Webhooks e a assinatura no painel administrativo.
+6. Só depois repita a configuração com a conta e a chave de produção.
 
-```bash
-# instalação (Linux)
-curl -fsSL https://packages.stripe.com/api/security/keypair/stripe-cli-gpg/public | \
-  sudo gpg --dearmor -o /usr/share/keyrings/stripe.gpg
-echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.com/stripe-cli-debian-local stable main" | \
-  sudo tee /etc/apt/sources.list.d/stripe.list
-sudo apt update && sudo apt install -y stripe
-
-stripe login
-
-# 1. encaminhar os eventos para a aplicação local (use as chaves de TESTE no .env)
-stripe listen --forward-to localhost:4100/api/billing/webhook
-# o comando imprime um whsec_... temporário: coloque em STRIPE_WEBHOOK_SECRET e reinicie o servidor
-
-# 2. em outro terminal, disparar eventos
-stripe trigger checkout.session.completed
-stripe trigger customer.subscription.updated
-stripe trigger invoice.paid
-stripe trigger invoice.payment_failed
-```
-
-Fluxo completo de teste, ponta a ponta: crie um aluno, vá em **Assinatura**, escolha um plano e pague
-com o cartão de teste `4242 4242 4242 4242` (qualquer validade futura e qualquer CVC). Confira que o
-acesso liberou, que a assinatura aparece no perfil e que o portal de cobrança abre.
-
-Ao migrar para produção, troque `sk_test_`/`whsec_` de teste pelas chaves `sk_live_` e pelo signing
-secret do endpoint de produção, e refaça a sincronização dos planos — **produtos e preços do modo de
-teste não existem no modo real**.
+O retorno do navegador não libera acesso. A aplicação espera os Webhooks do Asaas, porque a URL de
+sucesso do Checkout representa apenas redirecionamento, não confirmação financeira.
 
 ---
 
@@ -897,7 +873,7 @@ curl -sI http://focoelite.com.br/ | head -n 1        # 301 para HTTPS
 * [ ] Uma aula com vídeo enviado pelo painel reproduz normalmente, inclusive avançando a barra.
 * [ ] O tutor responde com o texto aparecendo aos poucos (streaming funcionando através do proxy).
 * [ ] Uma redação enviada volta corrigida, com nota por critério.
-* [ ] Uma assinatura de teste libera o acesso, e o evento correspondente aparece no log de webhooks do Stripe.
+* [ ] Uma assinatura de teste libera o acesso, e o evento correspondente aparece no log de Webhooks do Asaas.
 * [ ] O e-mail de recuperação de senha chega à caixa de entrada, e não ao spam.
 * [ ] `pm2 status` mostra o processo `online`, e `pm2 startup` está configurado.
 * [ ] O primeiro backup existe em `/var/backups/focoelite` e a linha do cron está ativa.

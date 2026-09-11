@@ -4,10 +4,10 @@
  * Painel administrativo — configurações da plataforma.
  *
  *   GET /api/admin/settings               todas as chaves administráveis (padrões + o que está no banco)
- *   GET /api/admin/settings/integrations  status do OpenRouter, do Stripe e do SMTP (chaves sempre mascaradas)
+ *   GET /api/admin/settings/integrations  status do OpenRouter, do Asaas e do SMTP (chaves sempre mascaradas)
  *   PUT /api/admin/settings               grava as chaves enviadas, validando uma a uma
  *
- * Segredos (OPENROUTER_API_KEY, STRIPE_SECRET_KEY, SMTP_PASS…) NÃO passam por aqui: vivem apenas em
+ * Segredos (OPENROUTER_API_KEY, ASAAS_API_KEY, SMTP_PASS…) NÃO passam por aqui: vivem apenas em
  * variáveis de ambiente. O painel só vê status e os últimos caracteres — nunca a chave inteira.
  */
 const router = require('express').Router();
@@ -17,7 +17,7 @@ const { wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const settings = require('../../services/settings');
 const ai = require('../../services/ai');
-const stripeService = require('../../services/stripe');
+const payments = require('../../services/payments');
 const mailer = require('../../services/mailer');
 
 /** URL absoluta (https://…) ou caminho interno (/assets/brand/foco-elite-logo.png). */
@@ -61,8 +61,8 @@ const settingsBody = z
     daily_quotes: dailyQuotes.optional(),
     // provedor de pagamento ativo: as chaves ficam no ambiente, aqui só a escolha
     payment_provider: z
-      .enum(['auto', 'asaas', 'stripe', 'none'], {
-        errorMap: () => ({ message: 'Escolha automático, Asaas, Stripe ou nenhum.' }),
+      .enum(['asaas', 'none'], {
+        errorMap: () => ({ message: 'Escolha Asaas ou nenhum.' }),
       })
       .optional(),
   })
@@ -77,7 +77,7 @@ function withExtras(all) {
 router.get(
   '/integrations',
   wrap(async (req, res) => {
-    const openrouter = await ai.status();
+    const [openrouter, paymentStatus] = await Promise.all([ai.status(), payments.status()]);
     res.json({
       openrouter: {
         configured: openrouter.configured,
@@ -91,7 +91,8 @@ router.get(
         limit_reached: openrouter.limit_reached,
         last_error: openrouter.last_error,
       },
-      stripe: stripeService.status(),
+      asaas: paymentStatus.providers.asaas,
+      payments: paymentStatus,
       smtp: mailer.smtpStatus(),
       app: { version: config.version, env: config.env, app_url: config.appUrl },
     });

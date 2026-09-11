@@ -10,7 +10,7 @@
  *   await asaas.createPortal(user);                        // → { url|null, invoices }
  *   asaas.parseWebhook({ rawBody, headers });              // valida o token e normaliza o evento
  *
- * Ambiente: https://api.asaas.com/v3 em produção e https://sandbox.asaas.com/api/v3
+ * Ambiente: https://api.asaas.com/v3 em produção e https://api-sandbox.asaas.com/v3
  * quando ASAAS_ENV=sandbox. Autenticação pelo cabeçalho `access_token`.
  *
  * As credenciais são lidas do ambiente a cada chamada (nunca do banco), de modo que o
@@ -22,13 +22,18 @@ const config = require('../../config');
 const db = require('../../db/pool');
 
 const API_BASE_PRODUCTION = 'https://api.asaas.com/v3';
-const API_BASE_SANDBOX = 'https://sandbox.asaas.com/api/v3';
+const API_BASE_SANDBOX = 'https://api-sandbox.asaas.com/v3';
+const CHECKOUT_BASE_URL = 'https://asaas.com/checkoutSession/show';
 
 const NAME = 'asaas';
 const LABEL = 'Asaas';
 
 /** Eventos que alteram a assinatura do aluno. Os demais são registrados e ignorados. */
 const HANDLED_EVENTS = new Set([
+  'CHECKOUT_PAID',
+  'CHECKOUT_CANCELED',
+  'CHECKOUT_EXPIRED',
+  'SUBSCRIPTION_CREATED',
   'PAYMENT_CONFIRMED',
   'PAYMENT_RECEIVED',
   'PAYMENT_OVERDUE',
@@ -45,6 +50,12 @@ const PAYMENT_METHODS = {
   BOLETO: 'boleto',
   TRANSFER: 'transfer',
   DEPOSIT: 'deposit',
+};
+
+/** Forma escolhida no site → billingType aceito pelo Checkout Asaas. */
+const BILLING_TYPES = {
+  credit_card: 'CREDIT_CARD',
+  pix: 'PIX',
 };
 
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -92,6 +103,7 @@ function status() {
     webhook_configured: Boolean(webhookToken),
     webhook_url: `${config.appUrl}/api/billing/webhook`,
     portal_available: false,
+    payment_methods: ['credit_card', 'pix'],
   };
 }
 
@@ -197,6 +209,20 @@ function toISODate(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error('Data inválida.');
   return date.toISOString().slice(0, 10);
+}
+
+/** Data e hora no formato aceito pelo objeto subscription do Checkout Asaas. */
+function toAsaasDateTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('Data inválida.');
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function addDays(value, days) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('Data inválida.');
+  date.setUTCDate(date.getUTCDate() + Math.round(Number(days) || 0));
+  return date;
 }
 
 /** Soma meses preservando o dia (31 de janeiro + 1 mês = 28/29 de fevereiro). */
@@ -324,15 +350,14 @@ function parseReference(value) {
   };
 }
 
-/**
- * Cria a assinatura recorrente. billingType 'UNDEFINED' deixa o aluno escolher
- * cartão, pix ou boleto na própria fatura do Asaas.
- */
-async function createSubscription({ user, plan, customerId, from = new Date() }) {
+/** Cria uma assinatura recorrente diretamente, usado em rotinas administrativas. */
+async function createSubscription({ user, plan, customerId, paymentMethod = 'pix', from = new Date() }) {
+  const billingType = BILLING_TYPES[paymentMethod];
+  if (!billingType) throw providerError('unsupported_payment_method', 'Escolha cartão de crédito ou Pix.');
   const schedule = planSchedule(plan, from);
   const created = await request('POST', '/subscriptions', {
     customer: customerId,
-    billingType: 'UNDEFINED',
+    billingType,
     value: Number(plan.price_cents || 0) / 100,
     nextDueDate: schedule.first_due_date,
     cycle: schedule.cycle,
@@ -369,23 +394,83 @@ async function firstPaymentUrl(subscriptionId) {
   return chosen ? chosen.invoiceUrl || chosen.bankSlipUrl || null : null;
 }
 
+function trialDaysFor(plan, paymentMethod) {
+  if (paymentMethod !== 'credit_card') return 0;
+  const duration = durationOf(plan);
+  const enabled = Math.round(Number(plan && plan.trial_days) || 0) > 0;
+  return enabled && (duration === 6 || duration === 12) ? 1 : 0;
+}
+
+function checkoutUrl(checkout) {
+  if (checkout && typeof checkout.link === 'string' && checkout.link.trim()) return checkout.link.trim();
+  if (!checkout || !checkout.id) return null;
+  return `${CHECKOUT_BASE_URL}?id=${encodeURIComponent(checkout.id)}`;
+}
+
 /**
- * Fluxo completo de checkout: cliente → assinatura → link da primeira cobrança.
- * @returns {Promise<{ url: string, provider: string, subscription_id: string, schedule: object }>}
+ * Cria o Checkout hospedado do Asaas. Assim o cartão nunca passa pelo nosso servidor:
+ * o próprio Asaas coleta e valida os dados antes de criar a assinatura.
  */
-async function createCheckout({ user, plan }) {
+async function createCheckout({ user, plan, paymentMethod = 'credit_card', successUrl, cancelUrl }) {
   if (!user || !plan) throw new Error('createCheckout exige usuário e plano.');
+  const billingType = BILLING_TYPES[paymentMethod];
+  if (!billingType) throw providerError('unsupported_payment_method', 'Escolha cartão de crédito ou Pix.');
+
   const customerId = await ensureCustomer(user);
-  const { subscription, schedule } = await createSubscription({ user, plan, customerId });
-  const url = await firstPaymentUrl(subscription.id);
+  const now = new Date();
+  const trialDays = trialDaysFor(plan, paymentMethod);
+  const firstChargeAt = trialDays > 0 ? addDays(now, trialDays) : now;
+  const schedule = planSchedule(plan, firstChargeAt);
+  const reference = buildReference(user.id, plan.id);
+  const created = await request('POST', '/checkouts', {
+    billingTypes: [billingType],
+    chargeTypes: ['RECURRENT'],
+    minutesToExpire: 60,
+    externalReference: reference,
+    callback: {
+      successUrl,
+      cancelUrl,
+      expiredUrl: cancelUrl,
+    },
+    items: [
+      {
+        name: plan.name,
+        description: subscriptionDescription(plan),
+        quantity: 1,
+        value: Number(plan.price_cents || 0) / 100,
+      },
+    ],
+    customer: customerId,
+    subscription: {
+      cycle: schedule.cycle,
+      nextDueDate: toAsaasDateTime(firstChargeAt),
+    },
+  });
+  const url = checkoutUrl(created);
   if (!url) {
-    throw providerError('provider_error', 'O Asaas criou a assinatura, mas ainda não gerou o link de pagamento. Tente novamente em instantes.');
+    throw providerError('provider_error', 'O Asaas não devolveu o identificador do checkout. Tente novamente em instantes.');
   }
+
+  await db.query(
+    `INSERT INTO payment_checkouts (
+       provider, provider_checkout_id, user_id, plan_id, payment_method, status, trial_ends_at
+     ) VALUES ('asaas', $1, $2, $3, $4, 'pending', $5)
+     ON CONFLICT (provider, provider_checkout_id) DO UPDATE SET
+       user_id = EXCLUDED.user_id,
+       plan_id = EXCLUDED.plan_id,
+       payment_method = EXCLUDED.payment_method,
+       trial_ends_at = EXCLUDED.trial_ends_at,
+       updated_at = now()`,
+    [created.id, user.id, plan.id, paymentMethod, trialDays > 0 ? firstChargeAt : null]
+  );
+
   return {
     url,
     provider: NAME,
     customer_id: customerId,
-    subscription_id: subscription.id,
+    checkout_id: created.id,
+    payment_method: paymentMethod,
+    trial_ends_at: trialDays > 0 ? firstChargeAt : null,
     schedule,
   };
 }
@@ -485,7 +570,7 @@ function parseWebhook({ rawBody, headers = {} }) {
     throw providerError('webhook_invalid_payload', 'Corpo do webhook não tem o campo "event".');
   }
 
-  const target = payload.payment || payload.subscription || {};
+  const target = payload.payment || payload.subscription || payload.checkout || {};
   const eventId = trimmed(payload.id) || `${payload.event}:${target.id || 'sem-id'}`;
   return { provider: NAME, event_id: eventId, type: payload.event, payload };
 }
@@ -507,13 +592,25 @@ const idOf = (value) => (value && typeof value === 'object' ? value.id : value) 
 function normalizeEvent(payload) {
   const payment = payload && payload.payment ? payload.payment : null;
   const subscription = payload && payload.subscription ? payload.subscription : null;
-  const source = payment || subscription || {};
+  const checkout = payload && payload.checkout ? payload.checkout : null;
+  const source = payment || subscription || checkout || {};
+  const billingTypes = checkout && Array.isArray(checkout.billingTypes) ? checkout.billingTypes : [];
+  const subscriptionRules = checkout && checkout.subscription ? checkout.subscription : null;
 
   return {
     type: payload && payload.event,
     subscription_id: payment ? idOf(payment.subscription) : idOf(subscription),
+    checkout_id: idOf(checkout),
     customer_id: idOf(source.customer),
     external_reference: trimmed(source.externalReference) || trimmed(subscription && subscription.externalReference),
+    payment_method:
+      (payment && PAYMENT_METHODS[payment.billingType]) ||
+      (subscription && PAYMENT_METHODS[subscription.billingType]) ||
+      PAYMENT_METHODS[billingTypes[0]] ||
+      null,
+    next_due_date: parseDate(
+      (subscription && subscription.nextDueDate) || (subscriptionRules && subscriptionRules.nextDueDate)
+    ),
     payment: payment
       ? {
           id: payment.id || null,
@@ -533,8 +630,10 @@ module.exports = {
   label: LABEL,
   HANDLED_EVENTS,
   PAYMENT_METHODS,
+  BILLING_TYPES,
   API_BASE_PRODUCTION,
   API_BASE_SANDBOX,
+  CHECKOUT_BASE_URL,
 
   credentials,
   isConfigured,
@@ -544,6 +643,8 @@ module.exports = {
   request,
 
   toISODate,
+  toAsaasDateTime,
+  addDays,
   addMonths,
   cycleFor,
   accessMonths,
@@ -554,6 +655,8 @@ module.exports = {
   findCustomerByUser,
   createSubscription,
   firstPaymentUrl,
+  trialDaysFor,
+  checkoutUrl,
   createCheckout,
   cancelSubscription,
   listInvoices,

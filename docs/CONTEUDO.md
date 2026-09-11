@@ -86,7 +86,7 @@ Arquivos em `server/db/seed/data/`; o runner é `server/db/seed/run.js`.
 | `exam_subjects.js`   | `exam_subjects`                             | Pesos das matérias por prova. |
 | `essay_criteria.js`  | `essay_criteria_sets`                       | Critérios de correção por prova: ENEM (5 competências, 0–1000), Barro Branco (VUNESP, 0–100), FUVEST, UNICAMP, UNESP e modelo 0–10 para FGV, Mackenzie e PUC-SP. |
 | `essay_themes.js`    | `essay_themes`                              | 17 temas autorais com proposta e textos motivadores. |
-| `plans.js`           | `plans`                                     | Mensal e Anual (preço em centavos, sem ids do Stripe). |
+| `plans.js`           | `plans`                                     | Mensal, semestral e anual (preço em centavos, sem ids internos do pagamento). |
 | `demo.js` (`--demo`) | `lessons`, `lesson_exams`, `questions`, `question_options`, `question_exams`, `teachers`, `teacher_subjects`, `teacher_availability`, `simulados` | Conteúdo de demonstração (ver §5). |
 
 ### Idempotência

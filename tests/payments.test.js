@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Pagamentos com provedor selecionável (Asaas e Stripe).
+ * Pagamentos e assinaturas pelo Asaas.
  *
  *   NODE_ENV=test node --test tests/payments.test.js
  *
@@ -72,6 +72,7 @@ function fakeAsaasApi(routes) {
 const defaultRoutes = () => [
   { method: 'GET', match: /^\/customers\?/, body: { data: [], totalCount: 0 } },
   { method: 'POST', match: /^\/customers$/, body: { id: 'cus_000001', object: 'customer' } },
+  { method: 'POST', match: /^\/checkouts$/, body: { id: 'checkout_000001' } },
   {
     method: 'POST',
     match: /^\/subscriptions$/,
@@ -110,22 +111,29 @@ const defaultRoutes = () => [
 async function seedPlans(db) {
   const monthly = await db.one(
     `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count,
-                        duration_months, bonus_months, features, highlight, active, sort_order)
-     VALUES ('mensal', 'Mensal', 'Acesso completo mês a mês', 4490, 'brl', 'month', 1, 1, 0,
+                        duration_months, bonus_months, trial_days, features, highlight, active, sort_order)
+     VALUES ('mensal', 'Mensal', 'Acesso completo mês a mês', 4490, 'brl', 'month', 1, 1, 0, 0,
              '["Aulas","Simulados"]', false, true, 1)
+     RETURNING id`
+  );
+  const sixMonths = await db.one(
+    `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count,
+                        duration_months, bonus_months, trial_days, features, highlight, active, sort_order)
+     VALUES ('seis-meses', '6 meses', 'Acesso completo por seis meses', 21990, 'brl', 'month', 6, 6, 0, 1,
+             '["Tudo do mensal"]', false, true, 2)
      RETURNING id`
   );
   const yearly = await db.one(
     `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count,
-                        duration_months, bonus_months, compare_price_cents, badge,
+                        duration_months, bonus_months, trial_days, compare_price_cents, badge,
                         stripe_product_id, stripe_price_id, provider_plan_id,
                         features, highlight, active, sort_order)
-     VALUES ('15-meses', '15 meses', 'Pague 12, estude 15', 35990, 'brl', 'year', 1, 12, 3, 53880, 'MELHOR OFERTA',
+     VALUES ('15-meses', '15 meses', 'Pague 12, estude 15', 35990, 'brl', 'year', 1, 12, 3, 1, 53880, 'MELHOR OFERTA',
              'prod_secreto', 'price_secreto', 'asaas_secreto',
              '["Tudo do mensal","3 meses de bônus"]', true, true, 3)
      RETURNING id`
   );
-  return { monthly: monthly.id, yearly: yearly.id };
+  return { monthly: monthly.id, sixMonths: sixMonths.id, yearly: yearly.id };
 }
 
 /** Corpo de webhook do Asaas para um evento de cobrança. */
@@ -152,7 +160,43 @@ function paymentEvent(type, { id, reference, subscription = 'sub_000001', custom
   };
 }
 
-describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
+function checkoutEvent(type, { id, checkout = 'checkout_000001', customer = 'cus_000001', reference = null }) {
+  return {
+    id,
+    event: type,
+    dateCreated: '2026-03-10 09:00:00',
+    checkout: {
+      id: checkout,
+      customer,
+      externalReference: reference,
+      status: type === 'CHECKOUT_PAID' ? 'PAID' : type.replace('CHECKOUT_', ''),
+      billingTypes: ['CREDIT_CARD'],
+      chargeTypes: ['RECURRENT'],
+    },
+  };
+}
+
+function subscriptionEvent(type, { id, reference = null, customer = 'cus_000001', overrides = {} }) {
+  return {
+    id,
+    event: type,
+    dateCreated: '2026-03-10 09:00:00',
+    subscription: {
+      object: 'subscription',
+      id: 'sub_000001',
+      customer,
+      value: 359.9,
+      nextDueDate: '2026-03-11',
+      cycle: 'YEARLY',
+      billingType: 'CREDIT_CARD',
+      status: 'ACTIVE',
+      externalReference: reference,
+      ...overrides,
+    },
+  };
+}
+
+describe('Pagamentos: Asaas, checkout e webhooks', () => {
   let ctx;
   let restoreEnv;
 
@@ -191,6 +235,13 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
     it('não estoura o fim do mês ao somar meses', () => {
       assert.equal(asaas.toISODate(asaas.addMonths(new Date('2026-01-31T12:00:00.000Z'), 1)), '2026-02-28');
     });
+
+    it('limita as 24 horas grátis ao cartão dos planos de 6 e 12 meses', () => {
+      assert.equal(asaas.trialDaysFor({ duration_months: 6, trial_days: 1 }, 'credit_card'), 1);
+      assert.equal(asaas.trialDaysFor({ duration_months: 12, trial_days: 10 }, 'credit_card'), 1);
+      assert.equal(asaas.trialDaysFor({ duration_months: 1, trial_days: 1 }, 'credit_card'), 0);
+      assert.equal(asaas.trialDaysFor({ duration_months: 6, trial_days: 1 }, 'pix'), 0);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -204,12 +255,11 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
       student = await ctx.registerStudent();
     });
 
-    it('o status informa que não há provedor de pagamento', async () => {
+    it('o status informa que o Asaas ainda não está configurado', async () => {
       const res = await student.agent.get('/api/billing/status');
       assert.equal(res.status, 200);
-      assert.equal(res.body.payment_provider, 'none');
+      assert.equal(res.body.payment_provider, 'asaas');
       assert.equal(res.body.payments_configured, false);
-      assert.equal(res.body.stripe_configured, false);
       assert.equal(res.body.portal_available, false);
     });
 
@@ -298,41 +348,88 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
       assert.match(status.key_masked, /^••••/);
       assert.equal(status.key_masked.includes('aact'), false);
       assert.match(status.webhook_url, /\/api\/billing\/webhook$/);
+      assert.deepEqual(status.payment_methods, ['credit_card', 'pix']);
     });
 
-    it('cria cliente e assinatura e devolve o link da primeira cobrança', async () => {
-      const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, tax_id: '390.533.447-05' });
+    it('cartão no plano anual cadastra o checkout com 24 horas grátis', async () => {
+      const before = Date.now();
+      const res = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'credit_card',
+        tax_id: '390.533.447-05',
+      });
       assert.equal(res.status, 200);
       assert.equal(res.body.provider, 'asaas');
-      assert.equal(res.body.url, 'https://sandbox.asaas.com/i/pay_000001');
+      assert.equal(res.body.payment_method, 'credit_card');
+      assert.equal(res.body.url, 'https://asaas.com/checkoutSession/show?id=checkout_000001');
+      const trialEndsAt = new Date(res.body.trial_ends_at).getTime();
+      assert.ok(trialEndsAt - before >= 23.99 * 60 * 60 * 1000);
+      assert.ok(trialEndsAt - before <= 24.01 * 60 * 60 * 1000);
 
       const created = api.find('POST', /^\/customers$/);
       assert.equal(created.body.externalReference, student.user.id);
       assert.equal(created.body.cpfCnpj, '39053344705');
 
-      const subscription = api.find('POST', /^\/subscriptions$/);
-      assert.equal(subscription.body.billingType, 'UNDEFINED');
-      assert.equal(subscription.body.cycle, 'YEARLY');
-      assert.equal(subscription.body.value, 359.9);
-      assert.equal(subscription.body.externalReference, `${student.user.id}:${plans.yearly}`);
-      assert.equal(subscription.body.nextDueDate, asaas.toISODate(new Date()));
+      const checkout = api.find('POST', /^\/checkouts$/);
+      assert.deepEqual(checkout.body.billingTypes, ['CREDIT_CARD']);
+      assert.deepEqual(checkout.body.chargeTypes, ['RECURRENT']);
+      assert.equal(checkout.body.customer, 'cus_000001');
+      assert.equal(checkout.body.subscription.cycle, 'YEARLY');
+      assert.equal(checkout.body.items[0].value, 359.9);
+      assert.equal(checkout.body.externalReference, `${student.user.id}:${plans.yearly}`);
+      const firstChargeAt = new Date(`${checkout.body.subscription.nextDueDate.replace(' ', 'T')}Z`).getTime();
+      assert.ok(firstChargeAt - before >= 23.99 * 60 * 60 * 1000);
 
-      // com bônus, a renovação é empurrada para depois dos 15 meses de acesso
-      const postponed = api.find('PUT', /^\/subscriptions\/sub_000001$/);
-      assert.ok(postponed, 'a assinatura com bônus precisa ter a renovação adiada');
-      assert.equal(postponed.body.updatePendingPayments, false);
-      assert.equal(postponed.body.nextDueDate, asaas.toISODate(asaas.addMonths(new Date(), 15)));
+      const savedCheckout = await ctx.db.one('SELECT * FROM payment_checkouts WHERE user_id = $1', [student.user.id]);
+      assert.equal(savedCheckout.provider_checkout_id, 'checkout_000001');
+      assert.equal(savedCheckout.payment_method, 'credit_card');
+      assert.equal(savedCheckout.status, 'pending');
+      assert.ok(savedCheckout.trial_ends_at);
 
       const user = await ctx.db.one('SELECT provider_customer_id, tax_id FROM users WHERE id = $1', [student.user.id]);
       assert.equal(user.provider_customer_id, 'cus_000001');
       assert.equal(user.tax_id, '39053344705');
     });
 
-    it('não adia a renovação de um plano sem bônus', async () => {
-      const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.monthly });
+    it('Pix nos planos longos cobra normalmente e nunca recebe o teste', async () => {
+      const before = Date.now();
+      const res = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.sixMonths,
+        payment_method: 'pix',
+      });
       assert.equal(res.status, 200);
-      assert.equal(api.find('POST', /^\/subscriptions$/).body.cycle, 'MONTHLY');
-      assert.equal(api.find('PUT', /^\/subscriptions\/sub_000001$/), undefined);
+      assert.equal(res.body.payment_method, 'pix');
+      assert.equal(res.body.trial_ends_at, null);
+
+      const checkout = api.find('POST', /^\/checkouts$/);
+      assert.deepEqual(checkout.body.billingTypes, ['PIX']);
+      assert.equal(checkout.body.subscription.cycle, 'SEMIANNUALLY');
+      const firstChargeAt = new Date(`${checkout.body.subscription.nextDueDate.replace(' ', 'T')}Z`).getTime();
+      assert.ok(Math.abs(firstChargeAt - before) < 5_000);
+
+      const savedCheckout = await ctx.db.one('SELECT payment_method, trial_ends_at FROM payment_checkouts WHERE user_id = $1', [student.user.id]);
+      assert.equal(savedCheckout.payment_method, 'pix');
+      assert.equal(savedCheckout.trial_ends_at, null);
+    });
+
+    it('o plano mensal também não recebe teste no cartão', async () => {
+      const res = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.monthly,
+        payment_method: 'credit_card',
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.trial_ends_at, null);
+      assert.deepEqual(api.find('POST', /^\/checkouts$/).body.billingTypes, ['CREDIT_CARD']);
+    });
+
+    it('recusa uma forma de pagamento diferente de cartão ou Pix', async () => {
+      const res = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'boleto',
+      });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'validation_error');
+      assert.equal(api.find('POST', /^\/checkouts$/), undefined);
     });
 
     it('traduz a recusa do Asaas em erro da API, sem vazar o corpo cru', async () => {
@@ -365,6 +462,7 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
     let student;
     let plans;
     let reference;
+    let api;
 
     const sendWebhook = (payload, { token = WEBHOOK_TOKEN } = {}) =>
       ctx.request('POST', '/api/billing/webhook', {
@@ -379,7 +477,8 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
       process.env.ASAAS_API_KEY = '$aact_chave_de_teste_1234';
       process.env.ASAAS_ENV = 'sandbox';
       process.env.ASAAS_WEBHOOK_TOKEN = WEBHOOK_TOKEN;
-      asaas.setHttpClient(fakeAsaasApi(defaultRoutes()).client);
+      api = fakeAsaasApi(defaultRoutes());
+      asaas.setHttpClient(api.client);
       plans = await seedPlans(ctx.db);
       student = await ctx.registerStudent();
       reference = `${student.user.id}:${plans.yearly}`;
@@ -409,6 +508,55 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
       assert.match(res.body.error.message, /provedor/i);
     });
 
+    it('libera o teste somente depois que o Asaas cria a assinatura com o cartão cadastrado', async () => {
+      const checkout = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'credit_card',
+      });
+      assert.equal(checkout.status, 200);
+
+      const before = await student.agent.get('/api/billing/status');
+      assert.equal(before.body.access.allowed, false);
+
+      const paid = await sendWebhook(checkoutEvent('CHECKOUT_PAID', {
+        id: 'evt_checkout_pago',
+        reference,
+      }));
+      assert.equal(paid.status, 200);
+      assert.equal(paid.body.processed, true);
+      assert.equal(await ctx.db.one('SELECT count(*)::int AS total FROM subscriptions').then((row) => row.total), 0);
+
+      const pending = await ctx.db.one('SELECT * FROM payment_checkouts WHERE user_id = $1', [student.user.id]);
+      assert.equal(pending.status, 'paid');
+      const trialEnd = new Date(pending.trial_ends_at);
+
+      const created = await sendWebhook(subscriptionEvent('SUBSCRIPTION_CREATED', {
+        id: 'evt_assinatura_criada',
+        overrides: { nextDueDate: asaas.toISODate(trialEnd) },
+      }));
+      assert.equal(created.status, 200);
+
+      const row = await ctx.db.one('SELECT * FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'trialing');
+      assert.equal(row.plan_id, plans.yearly);
+      assert.equal(row.payment_method, 'credit_card');
+      assert.equal(row.provider_subscription_id, 'sub_000001');
+      assert.equal(new Date(row.current_period_end).getTime(), trialEnd.getTime());
+      assert.equal(row.last_payment_at, null);
+
+      const linked = await ctx.db.one('SELECT * FROM payment_checkouts WHERE id = $1', [pending.id]);
+      assert.equal(linked.provider_subscription_id, 'sub_000001');
+
+      const status = await student.agent.get('/api/billing/status');
+      assert.equal(status.body.access.allowed, true);
+      assert.equal(status.body.subscription.status, 'trialing');
+
+      const postponed = api.find('PUT', /^\/subscriptions\/sub_000001$/);
+      assert.ok(postponed, 'a renovação anual precisa considerar os 3 meses de bônus');
+      assert.equal(postponed.body.updatePendingPayments, false);
+      assert.equal(postponed.body.nextDueDate, asaas.toISODate(asaas.addMonths(trialEnd, 15)));
+    });
+
     it('pagamento confirmado cria a assinatura, soma o bônus e libera o acesso', async () => {
       const before = await student.agent.get('/api/billing/status');
       assert.equal(before.body.access.allowed, false);
@@ -436,6 +584,31 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
       assert.equal(after.body.subscription.is_active, true);
       assert.equal(after.body.subscription.provider, 'asaas');
       assert.equal(after.body.subscription.payment_method, 'pix');
+    });
+
+    it('evento de criação atrasado não rebaixa uma assinatura já paga', async () => {
+      await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'credit_card',
+      });
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', {
+        id: 'evt_pago_antes_da_assinatura',
+        reference,
+        overrides: { billingType: 'CREDIT_CARD' },
+      }));
+
+      const paid = await ctx.db.one('SELECT * FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(paid.status, 'active');
+
+      await sendWebhook(subscriptionEvent('SUBSCRIPTION_CREATED', {
+        id: 'evt_assinatura_atrasada',
+        reference,
+      }));
+
+      const after = await ctx.db.one('SELECT * FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(after.status, 'active');
+      assert.equal(new Date(after.current_period_end).getTime(), new Date(paid.current_period_end).getTime());
+      assert.equal(new Date(after.last_payment_at).getTime(), new Date(paid.last_payment_at).getTime());
     });
 
     it('reprocessar o mesmo evento não duplica nada', async () => {
@@ -533,11 +706,11 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
     it('informa o provedor ativo sem expor a chave', async () => {
       const res = await admin.agent.get('/api/admin/plans/provider-status');
       assert.equal(res.status, 200);
-      assert.equal(res.body.provider, 'none');
+      assert.equal(res.body.provider, 'asaas');
       assert.equal(res.body.configured, false);
       assert.match(res.body.webhook_url, /\/api\/billing\/webhook$/);
       assert.equal(res.body.providers.asaas.configured, false);
-      assert.equal(res.body.providers.stripe.configured, false);
+      assert.deepEqual(Object.keys(res.body.providers), ['asaas']);
     });
 
     it('grava duração, bônus, preço de comparação e selo do plano', async () => {
@@ -584,6 +757,26 @@ describe('Pagamentos: provedor selecionável, Asaas e webhooks', () => {
       assert.equal(updated.body.bonus_months, 6);
       assert.equal(updated.body.compare_price_cents, null);
       assert.equal(updated.body.badge, null);
+    });
+
+    it('recusa teste grátis fora dos planos de 6 e 12 meses', async () => {
+      const res = await admin.agent.post('/api/admin/plans', {
+        name: 'Mensal com teste inválido',
+        price_cents: 4490,
+        currency: 'brl',
+        interval: 'month',
+        interval_count: 1,
+        trial_days: 1,
+        duration_months: 1,
+        bonus_months: 0,
+        features: [],
+        highlight: false,
+        active: true,
+        sort_order: 10,
+      });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'validation_error');
+      assert.match(JSON.stringify(res.body.error.details), /24 horas grátis/i);
     });
 
     it('sem provedor configurado a sincronização responde 503', async () => {

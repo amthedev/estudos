@@ -1,10 +1,9 @@
 // =====================================================================
 // Foco Elite — Painel administrativo: planos e assinaturas (/admin/planos)
 //
-// Planos: GET/POST/PUT/DELETE /api/admin/plans e POST /plans/:id/sync-stripe.
+// Planos: GET/POST/PUT/DELETE /api/admin/plans e POST /plans/:id/sync-provider.
 // Assinaturas: GET /api/admin/subscriptions (paginado) e /subscriptions/summary.
-// O status do Stripe vem de GET /api/admin/settings/integrations — sem a chave
-// configurada no servidor, a sincronização fica indisponível e a tela avisa.
+// O status do provedor vem de GET /api/admin/plans/provider-status.
 // =====================================================================
 import { api } from '../../core/api.js';
 import {
@@ -30,7 +29,7 @@ const SUBSCRIPTION_STATUS = {
 };
 
 const num = (value) => fmtNumber(value ?? 0, { digits: 0 });
-const stripeReady = () => Boolean(state.integrations && state.integrations.stripe && state.integrations.stripe.configured);
+const providerReady = () => Boolean(state.providerStatus && state.providerStatus.configured);
 
 // ---------------------------------------------------------------------
 // Formulário de plano
@@ -45,7 +44,7 @@ function planFields() {
     { key: 'price', label: 'Preço (R$)', type: 'number', required: true, min: 0, step: '0.01', placeholder: '49,90' },
     { key: 'interval', label: 'Cobrança', type: 'select', required: true, options: [{ value: 'month', label: 'Mensal' }, { value: 'year', label: 'Anual' }] },
     { key: 'interval_count', label: 'A cada', type: 'number', min: 1, max: 12, integer: true, hint: 'Quantos meses (ou anos) entre as cobranças.' },
-    { key: 'trial_days', label: 'Dias de teste', type: 'number', min: 0, max: 365, integer: true, hint: 'Use 0 para não oferecer período de teste.' },
+    { key: 'trial_days', label: 'Teste grátis no cartão', type: 'number', min: 0, max: 1, integer: true, hint: 'Use 1 nos planos de 6 ou 12 meses. Pix sempre cobra na hora.' },
     { type: 'section', label: 'Acesso vendido' },
     { key: 'duration_months', label: 'Meses pagos', type: 'number', min: 1, max: 60, integer: true, hint: 'Quantos meses o aluno está pagando neste plano.' },
     { key: 'bonus_months', label: 'Meses de bônus', type: 'number', min: 0, max: 36, integer: true, hint: 'Meses extras de acesso, sem cobrança. Ex.: 3 no plano "pague 12, receba 15".' },
@@ -138,17 +137,17 @@ function openPlanForm(plan) {
 // ---------------------------------------------------------------------
 // Ações de plano
 // ---------------------------------------------------------------------
-async function syncStripe(plan) {
-  if (!stripeReady()) {
-    toast('Configure o Stripe no servidor para sincronizar planos.', { type: 'warning' });
+async function syncProvider(plan) {
+  if (!providerReady()) {
+    toast('Configure o Asaas no servidor para sincronizar planos.', { type: 'warning' });
     return;
   }
   try {
-    const result = await api.post(`/api/admin/plans/${plan.id}/sync-stripe`, {});
-    toast((result && result.message) || 'Plano sincronizado com o Stripe.', { type: 'success' });
+    const result = await api.post(`/api/admin/plans/${plan.id}/sync-provider`, {});
+    toast((result && result.message) || 'Plano sincronizado com o Asaas.', { type: 'success' });
     if (state.plansTable) state.plansTable.reload();
   } catch (err) {
-    toast(err && err.message ? err.message : 'Não foi possível sincronizar com o Stripe.', { type: 'error' });
+    toast(err && err.message ? err.message : 'Não foi possível sincronizar com o Asaas.', { type: 'error' });
   }
 }
 
@@ -214,20 +213,15 @@ function mountPlansTable() {
         key: 'trial_days',
         label: 'Teste',
         align: 'center',
-        render: (plan) => (Number(plan.trial_days) > 0 ? `${num(plan.trial_days)} dias` : html`<span class="text-3">—</span>`),
+        render: (plan) => (Number(plan.trial_days) === 1
+          ? '24h no cartão'
+          : html`<span class="text-3">—</span>`),
       },
       {
         key: 'active_subscriptions',
         label: 'Assinantes',
         align: 'center',
         render: (plan) => html`<span title="${num(plan.subscriptions_total)} no total">${num(plan.active_subscriptions)}</span>`,
-      },
-      {
-        key: 'stripe_price_id',
-        label: 'Stripe',
-        render: (plan) => (plan.stripe_price_id
-          ? badge('Sincronizado', 'green', { icon: 'check' })
-          : badge('Não sincronizado', 'gray')),
       },
       {
         key: 'active',
@@ -237,7 +231,7 @@ function mountPlansTable() {
     ],
     rowActions: [
       { label: 'Editar', icon: 'square-pen', onClick: (plan) => openPlanForm(plan) },
-      { label: 'Sincronizar com o Stripe', icon: 'refresh-cw', onClick: (plan) => syncStripe(plan), disabled: () => !stripeReady() },
+      { label: 'Sincronizar com o Asaas', icon: 'refresh-cw', onClick: (plan) => syncProvider(plan), disabled: () => !providerReady() },
       { label: 'Ativar ou desativar', icon: 'toggle-left', onClick: (plan) => togglePlan(plan) },
       { label: 'Excluir', icon: 'trash-2', danger: true, onClick: (plan) => removePlan(plan) },
     ],
@@ -256,7 +250,7 @@ function mountSubscriptionsTable() {
   state.subsTable = mountTable(el, {
     pageSize: 20,
     search: true,
-    searchPlaceholder: 'Buscar por aluno, e-mail ou id do Stripe',
+    searchPlaceholder: 'Buscar por aluno, e-mail ou id da assinatura',
     emptyText: 'Nenhuma assinatura encontrada',
     sort: { key: 'created_at', dir: 'desc' },
     filters: [
@@ -336,21 +330,21 @@ function header() {
   });
 }
 
-function stripeNotice() {
-  const stripe = (state.integrations && state.integrations.stripe) || {};
-  if (stripe.configured) {
-    const mode = stripe.mode === 'live' ? 'produção' : stripe.mode === 'test' ? 'teste' : 'indefinido';
+function providerNotice() {
+  const provider = state.providerStatus || {};
+  if (provider.configured) {
+    const mode = provider.environment === 'production' ? 'produção' : provider.environment === 'sandbox' ? 'teste' : 'indefinido';
     return html`
-      <div class="aplan-stripe-ok">
-        ${badge(`Stripe em ${mode}`, stripe.mode === 'live' ? 'green' : 'blue', { icon: 'credit-card' })}
-        ${stripe.webhook_configured ? badge('Webhook configurado', 'green') : badge('Webhook não configurado', 'orange')}
-        <span class="text-xs text-3">Chave secreta •••• ${stripe.secret_key_last4 || '----'}</span>
+      <div class="aplan-provider-ok">
+        ${badge(`${provider.label || 'Asaas'} em ${mode}`, provider.environment === 'production' ? 'green' : 'blue', { icon: 'credit-card' })}
+        ${provider.webhook_configured ? badge('Webhook configurado', 'green') : badge('Webhook não configurado', 'orange')}
+        <span class="text-xs text-3">Chave •••• ${provider.key_last4 || '----'}</span>
       </div>`;
   }
   return alertBox({
     type: 'warning',
-    title: 'Stripe não configurado',
-    text: 'Sem STRIPE_SECRET_KEY definida no servidor, o checkout e a sincronização de planos ficam indisponíveis. Os planos podem ser cadastrados normalmente e passam a valer assim que a chave for configurada.',
+    title: 'Asaas não configurado',
+    text: 'Defina ASAAS_API_KEY no servidor para liberar checkout com cartão e Pix. Os planos podem ser cadastrados normalmente.',
     actions: html`<a class="btn btn-secondary btn-sm" href="/admin/configuracoes">${icon('settings')}<span>Ver configurações</span></a>`,
   });
 }
@@ -370,7 +364,7 @@ function paint() {
   render(state.el, html`
     <div class="aplan-page">
       ${header()}
-      ${stripeNotice()}
+      ${providerNotice()}
     ${summaryRow()}
     <section class="card">
       <div class="card-header">
@@ -382,7 +376,7 @@ function paint() {
     <section class="card">
       <div class="card-header">
         <h2 class="card-title">${icon('users')}<span>Assinaturas</span></h2>
-        <span class="card-subtitle">Atualizadas automaticamente pelos webhooks do Stripe.</span>
+        <span class="card-subtitle">Atualizadas automaticamente pelos webhooks do Asaas.</span>
       </div>
       <div class="card-body" id="aplan-subs"></div>
     </section>
@@ -394,13 +388,13 @@ function paint() {
 async function load() {
   render(state.el, html`${header()}${skeleton('stats', 4)}<div class="mt-6">${skeleton('table')}</div>`);
   try {
-    const [summary, integrations, plans] = await Promise.all([
+    const [summary, providerStatus, plans] = await Promise.all([
       api.get('/api/admin/subscriptions/summary').catch(() => ({})),
-      api.get('/api/admin/settings/integrations').catch(() => null),
+      api.get('/api/admin/plans/provider-status').catch(() => null),
       api.get('/api/admin/plans').catch(() => []),
     ]);
     state.summary = summary;
-    state.integrations = integrations;
+    state.providerStatus = providerStatus;
     state.plans = Array.isArray(plans) ? plans : (plans.items || []);
   } catch (err) {
     render(state.el, html`${header()}${errorState({ title: 'Não foi possível carregar os planos', message: err && err.message })}`);
@@ -410,7 +404,7 @@ async function load() {
 }
 
 export default async function renderPlans(ctx) {
-  state = { el: ctx.el, navigate: ctx.navigate, plans: [], summary: null, integrations: null, plansTable: null, subsTable: null };
+  state = { el: ctx.el, navigate: ctx.navigate, plans: [], summary: null, providerStatus: null, plansTable: null, subsTable: null };
   ctx.setTitle('Planos e assinaturas');
   on(ctx.el, 'click', '[data-action]', (event, target) => {
     const action = target.dataset.action;

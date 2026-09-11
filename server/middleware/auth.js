@@ -22,7 +22,7 @@ const LAST_SEEN_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Colunas públicas do usuário (nunca password_hash). */
 const USER_COLUMNS = [
-  'id', 'name', 'email', 'role', 'status', 'token_version', 'avatar_url', 'stripe_customer_id',
+  'id', 'name', 'email', 'role', 'status', 'token_version', 'avatar_url',
   'access_override_until', 'last_login_at', 'last_seen_at', 'created_at', 'updated_at',
 ].join(', ');
 

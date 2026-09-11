@@ -8,7 +8,7 @@
 //   pm2 logs focoelite
 //   pm2 reload focoelite            # recarrega sem derrubar a aplicação
 //
-// As variáveis sensíveis (banco, segredos, chaves do OpenRouter e do Stripe, SMTP)
+// As variáveis sensíveis (banco, segredos, chaves do OpenRouter e do Asaas, SMTP)
 // NÃO ficam aqui: elas vivem no arquivo .env da raiz, que o server/config.js
 // carrega. Este arquivo define apenas como o processo é executado.
 // =====================================================================

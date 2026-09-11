@@ -9,7 +9,7 @@
  *
  * Cache em memória de toda a tabela, com validade curta (para múltiplos processos)
  * e invalidação imediata ao gravar. Chaves ausentes no banco caem nos DEFAULTS.
- * Segredos (OpenRouter/Stripe/SMTP) NÃO ficam aqui: vêm apenas de variáveis de ambiente.
+ * Segredos (OpenRouter/Asaas/SMTP) NÃO ficam aqui: vêm apenas de variáveis de ambiente.
  */
 const config = require('../config');
 const db = require('../db/pool');
@@ -44,8 +44,7 @@ const DEFAULTS = Object.freeze({
     simulado_every_days: 14,
   },
   private_lessons_enabled: true,
-  // 'auto' = usa o provedor que tiver chave no ambiente; asaas/stripe/none forçam
-  payment_provider: 'auto',
+  payment_provider: 'asaas',
   daily_quotes: [
     'Disciplina transforma sonhos em realidade.',
     'Disciplina hoje, aprovação amanhã.',

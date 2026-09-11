@@ -185,7 +185,7 @@ async function main() {
 
   // -------------------------------------------------------------- pagamento
   secao('Cobrança das assinaturas');
-  const provedor = env('PAYMENT_PROVIDER') || '(automático)';
+  const provedor = env('PAYMENT_PROVIDER') || 'asaas';
   if (env('ASAAS_API_KEY')) {
     const ambiente = env('ASAAS_ENV') === 'sandbox' ? 'sandbox (teste)' : 'produção';
     item(OK, 'Asaas', `chave ${mascarar(process.env.ASAAS_API_KEY)} · ${ambiente}`);
@@ -194,8 +194,6 @@ async function main() {
     } else {
       item(OK, 'Webhook do Asaas', `aponte para ${config.appUrl}/api/billing/webhook`);
     }
-  } else if (env('STRIPE_SECRET_KEY')) {
-    item(OK, 'Stripe', `chave ${mascarar(process.env.STRIPE_SECRET_KEY)}`);
   } else {
     const exige = config.requireSubscription;
     item(

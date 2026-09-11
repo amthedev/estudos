@@ -35,7 +35,7 @@ async function findSubscription(userId) {
   return db.one(
     `SELECT s.id, s.status, s.plan_id, p.name AS plan_name, p.slug AS plan_slug, p.interval AS plan_interval,
             p.price_cents AS plan_price_cents,
-            s.stripe_subscription_id, s.current_period_start, s.current_period_end,
+            s.provider_subscription_id, s.current_period_start, s.current_period_end,
             s.cancel_at_period_end, s.canceled_at, s.created_at, s.updated_at
        FROM subscriptions s
        LEFT JOIN plans p ON p.id = s.plan_id

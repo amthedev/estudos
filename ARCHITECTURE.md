@@ -1,7 +1,7 @@
 # Foco Elite — Arquitetura e convenções
 
 Plataforma de estudos (ENEM, Academia do Barro Branco / Cadete PM-SP e outros vestibulares) com
-cronograma adaptativo, aulas, questões, simulados, redação e tutor com IA, assinaturas via Stripe e
+cronograma adaptativo, aulas, questões, simulados, redação e tutor com IA, assinaturas via Asaas e
 painel administrativo completo. Nome comercial: **Foco de Elite**. Domínio de produção: **focoelite.com.br**.
 
 Este documento é o contrato entre todos os módulos. Quem escreve código lê isto antes.
@@ -17,7 +17,7 @@ Este documento é o contrato entre todos os módulos. Quem escreve código lê i
 | Frontend   | HTML + CSS + JavaScript puro (ES modules), sem framework. SPA leve com roteador próprio |
 | Libs front | `public/vendor/` (Chart.js, marked, DOMPurify) — sem CDN                    |
 | IA         | Cliente HTTP do OpenRouter, **somente no backend** (`server/services/ai.js`)     |
-| Pagamentos | Stripe Checkout + Billing Portal + Webhooks (`server/services/stripe.js`)    |
+| Pagamentos | Asaas Checkout + assinaturas recorrentes + Webhooks (`server/services/payments/asaas.js`) |
 | E-mail     | nodemailer (SMTP). Sem SMTP em dev → link impresso no console                |
 
 Comandos:
@@ -58,7 +58,7 @@ server/
   routes/
     <modulo>.js            exporta { basePath: '/api/<modulo>', router }
     admin/<modulo>.js      exporta { basePath: '/api/admin/<modulo>', router } (já protegidas por requireAdmin)
-  services/                regras de negócio reutilizáveis (schedule, reviews, stats, ai, essay, stripe, mailer, search, settings)
+  services/                regras de negócio reutilizáveis (schedule, reviews, stats, ai, essay, payments, mailer, search, settings)
   utils/                   helpers puros (slug, dates, video, pagination, tokens)
 public/
   index.html               landing pública
@@ -139,7 +139,7 @@ router.get('/:id', validate({ params: z.object({ id: z.string().uuid() }) }), wr
 * Senhas: bcryptjs custo 12. Mínimo 8 caracteres.
 * Rate limit: login/recuperação 10/15min por IP; IA 30/min por usuário; API 600/15min por IP.
 * Helmet com CSP: scripts/estilos próprios (`'self'`), frames de YouTube/Vimeo, imagens `https:` e `data:`,
-  fontes do Google Fonts, conexões `'self'` (+ Stripe js quando usado).
+  fontes do Google Fonts e conexões `'self'`.
 
 ### 3.5 Banco
 `server/db/pool.js`:
@@ -159,7 +159,7 @@ memória com invalidação ao gravar. Chaves iniciais (seed):
 `openrouter_monthly_token_limit`, `tutor_system_prompt`, `review_intervals` ([1,7,30]),
 `schedule_defaults` ({questions_block_min: 20, review_block_min: 15, essay_weekly: true, simulado_every_days: 14}),
 `private_lessons_enabled` (true).
-Segredos (chaves OpenRouter/Stripe/SMTP) ficam **apenas** em variáveis de ambiente. O admin vê só status e
+Segredos (chaves OpenRouter/Asaas/SMTP) ficam **apenas** em variáveis de ambiente. O admin vê só status e
 os 4 últimos caracteres.
 
 ### 3.7 Auditoria e erros
@@ -236,8 +236,8 @@ Prefixo `/api`. Aluno autenticado salvo indicação. `[pub]` = público, `[adm]`
 * `GET /essays/criteria?exam_id` → critérios que serão usados (exibidos ao aluno)
 
 ### assinatura / aulas particulares
-* `GET  /billing/plans` `[pub]` ; `GET /billing/status` ; `POST /billing/checkout` `{plan_id}` → `{url}` ; `POST /billing/portal` → `{url}`
-* `POST /billing/webhook` (raw body, assinatura Stripe; sem CSRF/cookie)
+* `GET  /billing/plans` `[pub]` ; `GET /billing/status` ; `POST /billing/checkout` `{plan_id, payment_method}` → `{url}` ; `POST /billing/portal` → `{url?, invoices[]}`
+* `POST /billing/webhook` (raw body, token do Asaas; sem CSRF/cookie)
 * `GET  /tutoring/teachers?subject_id` ; `GET /tutoring/teachers/:id/slots?from&to` ; `GET /tutoring/bookings` ; `POST /tutoring/bookings` `{teacher_id, subject_id?, starts_at, notes?}` ; `POST /tutoring/bookings/:id/cancel`
 
 ### admin (`/api/admin/...`, todos `[adm]`)
@@ -252,8 +252,8 @@ Prefixo `/api`. Aluno autenticado salvo indicação. `[pub]` = público, `[adm]`
 * `simulados` CRUD (modelos)
 * `essays/themes` CRUD ; `essays/criteria` GET/PUT por exam ; `essays/submissions` lista
 * `teachers` CRUD (+availability) ; `bookings` lista/confirm/cancel
-* `plans` CRUD + `POST plans/:id/sync-stripe` ; `subscriptions` lista
-* `settings` GET/PUT ; `settings/integrations` → status OpenRouter/Stripe/SMTP (chaves mascaradas) ; `ai/usage` (métricas, por dia, por feature, por aluno)
+* `plans` CRUD + `POST plans/:id/sync-provider` ; `subscriptions` lista
+* `settings` GET/PUT ; `settings/integrations` → status OpenRouter/Asaas/SMTP (chaves mascaradas) ; `ai/usage` (métricas, por dia, por feature, por aluno)
 * `platform/health` → uptime, versão, DB, últimos erros, atividade recente ; `platform/errors` ; `platform/audit`
 
 ---
@@ -359,7 +359,7 @@ Redação IA, Tutor IA, Provas Anteriores, Revisões, Caderno de Erros, Meu Dese
 Favoritos, Aulas Particulares, Perfil. Menu inferior (mobile): Início, Cronograma, Estudar, Tutor IA, Perfil.
 
 ### 6.5 Páginas do admin (`js/admin/pages/`)
-`/admin` dashboard.js · `/admin/alunos` students.js · `/admin/alunos/:id` student.js · `/admin/conteudo` content.js (árvore área→matéria→assunto→subassunto, reordenar, criar/editar inline) · `/admin/aulas` lessons.js · `/admin/aulas/nova|:id` lesson-form.js · `/admin/questoes` questions.js · `/admin/questoes/nova|:id` question-form.js · `/admin/questoes/importar` questions-import.js · `/admin/provas-anteriores` past-exams.js · `/admin/vestibulares` exams.js · `/admin/vestibulares/:id` exam-form.js (dados, matérias+pesos, assuntos, redação/critérios) · `/admin/simulados` simulados.js · `/admin/redacao` essays.js (temas, critérios por prova, redações corrigidas) · `/admin/professores` teachers.js · `/admin/agendamentos` bookings.js · `/admin/planos` plans.js · `/admin/configuracoes` settings.js (marca, acesso, OpenRouter, Stripe, e-mail) · `/admin/plataforma` platform.js (saúde, uso de IA, erros, auditoria).
+`/admin` dashboard.js · `/admin/alunos` students.js · `/admin/alunos/:id` student.js · `/admin/conteudo` content.js (árvore área→matéria→assunto→subassunto, reordenar, criar/editar inline) · `/admin/aulas` lessons.js · `/admin/aulas/nova|:id` lesson-form.js · `/admin/questoes` questions.js · `/admin/questoes/nova|:id` question-form.js · `/admin/questoes/importar` questions-import.js · `/admin/provas-anteriores` past-exams.js · `/admin/vestibulares` exams.js · `/admin/vestibulares/:id` exam-form.js (dados, matérias+pesos, assuntos, redação/critérios) · `/admin/simulados` simulados.js · `/admin/redacao` essays.js (temas, critérios por prova, redações corrigidas) · `/admin/professores` teachers.js · `/admin/agendamentos` bookings.js · `/admin/planos` plans.js · `/admin/configuracoes` settings.js (marca, acesso, OpenRouter, Asaas, e-mail) · `/admin/plataforma` platform.js (saúde, uso de IA, erros, auditoria).
 
 ---
 

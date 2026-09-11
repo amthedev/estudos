@@ -35,7 +35,7 @@ async function seedLanding(db) {
      RETURNING id`
   );
 
-  // Mensal com identificadores do Stripe: eles NÃO podem aparecer na resposta pública.
+  // Identificadores legados do pagamento NÃO podem aparecer na resposta pública.
   await db.query(
     `INSERT INTO plans (slug, name, description, price_cents, interval, interval_count, duration_months,
                         bonus_months, compare_price_cents, badge, features, highlight, sort_order,

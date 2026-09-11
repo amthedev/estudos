@@ -141,6 +141,39 @@
   font-size: var(--fs-sm);
 }
 
+.sub-payment-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: auto;
+}
+
+.sub-payment-actions .btn {
+  min-height: 44px;
+}
+
+.sub-payment-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-1);
+  min-height: 20px;
+  margin: calc(-1 * var(--s-1)) 0 var(--s-1);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  text-align: center;
+}
+
+.sub-payment-note .icon {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.sub-payment-note-muted {
+  color: var(--text-3);
+}
+
 /* ---------------------------------------------------------------------
    Responsivo
    --------------------------------------------------------------------- */

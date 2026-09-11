@@ -7,7 +7,7 @@
  *   const app = createApp();
  *
  * Ordem dos middlewares: segurança (helmet/CSP) → compressão → cookies → parsers de corpo
- * (raw para o webhook do Stripe, JSON para o resto) → log → rate limit e CSRF em /api →
+ * (raw para o webhook de pagamento, JSON para o resto) → log → rate limit e CSRF em /api →
  * rotas de API (auto-mount de server/routes/*.js e server/routes/admin/*.js) → estáticos →
  * páginas HTML → 404 → errorHandler.
  */
@@ -51,7 +51,7 @@ function buildCsp() {
     'object-src': ["'none'"],
     'frame-ancestors': ["'self'"],
     'form-action': ["'self'"],
-    'script-src': ["'self'", 'https://js.stripe.com'],
+    'script-src': ["'self'"],
     'script-src-attr': ["'none'"],
     // 'unsafe-inline' em estilos permite atributos style="" (barras de progresso, gráficos);
     // fontes carregadas via @import do Google Fonts em app.css/admin.css
@@ -67,10 +67,8 @@ function buildCsp() {
       'https://www.youtube.com',
       'https://www.youtube-nocookie.com',
       'https://player.vimeo.com',
-      'https://js.stripe.com',
-      'https://checkout.stripe.com',
     ],
-    'connect-src': ["'self'", 'https://api.stripe.com', 'https://js.stripe.com'],
+    'connect-src': ["'self'"],
     'worker-src': ["'self'", 'blob:'],
     'manifest-src': ["'self'"],
   };
@@ -154,7 +152,7 @@ function createApp() {
   app.use(cookieParser());
 
   // ---- corpo da requisição ---------------------------------------------------
-  // O webhook do Stripe precisa do corpo bruto para validar a assinatura.
+  // O webhook de pagamento precisa do corpo bruto para validar o evento.
   app.use(WEBHOOK_PATH, express.raw({ type: 'application/json', limit: '2mb' }));
   // POST de arquivo: o corpo NÃO é lido aqui. A rota consome a requisição em
   // fluxo e grava direto no disco, porque uma videoaula passa de 300 MB e

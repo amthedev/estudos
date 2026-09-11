@@ -26,7 +26,7 @@ describe('Fundação: saúde, autenticação, CSRF e recuperação de senha', ()
     assert.equal(typeof res.body.uptime, 'number');
   });
 
-  it('GET /api/billing/plans lista apenas planos ativos sem expor dados do Stripe', async () => {
+  it('GET /api/billing/plans lista apenas planos ativos sem expor identificadores legados', async () => {
     await ctx.db.query(
       `INSERT INTO plans (
          slug, name, description, price_cents, currency, interval,

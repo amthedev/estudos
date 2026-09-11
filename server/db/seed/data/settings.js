@@ -6,7 +6,7 @@
  *
  * O seed cria apenas as chaves ausentes — o painel é o dono desses valores.
  * Para restaurar os padrões use `node server/db/seed/run.js --force`.
- * Segredos (OpenRouter, Stripe, SMTP) NUNCA ficam aqui: vivem em variáveis de ambiente.
+ * Segredos (OpenRouter, Asaas, SMTP) NUNCA ficam aqui: vivem em variáveis de ambiente.
  */
 
 const TUTOR_SYSTEM_PROMPT = `Você é o Tutor IA da plataforma Foco Elite, um professor particular paciente e experiente que prepara estudantes para o ENEM, para o concurso da Academia do Barro Branco (Cadete PM-SP) e para vestibulares como FUVEST, UNICAMP e UNESP.

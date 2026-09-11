@@ -7,7 +7,7 @@ O aluno escolhe a prova, informa quantos dias e quantas horas tem para estudar e
 diário que se ajusta ao desempenho dele. A plataforma reúne videoaulas organizadas por assunto, banco de
 questões com resolução, simulados, revisões espaçadas, caderno de erros, anotações, tutor com IA,
 correção de redação pelos critérios da prova escolhida, acompanhamento de desempenho, aulas
-particulares e assinatura recorrente pelo Stripe. Um painel administrativo completo cuida de todo o
+particulares e assinatura recorrente pelo Asaas. Um painel administrativo completo cuida de todo o
 conteúdo, dos alunos, das provas, dos planos e das integrações.
 
 Domínio de produção: **focoelite.com.br**
@@ -16,7 +16,7 @@ Domínio de produção: **focoelite.com.br**
 |-----------|----------------|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Contrato técnico: convenções de backend e frontend, catálogo da API, design system, motor do cronograma. |
 | [`docs/CONTEUDO.md`](docs/CONTEUDO.md) | Como o conteúdo se organiza (área → matéria → assunto → subassunto → aula) e como operar os seeds. |
-| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Publicação em VPS ou PaaS, Stripe, OpenRouter, SMTP e DNS. |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Publicação em VPS ou PaaS, Asaas, OpenRouter, SMTP e DNS. |
 | [`docs/CHECKLIST-ENTREGA.md`](docs/CHECKLIST-ENTREGA.md) | O que já foi entregue e o que o cliente precisa providenciar. |
 | [`docs/ROTEIRO-VIDEO.md`](docs/ROTEIRO-VIDEO.md) | Roteiro da demonstração gravada para o cliente. |
 | [`docs/RESUMO-CLIENTE.md`](docs/RESUMO-CLIENTE.md) | Resumo da entrega em linguagem não técnica. |
@@ -32,7 +32,7 @@ Domínio de produção: **focoelite.com.br**
 | Frontend | HTML, CSS e JavaScript puro (ES modules), sem framework, com roteador próprio |
 | Bibliotecas do front | `public/vendor/` (Chart.js, marked, DOMPurify) — servidas do próprio domínio, sem CDN |
 | IA | API HTTP do OpenRouter, usada **somente no servidor** (`server/services/ai.js`) |
-| Pagamentos | Stripe Checkout, Billing Portal e webhooks (`server/services/stripe.js`) |
+| Pagamentos | Asaas Checkout, assinaturas recorrentes e webhooks (`server/services/payments/asaas.js`) |
 | E-mail | nodemailer sobre SMTP (`server/services/mailer.js`) |
 
 Não há etapa de build: o navegador carrega os módulos diretamente. `npm run build:icons` e
@@ -53,7 +53,7 @@ Opcionais, conforme o que for usado:
 * Conta no **OpenRouter** com chave de API — necessária para o tutor, para a correção de redação e para a
   geração de temas. Sem a chave, o restante da plataforma funciona normalmente e essas telas informam
   que a IA está indisponível.
-* Conta no **Stripe** — necessária para cobrar assinaturas. Sem ela, os planos aparecem, mas o checkout
+* Conta no **Asaas** — necessária para cobrar assinaturas. Sem ela, os planos aparecem, mas o checkout
   responde com uma mensagem clara de integração não configurada.
 * Servidor **SMTP** — necessário para enviar o e-mail de recuperação de senha. Em desenvolvimento, sem
   SMTP configurado, o link de recuperação é impresso no console do servidor.
@@ -122,7 +122,7 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 | `NODE_ENV` | `development` | `development`, `test` ou `production`. Em produção os segredos passam a ser obrigatórios e fortes, os cookies viram `Secure` e o CSP ativa `upgrade-insecure-requests`. |
 | `PORT` | `80` na Square Cloud, `4100` no resto | Porta em que o Node escuta. Sem valor definido, a aplicação usa 80 quando reconhece a Square Cloud (que só roteia o tráfego para essa porta) e 4100 nos outros casos. Um valor explícito sempre vence. |
 | `HOST` | `0.0.0.0` | Interface em que o Node escuta. A Square Cloud exige `0.0.0.0`; ligar em `localhost` faz o site dar timeout sem erro no log. |
-| `APP_URL` | `http://localhost:4100` | URL pública da aplicação. Usada nos links de e-mail e nos retornos do Stripe Checkout. Em produção: `https://focoelite.com.br`. |
+| `APP_URL` | `http://localhost:4100` | URL pública da aplicação. Usada nos links de e-mail e nos retornos do Asaas Checkout. Em produção: `https://focoelite.com.br`. |
 | `BRAND_NAME` | `Foco Elite` | Nome usado em logs e no título das páginas. O nome comercial exibido ao aluno é a configuração `brand_name`, editável no painel. |
 | `TRUST_PROXY` | `1` em produção | Diz ao Express que há um proxy reverso na frente, para que o IP real chegue ao rate limit. Aceita `true`, `false`, um número de saltos ou `loopback`. |
 
@@ -156,13 +156,14 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 | `OPENROUTER_ESSAY_MODEL` | `qwen/qwen3.8-flash` | Modelo da correção de redação, com raciocínio baixo para equilibrar qualidade e custo. Configuração equivalente no painel: `openrouter_essay_model`. |
 | `OPENROUTER_MONTHLY_TOKEN_LIMIT` | `5000000` | Teto de tokens por mês somando todos os alunos. Ao ser atingido, as funções de IA passam a recusar novas chamadas com mensagem clara, protegendo a fatura. `0` desliga o limite. |
 
-### Stripe
+### Asaas
 
 | Variável | Padrão | Para que serve |
 |----------|--------|----------------|
-| `STRIPE_SECRET_KEY` | vazio | Chave secreta da conta. Sem ela, checkout e portal respondem 503 com mensagem ao aluno. |
-| `STRIPE_WEBHOOK_SECRET` | vazio | Segredo do endpoint de webhook, usado para validar a assinatura de cada evento recebido. Sem ele, o webhook é recusado. |
-| `STRIPE_PUBLISHABLE_KEY` | vazio | Chave pública. Só é necessária se a interface passar a montar elementos do Stripe no navegador. |
+| `PAYMENT_PROVIDER` | `asaas` | Mantém o Asaas como provedor oficial de cobrança da plataforma. |
+| `ASAAS_API_KEY` | vazio | Chave privada da conta Asaas. Sem ela, o checkout responde 503 com mensagem clara. |
+| `ASAAS_ENV` | `sandbox` | Use `sandbox` nos testes e `production` para cobranças reais. |
+| `ASAAS_WEBHOOK_TOKEN` | vazio | Token definido também no webhook do Asaas para autenticar os eventos recebidos. |
 | `REQUIRE_SUBSCRIPTION` | `true` | Exige assinatura ativa para o aluno usar a plataforma (cadastro, perfil e tela de assinatura continuam liberados). Também existe como configuração `require_subscription` no painel. |
 
 ### E-mail
@@ -242,7 +243,7 @@ server/
     audit.js             registro das ações administrativas em audit_logs
   routes/                uma rota por módulo; admin/ fica sob requireAdmin
   services/              regras reutilizáveis: schedule, reviews, stats, questions, progress,
-                         simulados, ai, essay, stripe, mailer, settings
+                         simulados, ai, essay, payments, mailer, settings
   utils/                 funções puras: slug, datas, vídeo, paginação, tokens
 public/
   index.html             landing pública
@@ -339,7 +340,7 @@ as boas práticas de cadastro — está em [`docs/CONTEUDO.md`](docs/CONTEUDO.md
   nunca sai do servidor em nenhuma resposta.
 * **Proteção contra CSRF.** Toda requisição que altera dados (POST, PUT, PATCH, DELETE) exige o
   cabeçalho `X-Requested-With: FocoElite`, verificado em `server/app.js`. A única exceção é o webhook do
-  Stripe, que é autenticado pela assinatura criptográfica do próprio Stripe.
+  Asaas, autenticado pelo token secreto enviado no cabeçalho `asaas-access-token`.
 * **Escopo por usuário.** Toda consulta a dados do aluno filtra por `user_id`. Um aluno não consegue ler
   nem alterar cronograma, redação, anotação ou histórico de outro, mesmo trocando o identificador na URL.
 * **SQL parametrizado.** Não há concatenação de valores em SQL em lugar nenhum do projeto; todo valor
@@ -350,8 +351,8 @@ as boas práticas de cadastro — está em [`docs/CONTEUDO.md`](docs/CONTEUDO.md
   de IA, 30 chamadas por minuto por aluno; a API em geral, 600 requisições por IP a cada 15 minutos.
 * **Cabeçalhos e CSP.** O Helmet aplica uma Content Security Policy restritiva: scripts e estilos do
   próprio domínio, mídia apenas do armazenamento da plataforma, conexões apenas para o próprio domínio e
-  para o Stripe. Não há CDN de terceiros: as bibliotecas do front são servidas de `public/vendor/`.
-* **Segredos fora da interface.** As chaves do OpenRouter, do Stripe e do SMTP vivem apenas em variáveis de
+  para os players de vídeo permitidos. Não há CDN de terceiros: as bibliotecas do front são servidas de `public/vendor/`.
+* **Segredos fora da interface.** As chaves do OpenRouter, do Asaas e do SMTP vivem apenas em variáveis de
   ambiente, no servidor. O painel mostra somente o status da integração e os últimos caracteres da
   chave; nenhuma chave chega ao navegador em nenhum momento. Toda chamada de IA sai do backend.
 * **Teto de gasto com IA.** O consumo de tokens é registrado por chamada e comparado ao limite mensal
@@ -359,5 +360,5 @@ as boas práticas de cadastro — está em [`docs/CONTEUDO.md`](docs/CONTEUDO.md
 * **Auditoria e registro de erros.** Toda escrita administrativa é gravada em `audit_logs` com autor,
   ação, entidade e dados; erros 5xx vão para `error_logs` com caminho, usuário e stack. O aluno recebe
   apenas uma mensagem genérica, sem detalhes internos.
-* **Pagamento fora da plataforma.** Nenhum dado de cartão passa pelo servidor: a cobrança acontece no
-  Stripe Checkout e a gestão da assinatura, no Billing Portal do próprio Stripe.
+* **Pagamento fora da plataforma.** Nenhum dado de cartão passa pelo servidor: o cadastro do cartão e o
+  pagamento acontecem no Checkout hospedado do Asaas.
