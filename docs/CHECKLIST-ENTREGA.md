@@ -64,19 +64,21 @@ que **já está pronto e entregue**.
 | Item | Detalhe |
 |------|---------|
 | O que é | Os arquivos das videoaulas em MP4, para enviar pelo painel. A plataforma hospeda no Blob Storage da Square Cloud. |
-| Por que assim | A plataforma não armazena vídeo: ela incorpora o player. Isso evita custo de armazenamento e de banda, e o vídeo carrega rápido em qualquer conexão. |
-| O que cadastrar em cada aula | Título, matéria, assunto, link do vídeo, duração, um resumo em texto e em quais provas aquele conteúdo cai. |
+| Por que assim | O arquivo é enviado pelo painel e fica no Blob Storage da Square Cloud, servido por CDN. Não depende de YouTube nem de player de terceiro, e a aula não leva marca de outra plataforma. |
+| O que cadastrar em cada aula | Título, matéria, assunto, o arquivo do vídeo, um resumo em texto e em quais provas aquele conteúdo cai. A duração é lida do próprio arquivo. |
+| Guarde os originais | O Blob passa a ser a única cópia dos vídeos na plataforma. Mantenha os arquivos originais guardados fora dela. |
 | Questões | O banco de questões pode ser preenchido uma a uma pelo painel ou em lote, por planilha CSV, usando o modelo que a própria tela de importação disponibiliza. |
 | Sugestão de início | Comece por uma matéria completa, de ponta a ponta, para os primeiros alunos terem uma trilha inteira, em vez de espalhar aulas soltas por várias matérias. |
 | Professores | Para as aulas particulares: nome, matéria e horários disponíveis de cada professor. |
 
-### 7. Servidor (se ainda não houver)
+### 7. Servidor — já resolvido
 
 | Item | Detalhe |
 |------|---------|
-| Opção A | VPS Ubuntu 22.04 com 2 vCPU e 2 GB de RAM (Hetzner, DigitalOcean, Contabo, Hostinger). Mais controle e menor custo por recurso. |
-| Opção B | Railway ou Render, com o banco na Neon. Mais simples, sem manutenção de servidor. |
-| Ambos | Estão documentados passo a passo em `docs/DEPLOY.md`. |
+| Onde está | Square Cloud, com a aplicação e o PostgreSQL gerenciado na mesma conta, e os arquivos no Blob Storage. |
+| Endereço atual | `https://focoelite.squareweb.app`, no ar. Passa a ser `focoelite.com.br` quando o DNS apontar. |
+| Publicação | Automática: cada versão enviada para a branch `main` no GitHub republica sozinha. |
+| Nada a providenciar | Este item fica aqui só para registro. O passo a passo está em `docs/DEPLOY.md`, seção 9. |
 
 ---
 
@@ -140,13 +142,12 @@ que **já está pronto e entregue**.
 
 ## Ordem sugerida para entrar no ar
 
-1. Enviar a logo definitiva em SVG.
-2. Contratar o servidor (ou aprovar a opção Railway/Render).
-3. Apontar o DNS de `focoelite.com.br` para o servidor.
-4. Criar a chave do OpenRouter e definir o limite de gasto.
-5. Criar e ativar as contas Sandbox e produção do Asaas, e decidir os valores dos planos.
-6. Configurar o e-mail de envio, com SPF e DKIM.
-7. Publicação, HTTPS e backup diário configurados.
-8. Cadastrar a primeira matéria completa: aulas com vídeo e questões.
-9. Testar com um aluno de verdade, do cadastro à primeira redação corrigida.
-10. Abrir para o público.
+1. **Criar a conta de administrador**, abrindo `/admin/login`. Enquanto não existir nenhuma, essa tela cria a primeira conta e fica aberta a quem tiver o endereço — é o primeiro passo, não o último.
+2. Enviar a logo definitiva em SVG.
+3. Criar a chave do OpenRouter e definir o limite de gasto.
+4. Criar e ativar as contas Sandbox e produção do Asaas, e decidir os valores dos planos.
+5. Configurar o e-mail de envio, com SPF e DKIM.
+6. Apontar o DNS de `focoelite.com.br` para a Square Cloud e trocar o `APP_URL`.
+7. Cadastrar a primeira matéria completa: aulas com vídeo e questões.
+8. Testar com um aluno de verdade, do cadastro à primeira redação corrigida.
+9. Abrir para o público.
