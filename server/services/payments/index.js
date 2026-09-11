@@ -118,6 +118,43 @@ async function createCheckout({ user, plan, paymentMethod, successUrl, cancelUrl
  * aberto quando existe e, na falta dela, url nula — a tela do aluno então mostra os
  * dados da assinatura e o contato do suporte.
  */
+/**
+ * Cancela a assinatura do aluno no provedor e agenda o encerramento.
+ *
+ * O período já pago não é devolvido nem encurtado: o acesso vale até o fim e
+ * só não renova. Quem paga por seis meses e desiste no segundo continua com os
+ * quatro que comprou.
+ */
+async function cancelSubscription(user) {
+  const adapter = await requireAdapter();
+  const current = await db.one(
+    `SELECT id, status, provider, provider_subscription_id, current_period_end
+       FROM subscriptions
+      WHERE user_id = $1 AND status IN ('active', 'trialing')
+      ORDER BY current_period_end DESC NULLS LAST
+      LIMIT 1`,
+    [user.id]
+  );
+  if (!current) {
+    throw providerError('not_found', 'Você não tem uma assinatura ativa para cancelar.');
+  }
+
+  // Pix avulso não tem assinatura do lado do provedor: não há o que cancelar
+  // lá, e o acesso já termina sozinho no fim do período pago.
+  if (current.provider_subscription_id && adapter.cancelSubscription) {
+    await adapter.cancelSubscription(current.provider_subscription_id);
+  }
+
+  const row = await db.one(
+    `UPDATE subscriptions
+        SET cancel_at_period_end = true, canceled_at = coalesce(canceled_at, now())
+      WHERE id = $1
+      RETURNING id, status, current_period_end, cancel_at_period_end`,
+    [current.id]
+  );
+  return row;
+}
+
 async function createPortal(user, returnUrl) {
   const adapter = await requireAdapter();
   const result = await adapter.createPortal(user, returnUrl);
@@ -431,6 +468,12 @@ async function applyAsaasEvent(tx, event) {
         patch.current_period_start = trialActive ? now : null;
         patch.current_period_end = trialActive ? trialEnd : null;
         patch.cancel_at_period_end = false;
+        // O teste vale uma vez por aluno, e é aqui que ele de fato começa —
+        // não na abertura do checkout, senão quem desistisse antes de pagar
+        // perderia o direito sem ter usado.
+        if (trialActive) {
+          await tx.query('UPDATE users SET trial_used_at = now() WHERE id = $1 AND trial_used_at IS NULL', [userId]);
+        }
       }
       break;
     }
@@ -573,6 +616,7 @@ module.exports = {
 
   ensureCustomer,
   createCheckout,
+  cancelSubscription,
   createPortal,
   syncPlan,
 

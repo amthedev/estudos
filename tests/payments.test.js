@@ -79,6 +79,7 @@ const defaultRoutes = () => [
     body: (sent) => ({ id: 'sub_000001', object: 'subscription', cycle: sent.cycle, nextDueDate: sent.nextDueDate }),
   },
   { method: 'PUT', match: /^\/subscriptions\/sub_000001$/, body: { id: 'sub_000001', object: 'subscription' } },
+  { method: 'DELETE', match: /^\/subscriptions\/sub_000001$/, body: { deleted: true, id: 'sub_000001' } },
   {
     method: 'GET',
     match: /^\/subscriptions\/sub_000001\/payments/,
@@ -236,11 +237,13 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.equal(asaas.toISODate(asaas.addMonths(new Date('2026-01-31T12:00:00.000Z'), 1)), '2026-02-28');
     });
 
-    it('limita as 24 horas grátis ao cartão dos planos de 6 e 12 meses', () => {
-      assert.equal(asaas.trialDaysFor({ duration_months: 6, trial_days: 1 }, 'credit_card'), 1);
-      assert.equal(asaas.trialDaysFor({ duration_months: 12, trial_days: 10 }, 'credit_card'), 1);
-      assert.equal(asaas.trialDaysFor({ duration_months: 1, trial_days: 1 }, 'credit_card'), 0);
-      assert.equal(asaas.trialDaysFor({ duration_months: 6, trial_days: 1 }, 'pix'), 0);
+    it('limita as 24 horas grátis ao cartão dos planos de 6 e 12 meses', async () => {
+      // Sem aluno informado não há teste: a regra depende de quem está pedindo,
+      // porque cada aluno tem direito a um só.
+      const semAluno = { id: null };
+      assert.equal(await asaas.trialDaysFor({ duration_months: 1, trial_days: 1 }, 'credit_card', semAluno), 0);
+      assert.equal(await asaas.trialDaysFor({ duration_months: 6, trial_days: 1 }, 'pix', semAluno), 0);
+      assert.equal(await asaas.trialDaysFor({ duration_months: 6, trial_days: 0 }, 'credit_card', semAluno), 0);
     });
   });
 
@@ -442,6 +445,90 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.equal(res.status, 200);
       assert.equal(res.body.trial_ends_at, null);
       assert.deepEqual(api.find('POST', /^\/checkouts$/).body.billingTypes, ['CREDIT_CARD']);
+    });
+
+    it('o teste de 24h vale uma vez por aluno', async () => {
+      // Sem essa trava o teste era repetível: cartão que passa na validação e
+      // falha na cobrança deixava a assinatura em past_due, o guarda liberava,
+      // e um teste novo começava — todo dia, sem pagar.
+      const primeiro = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'credit_card',
+      });
+      assert.equal(primeiro.status, 200);
+      assert.ok(primeiro.body.trial_ends_at, 'o primeiro checkout oferece o teste');
+
+      await ctx.db.query('UPDATE users SET trial_used_at = now() WHERE id = $1', [student.user.id]);
+
+      const segundo = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'credit_card',
+      });
+      assert.equal(segundo.status, 200);
+      assert.equal(segundo.body.trial_ends_at, null, 'quem já usou não recebe outro teste');
+    });
+
+    it('assinatura com período vencido não tranca o aluno fora do checkout', async () => {
+      // O caso que trancava dos dois lados: status ativo com período vencido
+      // bloqueava o conteúdo (expirou) e bloqueava a compra ("já tem
+      // assinatura ativa"), sem saída nenhuma pelo produto.
+      await ctx.db.query(
+        `INSERT INTO subscriptions (user_id, plan_id, provider, provider_subscription_id, status, current_period_end)
+         VALUES ($1, $2, 'asaas', 'sub_vencida', 'active', now() - interval '2 days')`,
+        [student.user.id, plans.yearly]
+      );
+
+      const res = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'credit_card',
+      });
+      assert.equal(res.status, 200, 'precisa poder pagar de novo');
+
+      const status = await student.agent.get('/api/billing/status');
+      assert.equal(status.body.subscription.is_active, false, 'período vencido não é assinatura ativa');
+    });
+
+    it('assinatura ativa de verdade continua bloqueando um segundo checkout', async () => {
+      await ctx.db.query(
+        `INSERT INTO subscriptions (user_id, plan_id, provider, provider_subscription_id, status, current_period_end)
+         VALUES ($1, $2, 'asaas', 'sub_viva', 'active', now() + interval '30 days')`,
+        [student.user.id, plans.yearly]
+      );
+      const res = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.yearly,
+        payment_method: 'credit_card',
+      });
+      assert.equal(res.status, 409);
+      assert.match(res.body.error.message, /já tem uma assinatura ativa/i);
+    });
+
+    it('o aluno cancela sozinho e mantém o período já pago', async () => {
+      // A função de cancelar existia no cliente do Asaas e nunca era chamada:
+      // a única saída documentada era "fale com o suporte".
+      await ctx.db.query(
+        `INSERT INTO subscriptions (user_id, plan_id, provider, provider_subscription_id, status, current_period_end)
+         VALUES ($1, $2, 'asaas', 'sub_000001', 'active', now() + interval '90 days')`,
+        [student.user.id, plans.yearly]
+      );
+
+      const res = await student.agent.post('/api/billing/cancel', {});
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.subscription.cancel_at_period_end, true);
+      assert.match(res.body.message, /até o fim do período/i);
+
+      // avisou o Asaas
+      assert.ok(api.find('DELETE', /^\/subscriptions\/sub_000001$/), 'precisa cancelar no provedor');
+
+      // e o acesso continua até o fim do que foi pago
+      const status = await student.agent.get('/api/billing/status');
+      assert.equal(status.body.access.allowed, true);
+      assert.equal(status.body.subscription.cancel_at_period_end, true);
+    });
+
+    it('cancelar sem assinatura ativa devolve erro claro', async () => {
+      const res = await student.agent.post('/api/billing/cancel', {});
+      assert.equal(res.status, 404);
+      assert.match(res.body.error.message, /não tem uma assinatura ativa/i);
     });
 
     it('recusa uma forma de pagamento diferente de cartão ou Pix', async () => {

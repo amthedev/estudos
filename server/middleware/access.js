@@ -19,6 +19,26 @@ const { AppError } = require('./errors');
 
 const ACTIVE_STATUSES = new Set(['active', 'trialing']);
 
+/**
+ * Assinatura vale acesso agora?
+ *
+ * Status ativo não basta: nada no servidor faz uma assinatura envelhecer
+ * sozinha — só os webhooks escrevem em subscriptions —, então uma linha
+ * 'active' ou 'trialing' com o período vencido é um estado que fica. Quem
+ * olhasse só o status daria acesso a quem já não tem, e quem olhasse só o
+ * período trataria como ativa uma assinatura cancelada.
+ *
+ * É por existir em um lugar só que o acesso ao conteúdo e a liberação do
+ * checkout não podem divergir. Quando divergiam, o aluno com período vencido
+ * ficava trancado nos dois: sem conteúdo, porque expirou, e sem poder pagar,
+ * porque "já tem assinatura ativa".
+ */
+function isSubscriptionActive(subscription, at = Date.now()) {
+  if (!subscription || !ACTIVE_STATUSES.has(subscription.status)) return false;
+  if (!subscription.current_period_end) return true;
+  return new Date(subscription.current_period_end).getTime() > at;
+}
+
 function toBool(value) {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
@@ -62,10 +82,7 @@ async function computeAccess(userId) {
   const now = Date.now();
   const overrideUntil = user && user.access_override_until ? new Date(user.access_override_until) : null;
   const overrideActive = Boolean(overrideUntil && overrideUntil.getTime() > now);
-  const periodEnd = subscription && subscription.current_period_end ? new Date(subscription.current_period_end) : null;
-  const subscriptionActive = Boolean(
-    subscription && ACTIVE_STATUSES.has(subscription.status) && (!periodEnd || periodEnd.getTime() > now)
-  );
+  const subscriptionActive = isSubscriptionActive(subscription, now);
 
   let allowed = true;
   let reason;
@@ -106,4 +123,4 @@ function requireAccess(req, res, next) {
     .catch(next);
 }
 
-module.exports = { requireAccess, computeAccess, isSubscriptionRequired, ACTIVE_STATUSES };
+module.exports = { requireAccess, computeAccess, isSubscriptionRequired, isSubscriptionActive, ACTIVE_STATUSES };

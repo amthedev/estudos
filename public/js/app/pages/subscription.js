@@ -6,7 +6,7 @@
 import { api } from '../../core/api.js';
 import {
   html, render as renderTo, toast, pageHeader, emptyState, errorState, skeleton,
-  badge, alertBox, qs, setLoading, on,
+  badge, alertBox, confirm, qs, setLoading, on,
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { fmtDate, fmtMoney, intervalLabel, statusLabel } from '../../core/format.js';
@@ -71,6 +71,10 @@ function accessBlock() {
   const subscription = status.subscription;
 
   if (!access.allowed) {
+    // Quem está bloqueado por atraso ou por período vencido já teve assinatura:
+    // sem este botão, a tela só mostrava o aviso e os cards de plano, e a
+    // fatura em aberto — o caminho mais curto para voltar — ficava escondida.
+    const jaTeveAssinatura = Boolean(subscription);
     return html`
       <div class="sub-access-notice" role="status">
         <span class="sub-access-icon">${icon('lock')}</span>
@@ -78,7 +82,11 @@ function accessBlock() {
           <strong>Escolha um plano para continuar</strong>
           <span>${BLOCK_REASONS[access.reason] || 'Libere seu acesso completo à plataforma.'}</span>
         </div>
-        <span class="sub-access-direction" aria-hidden="true">${icon('chevron-down')}</span>
+        ${jaTeveAssinatura
+          ? html`<button type="button" class="btn btn-secondary" data-action="portal">
+              ${icon('receipt')}<span>Ver faturas</span>
+            </button>`
+          : html`<span class="sub-access-direction" aria-hidden="true">${icon('chevron-down')}</span>`}
       </div>`;
   }
 
@@ -104,7 +112,12 @@ function accessBlock() {
               : ''}
           </div>
           <div class="sub-current-actions">
-            <button type="button" class="btn btn-secondary" data-action="portal">${icon('credit-card')}<span>Gerenciar assinatura</span></button>
+            <button type="button" class="btn btn-secondary" data-action="portal">${icon('credit-card')}<span>Ver faturas</span></button>
+            ${subscription.cancel_at_period_end
+              ? ''
+              : html`<button type="button" class="btn btn-ghost btn-danger" data-action="cancel">
+                  ${icon('x')}<span>Cancelar assinatura</span>
+                </button>`}
           </div>
         </div>
       </section>`;
@@ -301,6 +314,7 @@ function paint() {
   offClick = on(page.el, 'click', '[data-action]', (event, trigger) => {
     if (trigger.dataset.action === 'checkout') startCheckout(trigger.dataset.id, trigger.dataset.method, trigger);
     else if (trigger.dataset.action === 'portal') openPortal(trigger);
+    else if (trigger.dataset.action === 'cancel') cancelSubscription(trigger);
   });
 }
 
@@ -325,6 +339,30 @@ async function startCheckout(planId, paymentMethod, button) {
   setLoading(button, false);
 }
 
+async function cancelSubscription(button) {
+  const ok = await confirm({
+    title: 'Cancelar assinatura',
+    message:
+      'Seu acesso continua até o fim do período que você já pagou — nada é cobrado depois disso. ' +
+      'Para voltar, é só assinar de novo.',
+    danger: true,
+    confirmText: 'Cancelar assinatura',
+    cancelText: 'Manter',
+  });
+  if (!ok) return;
+
+  setLoading(button, true);
+  try {
+    const res = await api.post('/api/billing/cancel', {});
+    toast(res.message || 'Assinatura cancelada.', { type: 'success' });
+    await renderPage(page);
+  } catch (err) {
+    toast(err.message || 'Não foi possível cancelar. Tente novamente.', { type: 'error' });
+  } finally {
+    setLoading(button, false);
+  }
+}
+
 async function openPortal(button) {
   setLoading(button, true);
   try {
@@ -333,7 +371,10 @@ async function openPortal(button) {
       window.location.assign(session.url);
       return;
     }
-    toast('Não foi possível abrir o portal de assinatura.', { type: 'error' });
+    // Sem fatura em aberto não é erro: o Asaas não tem portal do assinante, e
+    // o servidor manda a explicação. Mostrar vermelho aqui assustava o aluno
+    // que só queria conferir a cobrança.
+    toast(session.message || 'Nenhuma fatura em aberto no momento.', { type: 'info' });
   } catch (err) {
     toast(err.message || 'Não foi possível abrir o portal de assinatura.', { type: 'error' });
   }

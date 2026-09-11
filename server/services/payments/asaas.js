@@ -394,11 +394,24 @@ async function firstPaymentUrl(subscriptionId) {
   return chosen ? chosen.invoiceUrl || chosen.bankSlipUrl || null : null;
 }
 
-function trialDaysFor(plan, paymentMethod) {
+/**
+ * Dias de teste que este aluno tem direito neste plano.
+ *
+ * A oferta depende de três coisas, e a terceira é o aluno: sem ela o teste era
+ * repetível — cartão que passa na validação e falha na cobrança deixava a
+ * assinatura em `past_due`, o guarda do checkout liberava, e um teste novo
+ * começava. `users.trial_used_at` é o que impede o segundo.
+ */
+async function trialDaysFor(plan, paymentMethod, user) {
   if (paymentMethod !== 'credit_card') return 0;
   const duration = durationOf(plan);
   const enabled = Math.round(Number(plan && plan.trial_days) || 0) > 0;
-  return enabled && (duration === 6 || duration === 12) ? 1 : 0;
+  if (!enabled || (duration !== 6 && duration !== 12)) return 0;
+
+  const userId = user && (user.id || user);
+  if (!userId) return 0;
+  const row = await db.one('SELECT trial_used_at FROM users WHERE id = $1', [userId]);
+  return row && row.trial_used_at ? 0 : 1;
 }
 
 function checkoutUrl(checkout) {
@@ -417,7 +430,7 @@ async function createCheckout({ user, plan, paymentMethod = 'credit_card', succe
   if (!billingType) throw providerError('unsupported_payment_method', 'Escolha cartão de crédito ou Pix.');
 
   const now = new Date();
-  const trialDays = trialDaysFor(plan, paymentMethod);
+  const trialDays = await trialDaysFor(plan, paymentMethod, user);
   const firstChargeAt = trialDays > 0 ? addDays(now, trialDays) : now;
   const schedule = planSchedule(plan, firstChargeAt);
   const reference = buildReference(user.id, plan.id);

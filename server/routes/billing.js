@@ -19,7 +19,7 @@ const db = require('../db/pool');
 const { validate, z } = require('../middleware/validate');
 const { AppError, wrap } = require('../middleware/errors');
 const { requireStudent } = require('../middleware/auth');
-const { computeAccess, isSubscriptionRequired, ACTIVE_STATUSES } = require('../middleware/access');
+const { computeAccess, isSubscriptionRequired, isSubscriptionActive } = require('../middleware/access');
 const { getSetting } = require('../services/settings');
 const payments = require('../services/payments');
 
@@ -159,7 +159,7 @@ function publicSubscription(subscription, extra = {}) {
     current_period_end: subscription.current_period_end || null,
     cancel_at_period_end: Boolean(subscription.cancel_at_period_end),
     canceled_at: subscription.canceled_at || null,
-    is_active: ACTIVE_STATUSES.has(subscription.status),
+    is_active: isSubscriptionActive(subscription),
     provider: extra.provider || null,
     payment_method: extra.payment_method || null,
     last_payment_at: extra.last_payment_at || null,
@@ -234,7 +234,12 @@ router.post(
 
     const access = await computeAccess(req.user.id);
     const current = access.subscription;
-    if (current && ACTIVE_STATUSES.has(current.status)) {
+    // O mesmo critério do acesso ao conteúdo, de propósito: olhar só o status
+    // aqui trancava o aluno de período vencido nos dois lados — sem conteúdo,
+    // porque expirou, e sem poder pagar, porque "já tem assinatura ativa".
+    // Não dá para usar access.allowed: com access_override_until o aluno
+    // passaria pelo guarda e abriria uma segunda assinatura no Asaas.
+    if (isSubscriptionActive(current)) {
       throw new AppError(409, 'conflict', 'Você já tem uma assinatura ativa. Para trocar de plano, use "Gerenciar assinatura".', {
         subscription: publicSubscription(current),
       });
@@ -280,6 +285,26 @@ router.post(
       invoices: Array.isArray(portal.invoices) ? portal.invoices : [],
       message: portal.message || null,
       support_email: (await getSetting('support_email')) || null,
+    });
+  })
+);
+
+router.post(
+  '/cancel',
+  wrap(async (req, res) => {
+    if (!(await payments.isConfigured())) {
+      throw new AppError(503, 'payments_unavailable', payments.UNAVAILABLE_MESSAGE);
+    }
+    // O aluno cancela sozinho. Antes a única saída documentada era "fale com o
+    // suporte", o que na prática deixava quem quisesse sair sem caminho e
+    // gerava cobrança que ninguém queria.
+    const canceled = await callProvider(() => payments.cancelSubscription(req.user));
+    res.json({
+      ok: true,
+      subscription: publicSubscription(canceled),
+      message: canceled.current_period_end
+        ? 'Assinatura cancelada. Seu acesso continua até o fim do período já pago.'
+        : 'Assinatura cancelada.',
     });
   })
 );
