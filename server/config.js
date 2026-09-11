@@ -51,7 +51,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default(AMBIENTE_PADRAO),
   PORT: z.coerce.number().int().min(1).max(65535).optional(),
   HOST: z.string().min(1).default('0.0.0.0'),
-  APP_URL: z.string().url().default('http://localhost:4100'),
+  APP_URL: z
+    .string()
+    .url('precisa ser o endereço completo do site, com o protocolo na frente (ex.: https://focoelite.com.br)')
+    .default('http://localhost:4100'),
   BRAND_NAME: z.string().min(1).default('Foco Elite'),
 
   DATABASE_URL: z.string().min(1).optional(),
@@ -65,8 +68,11 @@ const envSchema = z.object({
   PGSSL_CA: z.string().optional(),
   PGSSL_CA_FILE: z.string().optional(),
 
-  JWT_SECRET: z.string().min(16).optional(),
-  ADMIN_JWT_SECRET: z.string().min(16).optional(),
+  JWT_SECRET: z.string().min(16, 'precisa de pelo menos 16 caracteres (gere com: openssl rand -hex 48)').optional(),
+  ADMIN_JWT_SECRET: z
+    .string()
+    .min(16, 'precisa de pelo menos 16 caracteres (gere com: openssl rand -hex 48)')
+    .optional(),
   COOKIE_SECURE: boolFromEnv(undefined).optional(),
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).optional(),
   TRUST_PROXY: z.string().optional(),
@@ -99,8 +105,25 @@ const rawEnv = Object.fromEntries(Object.entries(process.env).map(([key, value])
 const parsed = envSchema.safeParse(rawEnv);
 
 if (!parsed.success) {
-  const lines = parsed.error.issues.map((issue) => `  - ${issue.path.join('.') || '(raiz)'}: ${issue.message}`);
-  throw new Error(`Variáveis de ambiente inválidas:\n${lines.join('\n')}`);
+  const lines = parsed.error.issues.map((issue) => {
+    const nome = issue.path.join('.') || '(raiz)';
+    // O valor recebido ajuda a achar o erro de digitação, mas nem todo valor
+    // pode ir para o log: chave e senha ficam de fora.
+    const sensivel = /SECRET|PASS|KEY|TOKEN|DATABASE_URL|CERT|_CA$/i.test(nome);
+    const recebido = process.env[nome];
+    const mostra = !sensivel && recebido !== undefined ? ` (recebeu: "${recebido}")` : '';
+    return `  - ${nome}: ${issue.message}${mostra}`;
+  });
+  throw new Error(
+    [
+      `${lines.length} variável(is) de ambiente com valor inválido:`,
+      ...lines,
+      '',
+      hasEnvFile
+        ? `Corrija no arquivo .env da raiz do projeto (${envFile}).`
+        : 'Corrija na tela de variáveis de ambiente da aplicação, no painel da hospedagem, e publique de novo.',
+    ].join('\n')
+  );
 }
 
 const env = parsed.data;

@@ -1,9 +1,10 @@
 'use strict';
 
 /**
- * Porta e host em que a aplicação escuta.
+ * Configuração da aplicação: porta, host, ambiente presumido e o que vai parar
+ * no log quando um valor está errado.
  *
- *   NODE_ENV=test node --test tests/config-port.test.js
+ *   NODE_ENV=test node --test tests/config.test.js
  *
  * Este teste existe por causa do modo de falha da Square Cloud: ela só roteia o
  * tráfego da borda para a porta 80 do container, e uma aplicação escutando em
@@ -27,7 +28,7 @@ const { execFileSync } = require('node:child_process');
 
 const raiz = path.join(__dirname, '..');
 
-describe('Porta e host da aplicação', () => {
+describe('Configuração da aplicação', () => {
   let temp;
 
   before(() => {
@@ -120,5 +121,21 @@ describe('Porta e host da aplicação', () => {
     const { erro } = semSegredos({ SQUARECLOUD_APP_ID: 'app-123' });
     assert.match(erro, /JWT_SECRET/);
     assert.match(erro, /ADMIN_JWT_SECRET/);
+  });
+
+  it('mostra o valor recebido para ajudar a achar o erro de digitação', () => {
+    const { erro } = semSegredos({ APP_URL: 'focoelite.com.br' });
+    assert.match(erro, /APP_URL/);
+    assert.match(erro, /focoelite\.com\.br/);
+    assert.match(erro, /https:\/\//); // o exemplo do formato certo
+  });
+
+  it('nunca escreve um valor secreto no log', () => {
+    // O log de deploy da hospedagem é lido por quem tiver acesso ao painel, e
+    // fica guardado lá. Um segredo recusado não pode vazar por causa da
+    // mensagem de erro.
+    const { erro } = semSegredos({ JWT_SECRET: 'curto-demais' });
+    assert.match(erro, /JWT_SECRET/);
+    assert.doesNotMatch(erro, /curto-demais/);
   });
 });
