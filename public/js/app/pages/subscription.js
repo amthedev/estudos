@@ -12,14 +12,14 @@ import { icon } from '../../core/icons.js';
 import { fmtDate, fmtMoney, intervalLabel, statusLabel } from '../../core/format.js';
 
 const BLOCK_REASONS = {
-  no_subscription: 'Você ainda não tem uma assinatura ativa. Escolha um plano abaixo para liberar as aulas, os simulados e a correção de redação.',
-  expired: 'O período da sua assinatura terminou. Renove para voltar de onde parou — seu progresso continua salvo.',
-  past_due: 'O último pagamento não foi confirmado. Atualize a forma de pagamento para reativar o acesso.',
-  unpaid: 'Há uma cobrança em aberto. Regularize o pagamento para recuperar o acesso.',
-  canceled: 'Sua assinatura foi cancelada. Assine novamente para retomar os estudos.',
-  incomplete: 'O pagamento não foi concluído. Finalize a assinatura para liberar o acesso.',
-  incomplete_expired: 'A tentativa de assinatura expirou. Escolha um plano para tentar de novo.',
-  paused: 'Sua assinatura está pausada. Retome pelo portal de assinatura para voltar a estudar.',
+  no_subscription: 'Escolha uma opção abaixo para liberar toda a plataforma.',
+  expired: 'Renove para retomar os estudos. Seu progresso continua salvo.',
+  past_due: 'Atualize o pagamento para reativar seu acesso.',
+  unpaid: 'Regularize a cobrança em aberto para continuar estudando.',
+  canceled: 'Escolha um plano para retomar seus estudos.',
+  incomplete: 'Finalize a assinatura para liberar seu acesso.',
+  incomplete_expired: 'Escolha um plano e tente novamente.',
+  paused: 'Retome sua assinatura para voltar a estudar.',
 };
 
 let page = null;
@@ -71,11 +71,15 @@ function accessBlock() {
   const subscription = status.subscription;
 
   if (!access.allowed) {
-    return alertBox({
-      type: 'warning',
-      title: 'Seu acesso está bloqueado',
-      text: BLOCK_REASONS[access.reason] || 'Seu acesso está bloqueado. Escolha um plano para liberar a plataforma.',
-    });
+    return html`
+      <div class="sub-access-notice" role="status">
+        <span class="sub-access-icon">${icon('lock')}</span>
+        <div class="sub-access-copy">
+          <strong>Escolha um plano para continuar</strong>
+          <span>${BLOCK_REASONS[access.reason] || 'Libere seu acesso completo à plataforma.'}</span>
+        </div>
+        <span class="sub-access-direction" aria-hidden="true">${icon('chevron-down')}</span>
+      </div>`;
   }
 
   if (subscription && subscription.is_active) {
@@ -117,40 +121,122 @@ function accessBlock() {
   return '';
 }
 
+function heroBlock() {
+  const active = Boolean(status.subscription && status.subscription.is_active);
+  return html`
+    <header class="sub-hero">
+      <img
+        class="sub-hero-image"
+        src="/assets/platform/plataforma-multidispositivo.jpg"
+        alt=""
+        width="1450"
+        height="1088"
+      >
+      <div class="sub-hero-copy">
+        <div class="sub-hero-eyebrow"><span></span>Assinatura Foco Elite</div>
+        <h1>${active ? 'Seu acesso está ativo.' : 'Seu plano. Seu ritmo. Acesso completo.'}</h1>
+        <p>${active
+          ? 'Acompanhe sua assinatura ou compare outras opções.'
+          : 'Escolha o período e comece sua preparação com direção.'}</p>
+      </div>
+    </header>
+    <div class="sub-benefits" aria-label="Recursos incluídos nos planos">
+      <span>${icon('play-circle')}<strong>Videoaulas</strong></span>
+      <span>${icon('target')}<strong>Simulados</strong></span>
+      <span>${icon('pen-line')}<strong>Redação IA</strong></span>
+      <span>${icon('calendar-check')}<strong>Cronograma</strong></span>
+    </div>`;
+}
+
+function billingLabel(plan) {
+  const count = Math.max(1, Number(plan.interval_count) || 1);
+  if (plan.interval === 'year') return count === 1 ? 'por ano' : `a cada ${count} anos`;
+  if (plan.interval === 'month') return count === 1 ? 'por mês' : `a cada ${count} meses`;
+  return intervalLabel(plan.interval, count);
+}
+
+function planSummary(plan) {
+  const accessMonths = Math.max(1, Number(plan.access_months) || Number(plan.duration_months) || 1);
+  const monthlyEquivalent = Number(plan.monthly_equivalent_cents);
+  const savings = Number(plan.savings_cents);
+
+  if (accessMonths > 1 && Number.isFinite(monthlyEquivalent) && monthlyEquivalent > 0) {
+    return html`
+      <div class="sub-plan-equivalent">
+        <strong>${fmtMoney(monthlyEquivalent, { currency: plan.currency })}<span>/mês</span></strong>
+        <span>${accessMonths} meses de acesso</span>
+      </div>
+      ${Number.isFinite(savings) && savings > 0
+        ? html`<span class="sub-plan-saving">Economize ${fmtMoney(savings, { currency: plan.currency })}</span>`
+        : ''}`;
+  }
+
+  return html`
+    <div class="sub-plan-equivalent">
+      <strong>Flexibilidade total</strong>
+      <span>Renovação mensal</span>
+    </div>`;
+}
+
+function visiblePlanFeatures(plan) {
+  const accessMonths = Math.max(1, Number(plan.access_months) || Number(plan.duration_months) || 1);
+  const hasSavings = Number(plan.savings_cents) > 0;
+  return (Array.isArray(plan.features) ? plan.features : []).filter((feature) => {
+    const text = String(feature || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (text === 'acesso completo a plataforma') return false;
+    if (hasSavings && text.includes('economia')) return false;
+    if (accessMonths > 1 && text.startsWith(`${accessMonths} meses de acesso`)) return false;
+    return true;
+  });
+}
+
 function planCard(plan) {
-  const features = Array.isArray(plan.features) ? plan.features : [];
+  const features = visiblePlanFeatures(plan);
   const disabled = !status.payments_configured;
   const methods = Array.isArray(status.payment_methods) ? status.payment_methods : ['credit_card'];
   const acceptsCard = methods.includes('credit_card');
   const acceptsPix = methods.includes('pix');
-  const hasTrial = Number(plan.trial_days) > 0;
+  const hasTrial = Number(plan.trial_days) > 0 && acceptsCard;
+  const tag = plan.badge || (plan.highlight ? 'Recomendado' : hasTrial ? 'Teste disponível' : 'Plano flexível');
   return html`
     <article class="card sub-plan ${plan.highlight ? 'sub-plan-highlight' : ''}">
-      ${plan.highlight ? html`<span class="sub-plan-flag">Mais escolhido</span>` : ''}
       <div class="card-body">
-        <h3 class="sub-plan-name">${plan.name}</h3>
-        ${plan.description ? html`<p class="text-2 sub-plan-desc">${plan.description}</p>` : ''}
+        <div class="sub-plan-head">
+          <div>
+            <span class="sub-plan-tag">${tag}</span>
+            <h3 class="sub-plan-name">${plan.name}</h3>
+          </div>
+          ${plan.highlight ? html`<span class="sub-plan-star" aria-label="Plano recomendado">${icon('sparkles')}</span>` : ''}
+        </div>
         <div class="sub-plan-price">
           <strong>${fmtMoney(plan.price_cents, { currency: plan.currency })}</strong>
-          <span class="text-3">/ ${intervalLabel(plan.interval, plan.interval_count)}</span>
+          <span>${billingLabel(plan)}</span>
         </div>
-        ${hasTrial ? html`<div class="mb-3">${badge('24 horas grátis com cartão', 'blue', { icon: 'gift' })}</div>` : ''}
+        ${planSummary(plan)}
+        ${hasTrial ? html`
+          <div class="sub-trial">
+            ${icon('gift')}
+            <div><strong>24 horas grátis</strong><span>No cartão. Cobrança após 24h.</span></div>
+          </div>` : ''}
         ${features.length
-          ? html`<ul class="checklist sub-plan-features">
-              ${features.map((feature) => html`<li>${icon('check', { size: 16 })}<span>${feature}</span></li>`)}
+          ? html`
+            <div class="sub-plan-includes">Destaques do plano</div>
+            <ul class="checklist sub-plan-features">
+              ${features.map((feature) => html`<li><span class="sub-feature-check">${icon('check', { size: 14 })}</span><span>${feature}</span></li>`)}
             </ul>`
           : ''}
         <div class="sub-payment-actions">
           ${acceptsCard ? html`
-            <button type="button" class="btn ${plan.highlight || hasTrial ? 'btn-primary' : 'btn-secondary'} btn-block" data-action="checkout" data-id="${plan.id}" data-method="credit_card" ${disabled ? 'disabled' : ''}>
-              ${icon('credit-card')}<span>${hasTrial ? 'Testar grátis por 24h' : 'Pagar com cartão'}</span>
+            <button type="button" class="btn btn-primary btn-block sub-plan-cta" data-action="checkout" data-id="${plan.id}" data-method="credit_card" ${disabled ? 'disabled' : ''}>
+              ${icon('credit-card')}<span>${hasTrial ? 'Começar 24h grátis' : 'Assinar com cartão'}</span>${icon('arrow-right')}
             </button>
-            ${hasTrial ? html`<p class="sub-payment-note">${icon('clock', { size: 14 })}<span>Cadastre o cartão. Cobrança somente após 24h.</span></p>` : ''}` : ''}
+          ` : ''}
           ${acceptsPix ? html`
-            <button type="button" class="btn btn-secondary btn-block" data-action="checkout" data-id="${plan.id}" data-method="pix" ${disabled ? 'disabled' : ''}>
+            <button type="button" class="btn btn-secondary btn-block sub-pix-cta" data-action="checkout" data-id="${plan.id}" data-method="pix" ${disabled ? 'disabled' : ''}>
               ${icon('zap')}<span>Pagar com Pix</span>
             </button>
-            ${hasTrial ? html`<p class="sub-payment-note sub-payment-note-muted">No Pix, o pagamento é imediato e não inclui teste grátis.</p>` : ''}` : ''}
+            ${hasTrial ? html`<p class="sub-payment-note">Pix é imediato e não inclui o teste grátis.</p>` : ''}
+          ` : ''}
         </div>
         ${disabled ? html`<p class="hint text-center mt-2">Pagamentos indisponíveis no momento.</p>` : ''}
       </div>
@@ -166,12 +252,23 @@ function plansBlock() {
     });
   }
   return html`
-    <section>
-      <h2 class="section-title">${status.subscription && status.subscription.is_active ? 'Outros planos' : 'Escolha seu plano'}</h2>
+    <section class="sub-plans-section">
+      <div class="sub-section-head">
+        <div>
+          <span class="sub-section-eyebrow">Planos</span>
+          <h2>${status.subscription && status.subscription.is_active ? 'Compare outras opções' : 'Escolha seu período'}</h2>
+        </div>
+        <p>Compare os planos e escolha o que funciona para sua rotina.</p>
+      </div>
       <div class="grid grid-3 sub-plans">${plans.map(planCard)}</div>
-      <p class="text-3 text-sm mt-4">
-        Pagamento seguro processado pelo ${status.payment_provider_label || 'Asaas'}.
-      </p>
+      <footer class="sub-checkout-trust">
+        <span class="sub-trust-icon">${icon('shield-check')}</span>
+        <div>
+          <strong>Pagamento processado pelo ${status.payment_provider_label || 'Asaas'}</strong>
+          <span>Seu acesso é atualizado após a confirmação.</span>
+        </div>
+        ${status.support_email ? html`<a href="mailto:${status.support_email}">Precisa de ajuda?</a>` : ''}
+      </footer>
     </section>`;
 }
 
@@ -189,13 +286,12 @@ function paint() {
   renderTo(
     page.el,
     html`
-      ${pageHeader({
-        title: 'Assinatura',
-        subtitle: 'Acesso completo às aulas, questões, simulados, redação e tutor com IA.',
-      })}
-      ${accessBlock()}
-      ${paymentsWarning()}
-      ${plansBlock()}`
+      <div class="sub-page">
+        ${heroBlock()}
+        ${accessBlock()}
+        ${paymentsWarning()}
+        ${plansBlock()}
+      </div>`
   );
 
   if (offClick) offClick();
