@@ -325,10 +325,22 @@ async function applyAsaasCheckoutEvent(tx, event) {
     `UPDATE payment_checkouts
         SET status = $2, updated_at = now()
       WHERE provider = 'asaas' AND provider_checkout_id = $1
-      RETURNING id, provider_checkout_id, status`,
+      RETURNING id, provider_checkout_id, status, user_id`,
     [info.checkout_id, nextStatus]
   );
-  return row || { skipped: 'checkout desconhecido' };
+  if (!row) return { skipped: 'checkout desconhecido' };
+
+  // O cliente no Asaas nasce quando o aluno preenche o checkout hospedado, e é
+  // aqui que ficamos sabendo o id dele. Guardar agora importa: os eventos
+  // seguintes da assinatura chegam identificados só pelo cliente, e sem esse
+  // vínculo o pagamento não encontraria o aluno.
+  if (info.customer_id) {
+    await tx.query('UPDATE users SET provider_customer_id = $1 WHERE id = $2 AND provider_customer_id IS NULL', [
+      info.customer_id,
+      row.user_id,
+    ]);
+  }
+  return row;
 }
 
 /**

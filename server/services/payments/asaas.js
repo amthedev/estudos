@@ -408,6 +408,23 @@ function checkoutUrl(checkout) {
 }
 
 /**
+ * Dados do aluno que já temos, para o checkout hospedado chegar preenchido.
+ * Lê do banco porque o CPF costuma ser gravado na mesma requisição que abre o
+ * checkout, e o objeto em memória ainda não o tem.
+ */
+async function customerDataFor(user) {
+  const row =
+    (await db.one('SELECT name, email, tax_id, provider_customer_id FROM users WHERE id = $1', [user.id])) || user;
+  const data = {
+    name: trimmed(row.name) || undefined,
+    email: trimmed(row.email) || undefined,
+  };
+  const taxId = onlyDigits(row.tax_id);
+  if (taxId) data.cpfCnpj = taxId;
+  return data;
+}
+
+/**
  * Cria o Checkout hospedado do Asaas. Assim o cartão nunca passa pelo nosso servidor:
  * o próprio Asaas coleta e valida os dados antes de criar a assinatura.
  */
@@ -416,7 +433,6 @@ async function createCheckout({ user, plan, paymentMethod = 'credit_card', succe
   const billingType = BILLING_TYPES[paymentMethod];
   if (!billingType) throw providerError('unsupported_payment_method', 'Escolha cartão de crédito ou Pix.');
 
-  const customerId = await ensureCustomer(user);
   const now = new Date();
   const trialDays = trialDaysFor(plan, paymentMethod);
   const firstChargeAt = trialDays > 0 ? addDays(now, trialDays) : now;
@@ -448,7 +464,14 @@ async function createCheckout({ user, plan, paymentMethod = 'credit_card', succe
         value: Number(plan.price_cents || 0) / 100,
       },
     ],
-    customer: customerId,
+    // `customerData` em vez de `customer`: os dois são mutuamente exclusivos, e
+    // passar um cliente já cadastrado obriga que ele esteja COMPLETO no Asaas —
+    // CPF, telefone e endereço inteiro. Um aluno que só fez cadastro com nome e
+    // e-mail derrubava o checkout com "o campo cpfCnpj deve existir para o
+    // customer informado". Todos os subcampos de customerData são opcionais: o
+    // que faltar, o próprio checkout hospedado coleta do aluno na tela, que é
+    // justamente para isso que ele existe. O que já sabemos vai preenchido.
+    customerData: await customerDataFor(user),
     ...(recorrente
       ? {
           subscription: {
@@ -479,7 +502,9 @@ async function createCheckout({ user, plan, paymentMethod = 'credit_card', succe
   return {
     url,
     provider: NAME,
-    customer_id: customerId,
+    // O cliente no Asaas nasce quando o aluno preenche o checkout, então aqui
+    // só existe id se ele já tiver pago alguma vez antes.
+    customer_id: idOf(created.customer) || null,
     checkout_id: created.id,
     payment_method: paymentMethod,
     trial_ends_at: trialDays > 0 ? firstChargeAt : null,

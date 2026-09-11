@@ -366,14 +366,18 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.ok(trialEndsAt - before >= 23.99 * 60 * 60 * 1000);
       assert.ok(trialEndsAt - before <= 24.01 * 60 * 60 * 1000);
 
-      const created = api.find('POST', /^\/customers$/);
-      assert.equal(created.body.externalReference, student.user.id);
-      assert.equal(created.body.cpfCnpj, '39053344705');
+      // O cliente não é mais criado antes: passar um `customer` já cadastrado
+      // obriga que ele esteja completo no Asaas (CPF, telefone e endereço), e
+      // um aluno recém-cadastrado derrubava o checkout. Vai `customerData` com
+      // o que já sabemos, e o checkout hospedado coleta o resto.
+      assert.equal(api.find('POST', /^\/customers$/), undefined, 'não cria cliente antes do checkout');
 
       const checkout = api.find('POST', /^\/checkouts$/);
       assert.deepEqual(checkout.body.billingTypes, ['CREDIT_CARD']);
       assert.deepEqual(checkout.body.chargeTypes, ['RECURRENT']);
-      assert.equal(checkout.body.customer, 'cus_000001');
+      assert.equal(checkout.body.customer, undefined, 'customer e customerData são mutuamente exclusivos');
+      assert.equal(checkout.body.customerData.email, student.user.email);
+      assert.equal(checkout.body.customerData.cpfCnpj, '39053344705', 'o CPF informado vai preenchido');
       assert.equal(checkout.body.subscription.cycle, 'YEARLY');
       assert.equal(checkout.body.items[0].value, 359.9);
       assert.equal(checkout.body.externalReference, `${student.user.id}:${plans.yearly}`);
@@ -386,8 +390,9 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.equal(savedCheckout.status, 'pending');
       assert.ok(savedCheckout.trial_ends_at);
 
+      // O cliente no Asaas passa a existir quando o aluno conclui o checkout,
+      // então o id só é gravado a partir do webhook do pagamento.
       const user = await ctx.db.one('SELECT provider_customer_id, tax_id FROM users WHERE id = $1', [student.user.id]);
-      assert.equal(user.provider_customer_id, 'cus_000001');
       assert.equal(user.tax_id, '39053344705');
     });
 
@@ -450,8 +455,12 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
     it('traduz a recusa do Asaas em erro da API, sem vazar o corpo cru', async () => {
       asaas.setHttpClient(
         fakeAsaasApi([
-          { method: 'GET', match: /^\/customers\?/, body: { data: [] } },
-          { method: 'POST', match: /^\/customers$/, status: 400, body: { errors: [{ code: 'invalid_cpfCnpj', description: 'O CPF informado é inválido.' }] } },
+          {
+            method: 'POST',
+            match: /^\/checkouts$/,
+            status: 400,
+            body: { errors: [{ code: 'invalid_cpfCnpj', description: 'O CPF informado é inválido.' }] },
+          },
         ]).client
       );
       const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly });
@@ -461,7 +470,9 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
     });
 
     it('o portal do Asaas devolve as faturas e explica que não há portal do assinante', async () => {
-      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly });
+      // O cliente no Asaas passa a existir quando o aluno conclui o checkout,
+      // e o id chega pelo webhook do pagamento. Aqui ele é simulado direto.
+      await ctx.db.query('UPDATE users SET provider_customer_id = $1 WHERE id = $2', ['cus_000001', student.user.id]);
       const res = await student.agent.post('/api/billing/portal', {});
       assert.equal(res.status, 200);
       assert.equal(res.body.provider, 'asaas');
