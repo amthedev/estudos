@@ -40,9 +40,14 @@ types.setTypeParser(1016, types.getTypeParser(1007));
  * simples quando PGSSL estiver ligada.
  */
 function sslOptions() {
-  if (config.pgSslCert) {
-    const cert = config.pgSslCert;
-    return { ca: cert, cert, key: cert };
+  const { pgSslCert: cert, pgSslCa: ca } = config;
+  if (cert || ca) {
+    // O certificado do cliente da Square Cloud vem num único .pem que carrega
+    // o certificado e a chave, e o `pg` aceita o mesmo conteúdo nos dois
+    // campos. Com a autoridade em separado (o ca-certificate.crt que eles
+    // entregam junto), o servidor é conferido de verdade; sem ela, sobra o
+    // próprio certificado como âncora, que é o exemplo oficial deles.
+    return { ca: ca || cert, cert: cert || undefined, key: cert || undefined };
   }
   return config.pgSsl ? { rejectUnauthorized: false } : false;
 }

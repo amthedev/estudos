@@ -535,16 +535,36 @@ avisa e que custam caro se passarem batidos:
   antes de fechar a tela.
 
 Os bancos de lá **recusam conexão em texto puro** e exigem o certificado emitido para aquela
-instância — o mesmo arquivo `.pem` entra como CA, certificado e chave do cliente. A aplicação já faz
-isso; você só precisa entregar o certificado, por um dos dois caminhos:
+instância. Ao criar o banco você baixa três arquivos:
 
-* `PGSSL_CERT` — o conteúdo do `.pem`, em texto ou em base64 (é como a API da Square Cloud entrega).
-  Simples, mas lembre do limite de 4096 caracteres por valor: se o certificado não couber, use o
-  caminho abaixo.
-* `PGSSL_CERT_FILE` — o caminho do arquivo dentro da aplicação, por exemplo
-  `PGSSL_CERT_FILE=certs/squarecloud.pem`. Suba o `.pem` pelo gerenciador de arquivos do painel. O
-  disco da aplicação é persistente entre reinícios e publicações, e o arquivo **não** vai para o
-  repositório. Não versione esse certificado: ele é credencial, e o repositório é público.
+| Arquivo | O que é | Variável |
+|---------|---------|----------|
+| `certificate.pem` | certificado **e** chave do cliente no mesmo arquivo | `PGSSL_CERT` |
+| `ca-certificate.crt` | a autoridade certificadora, que confere o servidor | `PGSSL_CA` |
+| `private-key.key` | a chave sozinha, para clientes que a exigem separada | não é usada aqui |
+
+A biblioteca `pg` aceita o `certificate.pem` como certificado e chave ao mesmo tempo, então bastam os
+dois primeiros. **Copiar os arquivos para a pasta da aplicação não basta** — nada os lê sozinho; é
+preciso apontar as variáveis.
+
+O caminho recomendado é o conteúdo em **base64**, direto nas variáveis de ambiente: fica numa linha
+só, não depende de arquivo nenhum sobreviver a uma republicação, e cabe no limite de 4096 caracteres
+(o `certificate.pem` dá 3.780 e o `ca-certificate.crt`, 1.508).
+
+```bash
+base64 -i certificate.pem | tr -d '\n'      # cole em PGSSL_CERT
+base64 -i ca-certificate.crt | tr -d '\n'   # cole em PGSSL_CA
+```
+
+Se preferir arquivos, suba os dois pelo gerenciador de arquivos do painel e aponte
+`PGSSL_CERT_FILE` e `PGSSL_CA_FILE` para eles — o caminho é relativo à raiz da aplicação. Nesse caso,
+confira depois de cada republicação se os arquivos continuam lá.
+
+**Nunca versione esses arquivos.** São credenciais e o repositório é público; o `.gitignore` bloqueia
+`.pem`, `.key` e `.crt` justamente para que um `git add` distraído não vaze a chave do banco.
+
+Se o arquivo apontado não existir, ou o valor não for um PEM, a aplicação recusa subir dizendo qual
+variável está errada — em vez de subir e falhar na primeira consulta.
 
 Com a `DATABASE_URL` e o certificado no lugar, a primeira publicação aplica as migrations e o
 conteúdo base sozinha. Depois abra `/admin/login` para criar o administrador (item "Primeiro acesso

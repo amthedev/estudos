@@ -133,8 +133,9 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 | `DATABASE_URL` | — | Obrigatória. String de conexão do PostgreSQL, ex.: `postgres://focoelite:senha@localhost:5432/focoelite`. |
 | `DATABASE_URL_TEST` | — | Obrigatória quando `NODE_ENV=test`. Aponta para um banco **separado**: o schema dele é recriado a cada execução dos testes. |
 | `PGSSL` | `false` | `true` quando o banco exige TLS (Neon, Supabase, RDS e afins). |
-| `PGSSL_CERT` | — | Certificado do PostgreSQL gerenciado da Square Cloud, que recusa conexão em texto puro. Aceita o `.pem` em texto ou em base64. |
-| `PGSSL_CERT_FILE` | — | Alternativa à anterior: caminho do `.pem` dentro do projeto, para quando o certificado não couber no limite de 4096 caracteres de uma variável de ambiente. |
+| `PGSSL_CERT` | — | Certificado do cliente do PostgreSQL gerenciado da Square Cloud, que recusa conexão em texto puro. É o `certificate.pem` que eles entregam, com certificado e chave no mesmo arquivo. Aceita texto ou base64. |
+| `PGSSL_CA` | — | A autoridade certificadora, o `ca-certificate.crt` que vem junto. Permite conferir o servidor de verdade; sem ela, o próprio certificado do cliente vira a âncora. |
+| `PGSSL_CERT_FILE` / `PGSSL_CA_FILE` | — | Alternativa às duas anteriores: o caminho do arquivo dentro do projeto, em vez do conteúdo. |
 
 ### Segurança
 

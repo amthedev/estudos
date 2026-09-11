@@ -45,6 +45,8 @@ const envSchema = z.object({
   // texto PEM ou em base64, que é como a API da Square Cloud o entrega.
   PGSSL_CERT: z.string().optional(),
   PGSSL_CERT_FILE: z.string().optional(),
+  PGSSL_CA: z.string().optional(),
+  PGSSL_CA_FILE: z.string().optional(),
 
   JWT_SECRET: z.string().min(16).optional(),
   ADMIN_JWT_SECRET: z.string().min(16).optional(),
@@ -175,30 +177,37 @@ function resolvePort(value) {
 }
 
 /**
- * Certificado do PostgreSQL gerenciado da Square Cloud.
+ * Lê um material PEM do ambiente: o texto direto, o mesmo texto em base64 (é
+ * assim que a API da Square Cloud entrega, e é a forma que cabe numa linha só
+ * no painel) ou o caminho de um arquivo dentro do projeto.
  *
- * Os bancos de lá recusam conexão em texto puro e exigem o certificado que a
- * plataforma emite para aquela instância — o mesmo arquivo .pem entra como CA,
- * certificado e chave do cliente, como no exemplo oficial deles com `pg`.
- * Aceita o PEM direto ou em base64, que é o formato devolvido pela API.
+ * O PostgreSQL gerenciado da Square Cloud recusa conexão em texto puro e
+ * entrega três arquivos: `ca-certificate.crt` (a autoridade), `certificate.pem`
+ * (certificado e chave do cliente no mesmo arquivo) e `private-key.key` (a
+ * chave sozinha, para clientes que exigem separada). O `pg` aceita o
+ * `certificate.pem` como certificado e chave ao mesmo tempo, então bastam dois:
+ * PGSSL_CERT com o .pem e PGSSL_CA com o .crt.
  */
-function resolveDbCert(inline, file) {
+function readPem(nomeInline, inline, nomeFile, file) {
   const raw = (() => {
     if (inline) return inline.includes('-----BEGIN') ? inline : Buffer.from(inline, 'base64').toString('utf8');
     if (!file) return '';
     const full = path.isAbsolute(file) ? file : path.join(rootDir, file);
     if (!fs.existsSync(full)) {
-      throw new Error(`PGSSL_CERT_FILE aponta para um arquivo que não existe: ${full}`);
+      throw new Error(`${nomeFile} aponta para um arquivo que não existe: ${full}`);
     }
     return fs.readFileSync(full, 'utf8');
   })();
 
-  const cert = raw.trim();
-  if (!cert) return null;
-  if (!cert.includes('-----BEGIN')) {
-    throw new Error('O certificado do banco não parece ser um PEM válido (esperado um bloco -----BEGIN).');
+  const pem = raw.trim();
+  if (!pem) return null;
+  if (!pem.includes('-----BEGIN')) {
+    throw new Error(
+      `${inline ? nomeInline : nomeFile} não parece ser um PEM válido: falta o bloco -----BEGIN. ` +
+        'Use o conteúdo do arquivo, em texto ou em base64.'
+    );
   }
-  return cert;
+  return pem;
 }
 
 const deepFreeze = (obj) => {
@@ -232,7 +241,8 @@ const config = deepFreeze({
 
   databaseUrl,
   pgSsl: env.PGSSL,
-  pgSslCert: resolveDbCert(env.PGSSL_CERT, env.PGSSL_CERT_FILE),
+  pgSslCert: readPem('PGSSL_CERT', env.PGSSL_CERT, 'PGSSL_CERT_FILE', env.PGSSL_CERT_FILE),
+  pgSslCa: readPem('PGSSL_CA', env.PGSSL_CA, 'PGSSL_CA_FILE', env.PGSSL_CA_FILE),
 
   jwtSecret,
   adminJwtSecret,

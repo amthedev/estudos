@@ -9,3 +9,16 @@ uploads/
 .playwright-cli/
 output/
 public/assets/past-exams/
+
+# Certificados e chaves. O repositório é público: a chave privada do banco
+# nunca pode entrar aqui, nem por um `git add` distraído. O certificado do
+# PostgreSQL da Square Cloud é credencial — ele vai para as variáveis de
+# ambiente do painel, ou é enviado pelo gerenciador de arquivos, nunca
+# versionado.
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+certs/
