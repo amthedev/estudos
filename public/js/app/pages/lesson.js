@@ -129,12 +129,26 @@ export default async function renderPage(ctx) {
     if (state.tab === 'notes') {
       const holder = document.createElement('div');
       holder.className = 'lsn-notes';
+      render(
+        holder,
+        html`
+          <div class="lsn-notes-guide">
+            <span class="lsn-notes-guide-icon" aria-hidden="true">${icon('notebook-pen', { size: 18 })}</span>
+            <div>
+              <strong>Registre o que você entendeu</strong>
+              <p>Explique a aula com suas palavras. Este texto entra automaticamente em Meus Resumos.</p>
+            </div>
+            <a class="btn btn-ghost btn-sm" href="/app/resumos">${icon('library', { size: 15 })}<span>Meus Resumos</span></a>
+          </div>
+          <div data-summary-editor></div>`
+      );
       render(panel, holder);
-      notesEditor = mountNotesEditor(holder, {
+      notesEditor = mountNotesEditor(qs('[data-summary-editor]', holder), {
         value: (lesson.note && lesson.note.content) || '',
-        label: 'Minhas anotações desta aula',
-        placeholder: 'Escreva o que não pode esquecer desta aula. Suas anotações são salvas automaticamente.',
+        label: 'Meu resumo desta aula',
+        placeholder: 'Escreva com suas palavras o que você entendeu da aula inteira, os conceitos principais e o que não pode esquecer…',
         maxLength: 50000,
+        minRows: 9,
         onSave: async (content) => {
           const note = await api.put(`/api/lessons/${encodeURIComponent(lesson.id)}/note`, { content });
           lesson.note = note;
@@ -149,7 +163,7 @@ export default async function renderPage(ctx) {
         : html`
           <div class="lsn-summary-empty">
             ${icon('file-text', { size: 20 })}
-            <p>Esta aula ainda não tem resumo escrito. Use as suas anotações para registrar os pontos principais.</p>
+            <p>Esta aula ainda não tem um resumo preparado pela equipe. Registre o que você entendeu na aba <strong>Meu Resumo</strong>.</p>
           </div>`
     );
   }
@@ -195,11 +209,11 @@ export default async function renderPage(ctx) {
       title: lesson.title,
     });
 
-    tabs(
+    state.tabsApi = tabs(
       qs('[data-tabs]', body),
       [
-        { id: 'summary', label: 'Resumo', icon: 'file-text' },
-        { id: 'notes', label: 'Minhas Anotações', icon: 'notebook-pen' },
+        { id: 'summary', label: 'Resumo da aula', icon: 'file-text' },
+        { id: 'notes', label: 'Meu Resumo', icon: 'notebook-pen' },
       ],
       (id) => {
         state.tab = id;
@@ -250,6 +264,11 @@ export default async function renderPage(ctx) {
           : 'Aula concluída. Continue no ritmo.',
         { type: 'success', title: 'Bom trabalho' }
       );
+      const hasSummary = Boolean(String((state.lesson.note && state.lesson.note.content) || '').trim());
+      if (!hasSummary) {
+        if (state.tab !== 'notes' && state.tabsApi) state.tabsApi.set('notes');
+        if (notesEditor) notesEditor.focus();
+      }
     } catch (err) {
       toast((err && err.message) || 'Não foi possível marcar a aula como concluída.', { type: 'error' });
       setLoading(button, false);

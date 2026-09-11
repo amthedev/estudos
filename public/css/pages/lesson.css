@@ -278,6 +278,44 @@
 .lsn-notes {
   max-width: 100%;
 }
+.lsn-notes-guide {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+  padding: var(--s-3) 0 var(--s-3) var(--s-4);
+  border-left: 3px solid var(--primary-2);
+  background: linear-gradient(90deg, var(--primary-soft), transparent 72%);
+}
+.lsn-notes-guide-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--primary-2);
+  background: var(--primary-soft-2);
+}
+.lsn-notes-guide strong,
+.lsn-notes-guide p {
+  display: block;
+}
+.lsn-notes-guide p {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+@media (max-width: 639px) {
+  .lsn-notes-guide {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding-right: var(--s-3);
+  }
+  .lsn-notes-guide .btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
 
 /* ---------------------------------------------------------------------
    Aula: coluna lateral

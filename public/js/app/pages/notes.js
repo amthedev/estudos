@@ -60,7 +60,7 @@ function paintShell() {
     html`
       ${pageHeader({
         title: 'Meus Resumos',
-        subtitle: 'Suas anotações de estudo, sempre à mão e organizadas por matéria.',
+        subtitle: 'O que você entendeu nas aulas, salvo automaticamente e organizado por matéria.',
         actions: html`<button type="button" class="btn btn-primary" data-action="new">${icon('plus')}<span>Novo resumo</span></button>`,
       })}
       <section class="card nt-filters mb-6">
@@ -302,7 +302,7 @@ function paintList() {
         : emptyState({
             icon: 'notebook-pen',
             title: 'Você ainda não tem resumos',
-            text: 'Anote o essencial de cada assunto: resumos curtos rendem revisões rápidas.',
+            text: 'Durante uma aula, abra Meu Resumo e explique com suas palavras o que entendeu.',
             action: { label: 'Criar meu primeiro resumo', dataAction: 'new', icon: 'plus' },
           })
     );
