@@ -417,6 +417,11 @@ cada reinício, uma troca de senha feita no painel voltaria sozinha para o valor
 O jeito mais direto é conectar o repositório do GitHub no painel da Square Cloud: a cada versão nova
 enviada para a branch `main`, o deploy acontece a partir dela, sem pacote manual.
 
+A integração com o GitHub também transforma o conteúdo da branch em um pacote de aplicação nos
+bastidores. Por isso o painel pode mostrar a mensagem genérica sobre um `.zip` quando o repositório
+ultrapassa o limite de 100 MB, mesmo sem nenhum arquivo compactado ter sido enviado manualmente.
+Dependências, caches e arquivos grandes não devem estar versionados.
+
 1. Ou, se preferir o envio manual: gere o pacote com o conteúdo do projeto (sem `node_modules`) e
    envie pelo painel da Square Cloud, ou use a CLI oficial na pasta do projeto.
 2. Ajuste `MEMORY` em `squarecloud.app` conforme o plano. 1024 MB atende bem; o envio de vídeo em si
@@ -461,6 +466,17 @@ node scripts/create-admin.js --email seu@email.com --password "senha forte"
 Com `STORAGE_PROVIDER=squarecloud`, tudo que a equipe envia pelo painel — videoaula, miniatura, logo,
 print de depoimento, PDF de edital e de prova — vai para o Blob e é servido pelo CDN da Square Cloud,
 em `public-blob.squarecloud.dev`. O banco guarda só o endereço.
+
+As provas históricas que acompanham o conteúdo inicial também ficam no Blob. Seus endereços públicos
+estão registrados em `server/db/seed/data/curated_asset_urls.json`; o bootstrap usa esse manifesto
+para criar instalações novas e para trocar URLs locais antigas sem duplicar registros. Os PDFs não
+devem voltar para `public/assets/past-exams/`, pois fariam o pacote do GitHub ultrapassar o limite.
+Caso seja preciso republicá-los a partir de uma cópia local organizada nas pastas `enem/` e
+`barro-branco/`, use:
+
+```bash
+npm run publish:curated-pdfs -- "/caminho/para/past-exams"
+```
 
 O que isso significa na prática:
 

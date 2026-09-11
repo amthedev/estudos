@@ -21,7 +21,8 @@
     "vendor": "node scripts/vendor.js",
     "start:cloud": "node scripts/bootstrap.js && node server/index.js",
     "check": "node scripts/check-config.js",
-    "bootstrap": "node scripts/bootstrap.js"
+    "bootstrap": "node scripts/bootstrap.js",
+    "publish:curated-pdfs": "node scripts/publish-curated-pdfs.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -12,3 +12,4 @@ output/
 *.log
 .DS_Store
 ARCHITECTURE.md
+public/assets/past-exams/

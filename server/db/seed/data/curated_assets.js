@@ -1,5 +1,20 @@
 'use strict';
 
+const publishedAssets = require('./curated_asset_urls.json');
+
+function publishedUrl(localUrl) {
+  return publishedAssets[localUrl]?.url || localUrl;
+}
+
+function publishedDocument(pdfUrl, answerKeyUrl = null) {
+  return {
+    pdf_url: publishedUrl(pdfUrl),
+    answer_key_url: answerKeyUrl ? publishedUrl(answerKeyUrl) : null,
+    legacy_pdf_url: pdfUrl,
+    legacy_answer_key_url: answerKeyUrl,
+  };
+}
+
 const testimonials = [
   {
     name: 'Ana Estuda',
@@ -116,8 +131,10 @@ const pastExams = enemYears.flatMap((year) => [1, 2].map((day) => ({
   day,
   title: `Caderno de questões - ${day}º dia`,
   board: 'INEP',
-  pdf_url: `/assets/past-exams/enem/${year}/enem-${year}-dia-${day}.pdf`,
-  answer_key_url: `/assets/past-exams/enem/${year}/enem-${year}-gabarito-dia-${day}.pdf`,
+  ...publishedDocument(
+    `/assets/past-exams/enem/${year}/enem-${year}-dia-${day}.pdf`,
+    `/assets/past-exams/enem/${year}/enem-${year}-gabarito-dia-${day}.pdf`
+  ),
   notes: 'Aplicação regular',
   sort_order: day,
 })));
@@ -128,7 +145,7 @@ pastExams.push(
     year: 2026,
     title: 'APMBB CFO PM-SP 2026',
     board: 'VUNESP',
-    pdf_url: '/assets/past-exams/barro-branco/barro-branco-2026.pdf',
+    ...publishedDocument('/assets/past-exams/barro-branco/barro-branco-2026.pdf'),
     notes: 'Prova e gabarito oficial',
     sort_order: 1,
   },
@@ -137,7 +154,7 @@ pastExams.push(
     year: 2025,
     title: 'APMBB CFO PM-SP 2025',
     board: 'FGV',
-    pdf_url: '/assets/past-exams/barro-branco/barro-branco-2025.pdf',
+    ...publishedDocument('/assets/past-exams/barro-branco/barro-branco-2025.pdf'),
     notes: 'Prova com resoluções',
     sort_order: 1,
   },
@@ -146,7 +163,7 @@ pastExams.push(
     year: 2024,
     title: 'APMBB CFO PM-SP 2024',
     board: 'VUNESP',
-    pdf_url: '/assets/past-exams/barro-branco/barro-branco-2024.pdf',
+    ...publishedDocument('/assets/past-exams/barro-branco/barro-branco-2024.pdf'),
     notes: 'Prova com gabarito',
     sort_order: 1,
   },
@@ -155,7 +172,7 @@ pastExams.push(
     year: 2023,
     title: 'APMBB CFO PM-SP 2023',
     board: 'VUNESP',
-    pdf_url: '/assets/past-exams/barro-branco/barro-branco-2023.pdf',
+    ...publishedDocument('/assets/past-exams/barro-branco/barro-branco-2023.pdf'),
     notes: 'Prova completa',
     sort_order: 1,
   },
@@ -164,7 +181,7 @@ pastExams.push(
     year: 2022,
     title: 'APMBB CFO PM-SP 2022',
     board: 'VUNESP',
-    pdf_url: '/assets/past-exams/barro-branco/barro-branco-2022.pdf',
+    ...publishedDocument('/assets/past-exams/barro-branco/barro-branco-2022.pdf'),
     notes: 'Prova completa',
     sort_order: 1,
   }

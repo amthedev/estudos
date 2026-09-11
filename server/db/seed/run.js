@@ -454,9 +454,41 @@ async function seedCuratedAssets(client, ctx) {
 
   for (const pastExam of data.curatedAssets.pastExams) {
     const examId = requireId(ctx.exams, pastExam.exam, 'Prova');
-    const existing = await client.query('SELECT id FROM past_exams WHERE pdf_url = $1', [pastExam.pdf_url]);
+    const existing = await client.query(
+      `SELECT id, pdf_url, answer_key_url
+         FROM past_exams
+        WHERE pdf_url = $1
+           OR pdf_url = $2
+           OR (exam_id = $3 AND year = $4 AND day IS NOT DISTINCT FROM $5 AND title = $6)
+        ORDER BY CASE WHEN pdf_url = $1 THEN 0 WHEN pdf_url = $2 THEN 1 ELSE 2 END
+        LIMIT 1`,
+      [
+        pastExam.pdf_url,
+        pastExam.legacy_pdf_url,
+        examId,
+        pastExam.year,
+        pastExam.day ?? null,
+        pastExam.title,
+      ]
+    );
     if (existing.rowCount) {
-      ctx.summary.bump('past_exams', 'kept');
+      const current = existing.rows[0];
+      const nextPdfUrl = current.pdf_url === pastExam.legacy_pdf_url
+        ? pastExam.pdf_url
+        : current.pdf_url;
+      const nextAnswerKeyUrl = current.answer_key_url === pastExam.legacy_answer_key_url
+        ? pastExam.answer_key_url
+        : current.answer_key_url;
+
+      if (nextPdfUrl !== current.pdf_url || nextAnswerKeyUrl !== current.answer_key_url) {
+        await client.query(
+          'UPDATE past_exams SET pdf_url = $2, answer_key_url = $3, updated_at = NOW() WHERE id = $1',
+          [current.id, nextPdfUrl, nextAnswerKeyUrl]
+        );
+        ctx.summary.bump('past_exams', 'synced');
+      } else {
+        ctx.summary.bump('past_exams', 'kept');
+      }
       continue;
     }
 

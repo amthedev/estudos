@@ -8,3 +8,4 @@ coverage/
 uploads/
 .playwright-cli/
 output/
+public/assets/past-exams/
