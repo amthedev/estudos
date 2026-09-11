@@ -636,7 +636,7 @@ describe('Painel administrativo', () => {
     for (const [feature, tokens, status] of [['tutor', 1200, 'ok'], ['tutor', 800, 'ok'], ['essay', 3000, 'error']]) {
       await db.query(
         `INSERT INTO ai_usage (user_id, feature, model, prompt_tokens, completion_tokens, total_tokens, status, latency_ms)
-         VALUES ($1, $2, 'google/gemini-3.8-flash', $3, $4, $5, $6, 900)`,
+         VALUES ($1, $2, 'qwen/qwen3.8-flash', $3, $4, $5, $6, 900)`,
         [student.user.id, feature, Math.round(tokens * 0.6), Math.round(tokens * 0.4), tokens, status]
       );
     }

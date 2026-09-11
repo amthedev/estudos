@@ -152,8 +152,8 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 |----------|--------|----------------|
 | `OPENROUTER_API_KEY` | vazio | Chave criada em [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys). Fica **apenas** no servidor: nunca é enviada ao navegador nem exibida no painel (o administrador vê somente o status e os últimos caracteres). Vazia, o tutor e a correção de redação respondem "IA indisponível". |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Endpoint da API. Normalmente não precisa ser alterado. |
-| `OPENROUTER_MODEL` | `google/gemini-3.8-flash` | Modelo do tutor e das tarefas leves. Pode ser sobrescrito pela configuração `openrouter_model` no painel. |
-| `OPENROUTER_ESSAY_MODEL` | `anthropic/claude-sonnet-5` | Modelo usado na correção de redação, que exige mais qualidade. Configuração equivalente no painel: `openrouter_essay_model`. |
+| `OPENROUTER_MODEL` | `qwen/qwen3.8-flash` | Modelo econômico do tutor e das tarefas leves. Pode ser sobrescrito pela configuração `openrouter_model` no painel. |
+| `OPENROUTER_ESSAY_MODEL` | `qwen/qwen3.8-flash` | Modelo da correção de redação, com raciocínio baixo para equilibrar qualidade e custo. Configuração equivalente no painel: `openrouter_essay_model`. |
 | `OPENROUTER_MONTHLY_TOKEN_LIMIT` | `5000000` | Teto de tokens por mês somando todos os alunos. Ao ser atingido, as funções de IA passam a recusar novas chamadas com mensagem clara, protegendo a fatura. `0` desliga o limite. |
 
 ### Stripe

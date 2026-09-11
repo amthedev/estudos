@@ -43,13 +43,13 @@ describe('Configuração da aplicação', () => {
     fs.rmSync(temp, { recursive: true, force: true });
   });
 
-  /** Carrega a configuração num processo limpo e devolve porta e host. */
+  /** Carrega a configuração num processo limpo e devolve os valores públicos usados nos testes. */
   function carrega(env) {
     const saida = execFileSync(
       process.execPath,
       [
         '-e',
-        'const c = require("./server/config.js"); console.log(JSON.stringify({ port: c.port, host: c.host, env: c.env }))',
+        'const c = require("./server/config.js"); console.log(JSON.stringify({ port: c.port, host: c.host, env: c.env, openrouter: { model: c.openrouter.model, essayModel: c.openrouter.essayModel } }))',
       ],
       {
         cwd: temp,
@@ -106,6 +106,12 @@ describe('Configuração da aplicação', () => {
 
   it('aceita um host diferente quando pedido', () => {
     assert.equal(carrega({ HOST: '127.0.0.1' }).host, '127.0.0.1');
+  });
+
+  it('usa o modelo econômico do OpenRouter no tutor e na redação', () => {
+    const { openrouter } = carrega({});
+    assert.equal(openrouter.model, 'qwen/qwen3.8-flash');
+    assert.equal(openrouter.essayModel, 'qwen/qwen3.8-flash');
   });
 
   it('trata a hospedagem como produção quando NODE_ENV não vem', () => {

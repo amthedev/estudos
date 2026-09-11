@@ -79,8 +79,8 @@ const envSchema = z.object({
 
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
-  OPENROUTER_MODEL: z.string().default('google/gemini-3.8-flash'),
-  OPENROUTER_ESSAY_MODEL: z.string().default('anthropic/claude-sonnet-5'),
+  OPENROUTER_MODEL: z.string().default('qwen/qwen3.8-flash'),
+  OPENROUTER_ESSAY_MODEL: z.string().default('qwen/qwen3.8-flash'),
   OPENROUTER_MONTHLY_TOKEN_LIMIT: z.coerce.number().int().nonnegative().default(5_000_000),
 
   STRIPE_SECRET_KEY: z.string().optional(),

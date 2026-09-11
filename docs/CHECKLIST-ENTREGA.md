@@ -15,7 +15,7 @@ que **já está pronto e entregue**.
 | Por que | É o que faz o tutor responder, a correção de redação funcionar e os temas serem gerados. |
 | Como fazer | Criar a conta, adicionar um cartão, criar um projeto chamado "Foco de Elite" e gerar a chave dentro dele. |
 | O que enviar | A chave (normalmente começa com `sk-or-v1-`), por canal privado. Ela é configurada **apenas no servidor**. |
-| Custo | Pago por uso. Com os modelos configurados (`google/gemini-3.8-flash` para o tutor, `anthropic/claude-sonnet-5` para a redação), o gasto é de centavos por aluno ativo por dia. |
+| Custo | Pago por uso. O `qwen/qwen3.8-flash` atende tutor e redação por US$ 0,15/M tokens de entrada e US$ 0,47/M de saída no catálogo consultado em setembro de 2026. |
 | Proteção | Já existe um teto mensal de tokens na plataforma. Defina também um limite de crédito para a chave no painel do OpenRouter. |
 | Se faltar | A plataforma inteira continua funcionando. Só o tutor, a correção de redação e a geração de temas ficam indisponíveis, com aviso ao aluno. |
 

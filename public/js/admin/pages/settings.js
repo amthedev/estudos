@@ -235,8 +235,8 @@ function mountForms() {
   }));
 
   state.forms.push(buildForm(qs('#aset-form-openrouter', state.el), [
-    { key: 'openrouter_model', label: 'Modelo do tutor', type: 'text', required: true, maxLength: 120, placeholder: 'google/gemini-3.8-flash', hint: 'Use o identificador completo do catálogo do OpenRouter: provedor/modelo.' },
-    { key: 'openrouter_essay_model', label: 'Modelo da correção de redação', type: 'text', required: true, maxLength: 120, placeholder: 'anthropic/claude-sonnet-5' },
+    { key: 'openrouter_model', label: 'Modelo do tutor', type: 'text', required: true, maxLength: 120, placeholder: 'qwen/qwen3.8-flash', hint: 'Use o identificador completo do catálogo do OpenRouter: provedor/modelo.' },
+    { key: 'openrouter_essay_model', label: 'Modelo da correção de redação', type: 'text', required: true, maxLength: 120, placeholder: 'qwen/qwen3.8-flash' },
     { key: 'openrouter_monthly_token_limit', label: 'Limite mensal de tokens', type: 'number', min: 0, integer: true, hint: 'Use 0 para não limitar. Ao atingir o limite, as funções de IA pausam até o mês seguinte.' },
   ], {
     values: {

@@ -213,6 +213,9 @@ async function chat({
   const started = Date.now();
 
   const params = { model: resolvedModel, messages, temperature, max_tokens: maxTokens };
+  if (resolvedModel === 'qwen/qwen3.8-flash') {
+    params.reasoning = { effort: feature === 'essay' ? 'low' : 'minimal', exclude: true };
+  }
   if (responseFormat) params.response_format = responseFormat;
   const requestOptions = { signal, timeout: timeoutMs };
 

@@ -143,8 +143,8 @@ TRUST_PROXY=1
 
 OPENROUTER_API_KEY=sk-or-v1-...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=google/gemini-3.8-flash
-OPENROUTER_ESSAY_MODEL=anthropic/claude-sonnet-5
+OPENROUTER_MODEL=qwen/qwen3.8-flash
+OPENROUTER_ESSAY_MODEL=qwen/qwen3.8-flash
 OPENROUTER_MONTHLY_TOKEN_LIMIT=5000000
 
 STRIPE_SECRET_KEY=sk_live_...
@@ -799,9 +799,9 @@ variáveis `OPENROUTER_*` abaixo antes de publicar para manter os recursos de IA
 2. Coloque a chave em `OPENROUTER_API_KEY` no `.env` do servidor. **A chave nunca vai para o navegador**:
    todas as chamadas saem do backend, e o painel mostra apenas o status e os últimos caracteres.
 3. Modelos:
-   * `OPENROUTER_MODEL=google/gemini-3.8-flash` — tutor, geração de temas e tarefas leves. É o volume maior.
-   * `OPENROUTER_ESSAY_MODEL=anthropic/claude-sonnet-5` — correção de redação, que precisa de mais qualidade na avaliação por
-     critério.
+   * `OPENROUTER_MODEL=qwen/qwen3.8-flash` — tutor, geração de temas e tarefas leves.
+   * `OPENROUTER_ESSAY_MODEL=qwen/qwen3.8-flash` — correção de redação. O backend usa raciocínio mínimo
+     no tutor e baixo na correção para equilibrar velocidade, qualidade e consumo.
    * Consulte os identificadores atuais no [catálogo de modelos](https://openrouter.ai/models). Os dois podem ser trocados sem alterar código, tanto pelo `.env` quanto pelas configurações
      `openrouter_model` e `openrouter_essay_model` no painel.
 4. Controle de custo, em três camadas:

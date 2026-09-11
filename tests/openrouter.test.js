@@ -16,7 +16,7 @@ describe('cliente OpenRouter', () => {
         return new Response(
           JSON.stringify({
             id: 'gen-1',
-            model: 'google/gemini-3.8-flash',
+            model: 'qwen/qwen3.8-flash',
             choices: [{ message: { role: 'assistant', content: 'Resposta.' } }],
             usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
           }),
@@ -26,7 +26,7 @@ describe('cliente OpenRouter', () => {
     });
 
     const result = await client.chat.completions.create({
-      model: 'google/gemini-3.8-flash',
+      model: 'qwen/qwen3.8-flash',
       messages: [{ role: 'user', content: 'Olá' }],
       max_tokens: 100,
     });
@@ -36,15 +36,15 @@ describe('cliente OpenRouter', () => {
     assert.equal(captured.init.headers.Authorization, 'Bearer sk-or-v1-teste');
     assert.equal(captured.init.headers['HTTP-Referer'], 'https://focoelite.com.br');
     assert.equal(captured.init.headers['X-OpenRouter-Title'], 'Foco de Elite');
-    assert.equal(JSON.parse(captured.init.body).model, 'google/gemini-3.8-flash');
+    assert.equal(JSON.parse(captured.init.body).model, 'qwen/qwen3.8-flash');
     assert.equal(result.choices[0].message.content, 'Resposta.');
   });
 
   it('interpreta deltas e uso no streaming SSE', async () => {
     const sse = [
-      'data: {"model":"google/gemini-3.8-flash","choices":[{"delta":{"content":"Bom "}}]}',
+      'data: {"model":"qwen/qwen3.8-flash","choices":[{"delta":{"content":"Bom "}}]}',
       '',
-      'data: {"model":"google/gemini-3.8-flash","choices":[{"delta":{"content":"estudo!"}}]}',
+      'data: {"model":"qwen/qwen3.8-flash","choices":[{"delta":{"content":"estudo!"}}]}',
       '',
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}',
       '',
@@ -57,7 +57,7 @@ describe('cliente OpenRouter', () => {
     });
 
     const stream = await client.chat.completions.create({
-      model: 'google/gemini-3.8-flash',
+      model: 'qwen/qwen3.8-flash',
       messages: [{ role: 'user', content: 'Oi' }],
       stream: true,
     });
@@ -80,7 +80,7 @@ describe('cliente OpenRouter', () => {
     });
 
     await assert.rejects(
-      () => client.chat.completions.create({ model: 'google/gemini-3.8-flash', messages: [{ role: 'user', content: 'Oi' }] }),
+      () => client.chat.completions.create({ model: 'qwen/qwen3.8-flash', messages: [{ role: 'user', content: 'Oi' }] }),
       (err) => {
         assert.ok(err instanceof OpenRouterError);
         assert.equal(err.status, 401);
