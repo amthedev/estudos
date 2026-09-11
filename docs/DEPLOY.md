@@ -156,8 +156,10 @@ SMTP_USER=no-reply@focoelite.com.br
 SMTP_PASS=...
 SMTP_FROM="Foco de Elite <no-reply@focoelite.com.br>"
 
-ADMIN_EMAIL=guilherme@focoelite.com.br
-ADMIN_PASSWORD=<senha forte, trocada no primeiro acesso>
+# O administrador não vem de variável: veja "Primeiro acesso ao painel" abaixo.
+# Preencha estas três só se um dia precisar repor o acesso pelo terminal.
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
 ADMIN_NAME=Guilherme
 ```
 
@@ -170,16 +172,31 @@ chmod 600 /opt/focoelite/app/.env
 O servidor recusa subir em produção se `JWT_SECRET` e `ADMIN_JWT_SECRET` forem iguais, se tiverem
 menos de 32 caracteres ou se `DATABASE_URL` estiver ausente. A mensagem de erro diz qual variável é.
 
-### Migrations, seed e administrador
+### Migrations e seed
 
 ```bash
 cd /opt/focoelite/app
 npm run migrate        # cria o schema
 npm run seed           # provas, áreas, matérias, assuntos, pesos, critérios de redação, planos
-npm run create-admin   # cria o administrador a partir do .env
 ```
 
 Não rode `npm run seed:demo` em produção: ele insere aulas e questões de exemplo.
+
+### Primeiro acesso ao painel
+
+O administrador não é criado por script nem por variável de ambiente. Com o servidor no ar, abra
+`https://focoelite.com.br/admin/login`: enquanto o banco não tiver nenhum administrador, a tela pede
+nome, e-mail e senha, cria a conta e entra já autenticado. A senha é guardada com hash no banco.
+
+Feito isso, a rota de criação se fecha: uma segunda tentativa é recusada, e a tela volta a ser o
+login normal. Por isso faça esse primeiro acesso você mesmo, logo depois de publicar, antes de
+divulgar o endereço — quem chegar primeiro é quem cria a conta.
+
+Se a senha se perder, o acesso se repõe pelo terminal, sem mexer no banco à mão:
+
+```bash
+node scripts/create-admin.js --email seu@email.com --password "senha forte"
+```
 
 Teste o processo uma vez em primeiro plano antes de entregar ao PM2:
 
@@ -405,12 +422,14 @@ O comando de início é `npm run start:cloud`, que antes de subir o servidor exe
 1. aplica as migrations pendentes;
 2. garante o conteúdo base (provas, matérias, assuntos, critérios de redação, planos de estudo e os
    textos da página inicial);
-3. cria o administrador, **só se ainda não existir nenhum**, a partir de `ADMIN_EMAIL` e
-   `ADMIN_PASSWORD`.
 
 Tudo é idempotente: publicar uma versão nova roda de novo sem duplicar nada e sem desfazer o que a
-equipe editou pelo painel. O administrador é criado uma única vez de propósito — se fosse recriado a
-cada reinício, uma troca de senha feita no painel voltaria sozinha para o valor da variável.
+equipe editou pelo painel.
+
+O administrador de propósito não entra nessa lista. Ele se cria no primeiro acesso a
+`/admin/login` (veja "Primeiro acesso ao painel") e fica só no banco: nenhuma senha passa por
+variável de ambiente, por log de deploy ou pelo repositório, e uma troca de senha feita no painel
+não corre o risco de voltar sozinha ao valor antigo no próximo reinício.
 
 ### 9.1 Publicar
 
@@ -454,8 +473,11 @@ pelo Blob Storage.
 ### 9.3 Banco de dados
 
 A Square Cloud hospeda a aplicação, não o PostgreSQL. Use um banco gerenciado (Neon, Supabase ou
-Railway) e informe a `DATABASE_URL` completa, com SSL. O administrador é criado sozinho na primeira publicação, a partir de `ADMIN_EMAIL` e
-`ADMIN_PASSWORD`. Se preferir criar à mão, ou trocar depois, use o terminal do painel:
+Railway) e informe a `DATABASE_URL` completa, com SSL.
+
+O schema e o conteúdo base sobem sozinhos na primeira publicação. O administrador é criado por você,
+abrindo `/admin/login` logo depois — é a tela de configuração inicial descrita em "Primeiro acesso ao
+painel". Para repor o acesso depois, o terminal do painel resolve:
 
 ```bash
 node scripts/create-admin.js --email seu@email.com --password "senha forte"

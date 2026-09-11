@@ -87,12 +87,13 @@ npm run seed
 # 6. (opcional) Incluir aulas e questões de exemplo para navegar com dados
 npm run seed:demo
 
-# 7. Criar o administrador a partir de ADMIN_EMAIL / ADMIN_PASSWORD do .env
-npm run create-admin
-
-# 8. Subir o servidor
+# 7. Subir o servidor
 npm run dev
 ```
+
+Ainda não existe administrador, e é assim mesmo: abra
+`http://localhost:4100/admin/login` e a própria tela pede nome, e-mail e senha
+para criar a primeira conta. As credenciais ficam guardadas no banco.
 
 Com isso no ar:
 
@@ -171,10 +172,18 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 
 ### Primeiro administrador
 
+Não há variável de ambiente a preencher. Enquanto o banco não tiver nenhum
+administrador, `/admin/login` mostra a tela de configuração inicial: quem abrir
+primeiro cria a conta ali e entra já autenticado. Depois disso a tela volta a
+ser o login normal e a rota de criação passa a recusar novas contas.
+
+As variáveis abaixo servem só para repor o acesso pelo terminal, com
+`npm run create-admin`, se a senha se perder. Deixe-as vazias no uso normal.
+
 | Variável | Padrão | Para que serve |
 |----------|--------|----------------|
-| `ADMIN_EMAIL` | — | E-mail do administrador criado por `npm run create-admin`. |
-| `ADMIN_PASSWORD` | — | Senha inicial, mínimo de 8 caracteres. Em produção o script recusa o valor de exemplo `troque-esta-senha`. |
+| `ADMIN_EMAIL` | — | E-mail usado por `npm run create-admin` (ou `--email`). |
+| `ADMIN_PASSWORD` | — | Senha, mínimo de 8 caracteres (ou `--password`). |
 | `ADMIN_NAME` | `Administrador` | Nome exibido no painel. |
 
 ---

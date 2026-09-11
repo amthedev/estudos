@@ -125,7 +125,9 @@ async function main() {
       else item(OK, 'Conteúdo base', `${conteudo.provas} provas, ${conteudo.materias} matérias, ${conteudo.assuntos} assuntos`);
 
       const admin = await db.one(`SELECT count(*)::int AS total FROM users WHERE role = 'admin'`);
-      if (!admin.total) item(FALTA, 'Administrador', 'rode: npm run create-admin');
+      // Zero administradores não impede a publicação: é o estado normal de um
+      // banco novo, e a conta se cria na própria tela de login.
+      if (!admin.total) item(AVISO, 'Administrador', 'nenhum ainda — abra /admin/login para criar o primeiro');
       else item(OK, 'Administrador', `${admin.total} cadastrado(s)`);
 
       const aulas = await db.one(`SELECT count(*)::int AS total FROM lessons WHERE active`);

@@ -33,12 +33,20 @@
     <main class="auth-main">
       <div class="auth-card card">
         <header class="auth-head">
-          <span class="badge badge-blue"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-shield-check"></use></svg><span>Painel administrativo</span></span>
-          <h1>Entrar no painel</h1>
-          <p>Acesso exclusivo para administradores da plataforma.</p>
+          <span class="badge badge-blue" data-mode-badge="login"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-shield-check"></use></svg><span>Painel administrativo</span></span>
+          <span class="badge badge-green" data-mode-badge="setup" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-sparkles"></use></svg><span>Configuração inicial</span></span>
+          <h1 data-mode-title="login">Entrar no painel</h1>
+          <h1 data-mode-title="setup" hidden>Criar o administrador</h1>
+          <p data-mode-subtitle="login">Acesso exclusivo para administradores da plataforma.</p>
+          <p data-mode-subtitle="setup" hidden>Você é a primeira pessoa a abrir o painel. Crie a sua conta de administrador — fica guardada no banco de dados, sem precisar de nenhuma configuração extra.</p>
         </header>
         <div class="auth-alert" id="form-alert" aria-live="assertive" hidden></div>
         <form class="auth-form" id="auth-form" method="post" action="/api/admin/auth/login" novalidate>
+          <div class="field" data-setup-only hidden>
+            <label class="label" for="name">Nome completo</label>
+            <input class="input" type="text" id="name" name="name" autocomplete="name" maxlength="120">
+            <p class="error-text" data-error-for="name"></p>
+          </div>
           <div class="field">
             <label class="label" for="email">E-mail</label>
             <input class="input" type="email" id="email" name="email" autocomplete="email" inputmode="email" spellcheck="false" maxlength="160" required autofocus>
@@ -50,9 +58,22 @@
               <input class="input" type="password" id="password" name="password" autocomplete="current-password" minlength="1" maxlength="128" required>
               <button type="button" class="password-toggle" data-toggle-password aria-label="Mostrar senha" aria-pressed="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-eye"></use></svg></button>
             </div>
+            <div class="strength" data-strength data-level="0" aria-live="polite" data-setup-only hidden>
+              <div class="strength-bars"><span></span><span></span><span></span><span></span></div>
+              <span class="strength-label">Use pelo menos 8 caracteres</span>
+            </div>
             <p class="error-text" data-error-for="password"></p>
           </div>
-          <button type="submit" class="btn btn-primary btn-lg btn-block">Entrar no painel</button>
+          <div class="field" data-setup-only hidden>
+            <label class="label" for="password_confirm">Confirmar senha</label>
+            <div class="password-field">
+              <input class="input" type="password" id="password_confirm" name="password_confirm" autocomplete="new-password" minlength="8" maxlength="128">
+              <button type="button" class="password-toggle" data-toggle-password aria-label="Mostrar senha" aria-pressed="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/icons.svg#i-eye"></use></svg></button>
+            </div>
+            <p class="error-text" data-error-for="password_confirm"></p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg btn-block" data-mode-submit="login">Entrar no painel</button>
+          <button type="submit" class="btn btn-primary btn-lg btn-block" data-mode-submit="setup" hidden>Criar administrador e entrar</button>
         </form>
         <p class="auth-alt">É aluno? <a href="/login">Entrar na área do aluno</a></p>
       </div>

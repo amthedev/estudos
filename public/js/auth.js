@@ -355,16 +355,74 @@ function initReset() {
 // ---------------------------------------------------------------------
 // Login do painel administrativo
 // ---------------------------------------------------------------------
-function initAdminLogin() {
+/**
+ * Login do painel — e, quando ainda não existe nenhum administrador, a
+ * própria tela de configuração inicial no lugar do login. `bindSubmit` só
+ * pode ser chamada uma vez aqui: ela pendura um listener no formulário, e
+ * chamar de novo empilharia um segundo em cima, disparando login e criação
+ * juntos no mesmo clique. Por isso o modo é decidido ANTES de vincular
+ * qualquer coisa, nunca depois.
+ */
+async function initAdminLogin() {
+  const name = qs('[name="name"]', form);
   const email = qs('[name="email"]', form);
   const password = qs('[name="password"]', form);
+  const confirm = qs('[name="password_confirm"]', form);
+  const meter = qs('[data-strength]', form);
+  const card = form.closest('.auth-card') || form;
+
+  let setupNeeded = false;
+  try {
+    const status = await api.get('/api/admin/auth/setup-status', { noRedirect: true });
+    setupNeeded = Boolean(status && status.needed);
+  } catch {
+    setupNeeded = false; // falhou a checagem: fica no login normal, que é o seguro por padrão
+  }
+
+  if (!setupNeeded) {
+    const checkEmail = liveValidate(email, validators.email);
+    const checkPassword = liveValidate(password, (v) => (v ? '' : 'Informe a senha.'));
+    bindSubmit({
+      validate: () => [checkEmail(), checkPassword()].every(Boolean),
+      submit: async () => {
+        await api.post('/api/admin/auth/login', { email: email.value.trim(), password: password.value }, { noRedirect: true });
+        location.assign('/admin');
+      },
+    });
+    return;
+  }
+
+  // Ninguém configurou o administrador ainda: troca a tela para o modo de
+  // primeira configuração, com os campos extras de nome e confirmação.
+  qsa('[data-mode-badge="login"], [data-mode-title="login"], [data-mode-subtitle="login"]', card).forEach((el) => { el.hidden = true; });
+  qsa('[data-mode-badge="setup"], [data-mode-title="setup"], [data-mode-subtitle="setup"]', card).forEach((el) => { el.hidden = false; });
+  qsa('[data-setup-only]', form).forEach((el) => { el.hidden = false; });
+  qs('[data-mode-submit="login"]', form).hidden = true;
+  qs('[data-mode-submit="setup"]', form).hidden = false;
+  name.required = true;
+  confirm.required = true;
+  password.setAttribute('autocomplete', 'new-password');
+  password.setAttribute('minlength', '8');
+
+  const checkName = liveValidate(name, validators.name);
   const checkEmail = liveValidate(email, validators.email);
-  const checkPassword = liveValidate(password, (v) => (v ? '' : 'Informe a senha.'));
+  const checkPassword = liveValidate(password, (v) => validators.password(v));
+  const checkConfirm = liveValidate(confirm, (v) => validators.confirm(v, password.value));
+
+  password.addEventListener('input', () => {
+    updateStrength(meter, password.value);
+    if (confirm.value) checkConfirm();
+  });
+  updateStrength(meter, '');
 
   bindSubmit({
-    validate: () => [checkEmail(), checkPassword()].every(Boolean),
+    validate: () => [checkName(), checkEmail(), checkPassword(), checkConfirm()].every(Boolean),
     submit: async () => {
-      await api.post('/api/admin/auth/login', { email: email.value.trim(), password: password.value }, { noRedirect: true });
+      await api.post(
+        '/api/admin/auth/setup',
+        { name: name.value.trim(), email: email.value.trim(), password: password.value },
+        { noRedirect: true }
+      );
       location.assign('/admin');
     },
   });

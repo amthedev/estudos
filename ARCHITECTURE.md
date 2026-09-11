@@ -26,7 +26,7 @@ Comandos:
 npm run migrate        # aplica migrations pendentes (tabela schema_migrations)
 npm run seed           # estrutura base: provas, áreas, matérias, assuntos, critérios de redação, planos, settings
 npm run seed:demo      # + conteúdo de demonstração (aulas e questões de exemplo) — opcional
-npm run create-admin   # cria/atualiza o admin a partir de ADMIN_EMAIL/ADMIN_PASSWORD do .env
+npm run create-admin   # repõe o acesso ao painel pelo terminal (o admin normal se cria na própria tela)
 npm run dev            # servidor com reload em http://localhost:4100
 npm test               # testes de integração (usa DATABASE_URL_TEST, recria o schema)
 ```
