@@ -77,10 +77,11 @@ const envSchema = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).optional(),
   TRUST_PROXY: z.string().optional(),
 
-  OPENAI_API_KEY: z.string().optional(),
-  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
-  OPENAI_ESSAY_MODEL: z.string().default('gpt-4o'),
-  OPENAI_MONTHLY_TOKEN_LIMIT: z.coerce.number().int().nonnegative().default(5_000_000),
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
+  OPENROUTER_MODEL: z.string().default('google/gemini-3.8-flash'),
+  OPENROUTER_ESSAY_MODEL: z.string().default('anthropic/claude-sonnet-5'),
+  OPENROUTER_MONTHLY_TOKEN_LIMIT: z.coerce.number().int().nonnegative().default(5_000_000),
 
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
@@ -342,12 +343,13 @@ const config = deepFreeze({
 
   requireSubscription: env.REQUIRE_SUBSCRIPTION,
 
-  openai: {
-    apiKey: env.OPENAI_API_KEY ?? null,
-    model: env.OPENAI_MODEL,
-    essayModel: env.OPENAI_ESSAY_MODEL,
-    monthlyTokenLimit: env.OPENAI_MONTHLY_TOKEN_LIMIT,
-    enabled: Boolean(env.OPENAI_API_KEY),
+  openrouter: {
+    apiKey: env.OPENROUTER_API_KEY ?? null,
+    baseUrl: env.OPENROUTER_BASE_URL.replace(/\/+$/, ''),
+    model: env.OPENROUTER_MODEL,
+    essayModel: env.OPENROUTER_ESSAY_MODEL,
+    monthlyTokenLimit: env.OPENROUTER_MONTHLY_TOKEN_LIMIT,
+    enabled: Boolean(env.OPENROUTER_API_KEY),
   },
 
   stripe: {

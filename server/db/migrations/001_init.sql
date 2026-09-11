@@ -588,7 +588,7 @@ CREATE TABLE tutor_messages (
 );
 CREATE INDEX tutor_messages_conv_idx ON tutor_messages (conversation_id, created_at);
 
--- Uso da OpenAI (métricas e limite mensal no painel)
+-- Uso de IA via OpenRouter (métricas e limite mensal no painel)
 CREATE TABLE ai_usage (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id            uuid REFERENCES users(id) ON DELETE SET NULL,

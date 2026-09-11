@@ -78,7 +78,7 @@ Arquivos em `server/db/seed/data/`; o runner é `server/db/seed/run.js`.
 
 | Arquivo              | Tabela(s)                                   | Conteúdo |
 |----------------------|---------------------------------------------|----------|
-| `settings.js`        | `settings`                                  | Chaves do §3.6 (marca, e-mail de suporte, modelos OpenAI, prompt do tutor, intervalos de revisão, padrões do cronograma). |
+| `settings.js`        | `settings`                                  | Chaves do §3.6 (marca, e-mail de suporte, modelos OpenRouter, prompt do tutor, intervalos de revisão, padrões do cronograma). |
 | `exams.js`           | `exams`                                     | ENEM, Academia do Barro Branco / Cadete PM-SP, FUVEST, UNICAMP, UNESP, FGV, Mackenzie, PUC-SP, com datas estimadas de 2026. |
 | `areas.js`           | `areas`                                     | 6 áreas. |
 | `subjects.js`        | `subjects`                                  | 22 matérias com ícone e cor. |

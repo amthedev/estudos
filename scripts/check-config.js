@@ -177,10 +177,10 @@ async function main() {
 
   // --------------------------------------------------------------------- IA
   secao('Inteligência artificial (Tutor IA e correção de redação)');
-  if (env('OPENAI_API_KEY')) {
-    item(OK, 'OpenAI', `chave ${mascarar(process.env.OPENAI_API_KEY)} · tutor com ${config.openai.model}`);
+  if (env('OPENROUTER_API_KEY')) {
+    item(OK, 'OpenRouter', `chave ${mascarar(process.env.OPENROUTER_API_KEY)} · tutor com ${config.openrouter.model}`);
   } else {
-    item(AVISO, 'OpenAI', 'sem a chave, o Tutor IA e a correção de redação ficam desligados');
+    item(AVISO, 'OpenRouter', 'sem a chave, o Tutor IA e a correção de redação ficam desligados');
   }
 
   // -------------------------------------------------------------- pagamento

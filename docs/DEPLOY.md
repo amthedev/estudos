@@ -30,7 +30,7 @@ Arquivos de apoio, todos neste diretório:
 9. [Square Cloud (opção escolhida)](#9-square-cloud-opção-escolhida)
 9b. [Alternativa: Railway ou Render com Neon](#9b-alternativa-railway-ou-render-com-neon)
 10. [Stripe](#10-stripe)
-11. [OpenAI](#11-openai)
+11. [OpenRouter](#11-openrouter)
 12. [SMTP](#12-smtp)
 13. [DNS](#13-dns)
 14. [Verificação final](#14-verificação-final)
@@ -141,10 +141,11 @@ ADMIN_JWT_SECRET=<segundo valor gerado, diferente do primeiro>
 COOKIE_SECURE=true
 TRUST_PROXY=1
 
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_ESSAY_MODEL=gpt-4o
-OPENAI_MONTHLY_TOKEN_LIMIT=5000000
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=google/gemini-3.8-flash
+OPENROUTER_ESSAY_MODEL=anthropic/claude-sonnet-5
+OPENROUTER_MONTHLY_TOKEN_LIMIT=5000000
 
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
@@ -277,7 +278,7 @@ O que a configuração do Nginx resolve, e que não pode ser esquecido em nenhum
 * **Streaming do tutor** (`/api/tutor/conversations/:id/messages`) roda com `proxy_buffering off` e
   timeout longo, senão a resposta chega toda de uma vez, no fim, em vez de aparecer palavra a palavra.
 * **Correção de redação** (`/api/essays/:id/submit`) recebe timeout de 180 s, porque é uma chamada
-  síncrona à OpenAI que pode passar de um minuto.
+  síncrona à OpenRouter que pode passar de um minuto.
 * **`X-Forwarded-For` e `X-Forwarded-Proto`** são repassados, e no `.env` está `TRUST_PROXY=1`, para o
   rate limit enxergar o IP real do visitante e não o do proxy.
 * Os cabeçalhos de segurança do Helmet vêm da aplicação. O Nginx acrescenta apenas HSTS,
@@ -494,7 +495,7 @@ COOKIE_SECURE=true
 TRUST_PROXY=1
 STORAGE_PROVIDER=squarecloud
 SQUARECLOUD_API_KEY=...
-OPENAI_API_KEY=...
+OPENROUTER_API_KEY=sk-or-v1-...
 PAYMENT_PROVIDER=asaas
 ASAAS_API_KEY=...
 ASAAS_WEBHOOK_TOKEN=...
@@ -788,25 +789,27 @@ teste não existem no modo real**.
 
 ---
 
-## 11. OpenAI
+## 11. OpenRouter
 
-1. Crie a chave em [platform.openai.com/api-keys](https://platform.openai.com/api-keys), de preferência
-   dentro de um projeto dedicado ("Foco de Elite").
-2. Coloque a chave em `OPENAI_API_KEY` no `.env` do servidor. **A chave nunca vai para o navegador**:
+Em uma instalação atualizada, remova as variáveis `OPENAI_*`: elas não são mais lidas. Cadastre as
+variáveis `OPENROUTER_*` abaixo antes de publicar para manter os recursos de IA disponíveis.
+
+1. Crie a chave em [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys), de preferência
+   com um nome dedicado ("Foco de Elite").
+2. Coloque a chave em `OPENROUTER_API_KEY` no `.env` do servidor. **A chave nunca vai para o navegador**:
    todas as chamadas saem do backend, e o painel mostra apenas o status e os últimos caracteres.
 3. Modelos:
-   * `OPENAI_MODEL=gpt-4o-mini` — tutor, geração de temas e tarefas leves. É o volume maior.
-   * `OPENAI_ESSAY_MODEL=gpt-4o` — correção de redação, que precisa de mais qualidade na avaliação por
+   * `OPENROUTER_MODEL=google/gemini-3.8-flash` — tutor, geração de temas e tarefas leves. É o volume maior.
+   * `OPENROUTER_ESSAY_MODEL=anthropic/claude-sonnet-5` — correção de redação, que precisa de mais qualidade na avaliação por
      critério.
-   * Os dois podem ser trocados sem alterar código, tanto pelo `.env` quanto pelas configurações
-     `openai_model` e `openai_essay_model` no painel.
+   * Consulte os identificadores atuais no [catálogo de modelos](https://openrouter.ai/models). Os dois podem ser trocados sem alterar código, tanto pelo `.env` quanto pelas configurações
+     `openrouter_model` e `openrouter_essay_model` no painel.
 4. Controle de custo, em três camadas:
-   * `OPENAI_MONTHLY_TOKEN_LIMIT` (padrão 5.000.000) é o teto mensal somando todos os alunos. Ao ser
+   * `OPENROUTER_MONTHLY_TOKEN_LIMIT` (padrão 5.000.000) é o teto mensal somando todos os alunos. Ao ser
      atingido, as funções de IA passam a recusar novas chamadas com mensagem clara em vez de continuar
      gastando.
    * Rate limit de 30 chamadas por minuto por aluno.
-   * No painel do próprio OpenAI, defina um **limite de gasto mensal** e um alerta por e-mail em
-     **Settings → Limits**. É a rede de proteção final.
+   * No painel do próprio OpenRouter, defina um **limite de crédito** para a chave. É a proteção final.
 5. Em **/admin/plataforma** o administrador acompanha o uso de IA por dia, por recurso e por aluno.
 
 Sem a chave configurada, a plataforma continua funcionando: apenas o tutor, a correção de redação e a
@@ -875,7 +878,7 @@ npm run check
 
 Ela lê a configuração e o banco e responde, em português, o que está pronto e o que falta: conexão com
 o banco, migrations aplicadas, conteúdo base, administrador criado, segredos de sessão, armazenamento
-de arquivos, OpenAI, meio de cobrança, e-mail e endereço público. Sai com erro quando algo impede o
+de arquivos, OpenRouter, meio de cobrança, e-mail e endereço público. Sai com erro quando algo impede o
 funcionamento, então serve também dentro de um script de publicação.
 
 Depois, confira na mão:

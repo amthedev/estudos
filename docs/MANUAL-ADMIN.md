@@ -395,7 +395,7 @@ pontos fortes, pontos a melhorar, correções de escrita e o texto do aluno.
 
 Situações possíveis: **Aguardando correção** (enviada, IA processando), **Corrigida** e
 **Falha na correção** (a mensagem do erro aparece no topo do modal — normalmente falta de chave da
-OpenAI ou limite mensal atingido; verifique em Configurações e Plataforma).
+OpenRouter ou limite mensal atingido; verifique em Configurações e Plataforma).
 
 ---
 
@@ -466,8 +466,8 @@ Tela: **Configurações** (`/admin/configuracoes`).
 | **Logo** | Endereço da imagem usada no cabeçalho e nos e-mails. |
 | **E-mail de suporte** | Endereço mostrado ao aluno e usado como remetente de resposta. |
 | **Exigir assinatura** | Ligado, bloqueia o aluno sem assinatura ativa (ele só acessa perfil e assinatura). Desligado, a plataforma fica aberta a todos os cadastrados. |
-| **Modelo da OpenAI (tutor)** | Modelo usado no Tutor IA. |
-| **Modelo da OpenAI (redação)** | Modelo usado na correção de redação — costuma ser um modelo mais forte. |
+| **Modelo do OpenRouter (tutor)** | Modelo usado no Tutor IA. |
+| **Modelo do OpenRouter (redação)** | Modelo usado na correção de redação — costuma ser um modelo mais forte. |
 | **Limite mensal de tokens** | Teto de consumo de IA no mês. Ao atingir, tutor e correção param com aviso claro. `0` significa sem limite. |
 | **Prompt do tutor** | Instruções de comportamento do Tutor IA: tom, nível de detalhe, o que não fazer. |
 | **Intervalos de revisão** | Os três intervalos, em dias, das revisões criadas ao concluir uma aula (padrão `1, 7, 30`). |
@@ -475,7 +475,7 @@ Tela: **Configurações** (`/admin/configuracoes`).
 | **Aulas particulares habilitadas** | Liga ou desliga a área de aulas particulares para o aluno. |
 | **Frases do dia** | Frases motivacionais discretas exibidas no início do aluno. |
 
-Chaves e segredos (OpenAI, Stripe, SMTP) **não** ficam no painel: vivem em variáveis de ambiente no
+Chaves e segredos (OpenRouter, Stripe, SMTP) **não** ficam no painel: vivem em variáveis de ambiente no
 servidor. A tela mostra apenas o status de cada integração e os últimos caracteres da chave, para
 você conferir que a configuração certa está no ar.
 
@@ -507,5 +507,5 @@ marcado no **conteúdo programático da prova** do aluno.
 Marque a prova em **Provas em que cai**, no formulário da questão, ou na coluna `exams` do CSV.
 
 **A correção de redação falhou.**
-Veja a mensagem no modal da redação e confira, em Configurações, se a chave da OpenAI está
+Veja a mensagem no modal da redação e confira, em Configurações, se a chave do OpenRouter está
 configurada e se o limite mensal de tokens não foi atingido.

@@ -4,10 +4,10 @@
  * Painel administrativo — configurações da plataforma.
  *
  *   GET /api/admin/settings               todas as chaves administráveis (padrões + o que está no banco)
- *   GET /api/admin/settings/integrations  status da OpenAI, do Stripe e do SMTP (chaves sempre mascaradas)
+ *   GET /api/admin/settings/integrations  status do OpenRouter, do Stripe e do SMTP (chaves sempre mascaradas)
  *   PUT /api/admin/settings               grava as chaves enviadas, validando uma a uma
  *
- * Segredos (OPENAI_API_KEY, STRIPE_SECRET_KEY, SMTP_PASS…) NÃO passam por aqui: vivem apenas em
+ * Segredos (OPENROUTER_API_KEY, STRIPE_SECRET_KEY, SMTP_PASS…) NÃO passam por aqui: vivem apenas em
  * variáveis de ambiente. O painel só vê status e os últimos caracteres — nunca a chave inteira.
  */
 const router = require('express').Router();
@@ -51,9 +51,9 @@ const settingsBody = z
     logo_url: assetUrl.optional(),
     support_email: z.string().trim().toLowerCase().email('E-mail inválido.').max(160).optional(),
     require_subscription: z.boolean().optional(),
-    openai_model: z.string().trim().min(3).max(80).optional(),
-    openai_essay_model: z.string().trim().min(3).max(80).optional(),
-    openai_monthly_token_limit: z.coerce.number().int().min(0, 'Use 0 para não limitar.').max(1_000_000_000).optional(),
+    openrouter_model: z.string().trim().min(3).max(120).optional(),
+    openrouter_essay_model: z.string().trim().min(3).max(120).optional(),
+    openrouter_monthly_token_limit: z.coerce.number().int().min(0, 'Use 0 para não limitar.').max(1_000_000_000).optional(),
     tutor_system_prompt: z.string().trim().min(40, 'O prompt do tutor precisa ser mais detalhado.').max(8000).optional(),
     review_intervals: reviewIntervals.optional(),
     schedule_defaults: scheduleDefaults.optional(),
@@ -77,19 +77,19 @@ function withExtras(all) {
 router.get(
   '/integrations',
   wrap(async (req, res) => {
-    const openai = await ai.status();
+    const openrouter = await ai.status();
     res.json({
-      openai: {
-        configured: openai.configured,
-        mock: openai.mock,
-        key: openai.key,
-        model: openai.model,
-        essay_model: openai.essay_model,
-        month_tokens: openai.month_tokens,
-        month_requests: openai.month_requests,
-        limit: openai.limit,
-        limit_reached: openai.limit_reached,
-        last_error: openai.last_error,
+      openrouter: {
+        configured: openrouter.configured,
+        mock: openrouter.mock,
+        key: openrouter.key,
+        model: openrouter.model,
+        essay_model: openrouter.essay_model,
+        month_tokens: openrouter.month_tokens,
+        month_requests: openrouter.month_requests,
+        limit: openrouter.limit,
+        limit_reached: openrouter.limit_reached,
+        last_error: openrouter.last_error,
       },
       stripe: stripeService.status(),
       smtp: mailer.smtpStatus(),

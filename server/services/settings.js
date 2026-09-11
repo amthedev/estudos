@@ -9,7 +9,7 @@
  *
  * Cache em memória de toda a tabela, com validade curta (para múltiplos processos)
  * e invalidação imediata ao gravar. Chaves ausentes no banco caem nos DEFAULTS.
- * Segredos (OpenAI/Stripe/SMTP) NÃO ficam aqui: vêm apenas de variáveis de ambiente.
+ * Segredos (OpenRouter/Stripe/SMTP) NÃO ficam aqui: vêm apenas de variáveis de ambiente.
  */
 const config = require('../config');
 const db = require('../db/pool');
@@ -32,9 +32,9 @@ const DEFAULTS = Object.freeze({
   logo_url: '/assets/brand/foco-elite-logo.png',
   support_email: 'suporte@focoelite.com.br',
   require_subscription: config.requireSubscription,
-  openai_model: config.openai.model,
-  openai_essay_model: config.openai.essayModel,
-  openai_monthly_token_limit: config.openai.monthlyTokenLimit,
+  openrouter_model: config.openrouter.model,
+  openrouter_essay_model: config.openrouter.essayModel,
+  openrouter_monthly_token_limit: config.openrouter.monthlyTokenLimit,
   tutor_system_prompt: TUTOR_SYSTEM_PROMPT,
   review_intervals: [1, 7, 30],
   schedule_defaults: {

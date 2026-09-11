@@ -16,7 +16,7 @@ Domínio de produção: **focoelite.com.br**
 |-----------|----------------|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Contrato técnico: convenções de backend e frontend, catálogo da API, design system, motor do cronograma. |
 | [`docs/CONTEUDO.md`](docs/CONTEUDO.md) | Como o conteúdo se organiza (área → matéria → assunto → subassunto → aula) e como operar os seeds. |
-| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Publicação em VPS ou PaaS, Stripe, OpenAI, SMTP e DNS. |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Publicação em VPS ou PaaS, Stripe, OpenRouter, SMTP e DNS. |
 | [`docs/CHECKLIST-ENTREGA.md`](docs/CHECKLIST-ENTREGA.md) | O que já foi entregue e o que o cliente precisa providenciar. |
 | [`docs/ROTEIRO-VIDEO.md`](docs/ROTEIRO-VIDEO.md) | Roteiro da demonstração gravada para o cliente. |
 | [`docs/RESUMO-CLIENTE.md`](docs/RESUMO-CLIENTE.md) | Resumo da entrega em linguagem não técnica. |
@@ -31,7 +31,7 @@ Domínio de produção: **focoelite.com.br**
 | Banco | PostgreSQL 16 (mínimo 14) — schema em `server/db/migrations/*.sql` |
 | Frontend | HTML, CSS e JavaScript puro (ES modules), sem framework, com roteador próprio |
 | Bibliotecas do front | `public/vendor/` (Chart.js, marked, DOMPurify) — servidas do próprio domínio, sem CDN |
-| IA | SDK da OpenAI, usado **somente no servidor** (`server/services/ai.js`) |
+| IA | API HTTP do OpenRouter, usada **somente no servidor** (`server/services/ai.js`) |
 | Pagamentos | Stripe Checkout, Billing Portal e webhooks (`server/services/stripe.js`) |
 | E-mail | nodemailer sobre SMTP (`server/services/mailer.js`) |
 
@@ -50,7 +50,7 @@ Não há etapa de build: o navegador carrega os módulos diretamente. `npm run b
 
 Opcionais, conforme o que for usado:
 
-* Conta na **OpenAI** com chave de API — necessária para o tutor, para a correção de redação e para a
+* Conta no **OpenRouter** com chave de API — necessária para o tutor, para a correção de redação e para a
   geração de temas. Sem a chave, o restante da plataforma funciona normalmente e essas telas informam
   que a IA está indisponível.
 * Conta no **Stripe** — necessária para cobrar assinaturas. Sem ela, os planos aparecem, mas o checkout
@@ -146,14 +146,15 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 | `COOKIE_SECURE` | `true` em produção | Marca os cookies como `Secure` (só trafegam por HTTPS). Deixe `false` apenas em desenvolvimento local. |
 | `BCRYPT_ROUNDS` | `12` | Custo do bcrypt no hash das senhas. Só reduza em ambiente de teste. |
 
-### OpenAI
+### OpenRouter
 
 | Variável | Padrão | Para que serve |
 |----------|--------|----------------|
-| `OPENAI_API_KEY` | vazio | Chave de API. Fica **apenas** no servidor: nunca é enviada ao navegador nem exibida no painel (o administrador vê somente o status e os últimos caracteres). Vazia, o tutor e a correção de redação respondem "IA indisponível". |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Modelo do tutor e das tarefas leves. Pode ser sobrescrito pela configuração `openai_model` no painel. |
-| `OPENAI_ESSAY_MODEL` | `gpt-4o` | Modelo usado na correção de redação, que exige mais qualidade. Configuração equivalente no painel: `openai_essay_model`. |
-| `OPENAI_MONTHLY_TOKEN_LIMIT` | `5000000` | Teto de tokens por mês somando todos os alunos. Ao ser atingido, as funções de IA passam a recusar novas chamadas com mensagem clara, protegendo a fatura. `0` desliga o limite. |
+| `OPENROUTER_API_KEY` | vazio | Chave criada em [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys). Fica **apenas** no servidor: nunca é enviada ao navegador nem exibida no painel (o administrador vê somente o status e os últimos caracteres). Vazia, o tutor e a correção de redação respondem "IA indisponível". |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Endpoint da API. Normalmente não precisa ser alterado. |
+| `OPENROUTER_MODEL` | `google/gemini-3.8-flash` | Modelo do tutor e das tarefas leves. Pode ser sobrescrito pela configuração `openrouter_model` no painel. |
+| `OPENROUTER_ESSAY_MODEL` | `anthropic/claude-sonnet-5` | Modelo usado na correção de redação, que exige mais qualidade. Configuração equivalente no painel: `openrouter_essay_model`. |
+| `OPENROUTER_MONTHLY_TOKEN_LIMIT` | `5000000` | Teto de tokens por mês somando todos os alunos. Ao ser atingido, as funções de IA passam a recusar novas chamadas com mensagem clara, protegendo a fatura. `0` desliga o limite. |
 
 ### Stripe
 
@@ -350,11 +351,11 @@ as boas práticas de cadastro — está em [`docs/CONTEUDO.md`](docs/CONTEUDO.md
 * **Cabeçalhos e CSP.** O Helmet aplica uma Content Security Policy restritiva: scripts e estilos do
   próprio domínio, mídia apenas do armazenamento da plataforma, conexões apenas para o próprio domínio e
   para o Stripe. Não há CDN de terceiros: as bibliotecas do front são servidas de `public/vendor/`.
-* **Segredos fora da interface.** As chaves da OpenAI, do Stripe e do SMTP vivem apenas em variáveis de
+* **Segredos fora da interface.** As chaves do OpenRouter, do Stripe e do SMTP vivem apenas em variáveis de
   ambiente, no servidor. O painel mostra somente o status da integração e os últimos caracteres da
   chave; nenhuma chave chega ao navegador em nenhum momento. Toda chamada de IA sai do backend.
 * **Teto de gasto com IA.** O consumo de tokens é registrado por chamada e comparado ao limite mensal
-  configurado, evitando surpresa na fatura da OpenAI.
+  configurado, evitando surpresa na fatura do OpenRouter.
 * **Auditoria e registro de erros.** Toda escrita administrativa é gravada em `audit_logs` com autor,
   ação, entidade e dados; erros 5xx vão para `error_logs` com caminho, usuário e stack. O aluno recebe
   apenas uma mensagem genérica, sem detalhes internos.

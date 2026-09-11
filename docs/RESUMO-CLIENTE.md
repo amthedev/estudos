@@ -11,7 +11,7 @@ que você pediu ficou dentro do sistema. É bem detalhado de propósito: assim v
 tudo sem precisar decorar nada e sabe exatamente onde clicar quando for usar.
 
 Junto com este resumo vão um vídeo em que percorro a plataforma inteira, um checklist do que ainda
-preciso de você para colocar no ar (chave da OpenAI, conta do Stripe, domínio, e-mail, logo definitiva
+preciso de você para colocar no ar (chave do OpenRouter, conta do Stripe, domínio, e-mail, logo definitiva
 e os vídeos das aulas) e a documentação técnica.
 
 ---
@@ -260,7 +260,7 @@ Tudo o que aparece para o aluno é cadastrado por você, sem depender de program
 * **Plataforma** — saúde do sistema, consumo de inteligência artificial por dia, por recurso e por
   aluno, erros registrados e o histórico de tudo o que foi alterado no painel, com autor e data.
 
-## 26. Segurança da chave da OpenAI
+## 26. Segurança da chave do OpenRouter
 
 A chave fica guardada **apenas no servidor**, em um arquivo de configuração protegido. Ela nunca é
 enviada ao navegador, nunca aparece no código da página e nunca é exibida por inteiro no painel — lá
@@ -294,7 +294,7 @@ começo, para liberar acesso a um grupo de teste.
 
 ## O que preciso de você agora
 
-Está tudo no arquivo do checklist, mas em resumo: a chave da OpenAI, a conta do Stripe ativada, o
+Está tudo no arquivo do checklist, mas em resumo: a chave do OpenRouter, a conta do Stripe ativada, o
 domínio apontado, o e-mail de envio, a logo definitiva em arquivo vetorial e os vídeos das aulas.
 
 Assim que isso chegar, coloco no ar e te mando o endereço funcionando.

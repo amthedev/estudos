@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Integração com a OpenAI — usada SOMENTE no backend.
+ * Integração com o OpenRouter — usada SOMENTE no backend.
  *
  *   const ai = require('../services/ai');
- *   ai.isConfigured()                       → true quando há OPENAI_API_KEY (ou cliente de simulação)
+ *   ai.isConfigured()                       → true quando há OPENROUTER_API_KEY (ou cliente de simulação)
  *   await ai.assertAvailable()              → lança 503 ai_unavailable se não configurada ou limite mensal atingido
  *   await ai.chat({ messages, model, stream, temperature, maxTokens, userId, feature, onDelta, signal })
  *       → { content, usage: { prompt_tokens, completion_tokens, total_tokens }, model, latency_ms, aborted }
@@ -12,10 +12,10 @@
  *   await ai.status()                       → { configured, mock, model, essay_model, month_tokens, month_requests, limit, limit_reached, last_error }
  *
  * Toda chamada registra uma linha em ai_usage (tokens, modelo, latência, status) e respeita o limite mensal
- * de tokens definido na configuração `openai_monthly_token_limit` (0 = sem limite). Ao exceder o limite,
+ * de tokens definido na configuração `openrouter_monthly_token_limit` (0 = sem limite). Ao exceder o limite,
  * a chamada é recusada com AppError 503 ai_unavailable 'Limite mensal de uso da IA atingido'.
  *
- * Simulação (OPENAI_MOCK=1, ou NODE_ENV=test sem chave): um cliente falso e determinístico responde em
+ * Simulação (OPENROUTER_MOCK=1, ou NODE_ENV=test sem chave): um cliente falso e determinístico responde em
  * português de forma plausível — inclusive em streaming e com JSON válido para a correção de redação —
  * para que testes e demonstrações funcionem sem custo e sem rede.
  */
@@ -37,32 +37,36 @@ let mockClient = null;
 // Configuração / cliente
 // ---------------------------------------------------------------------------
 function isMock() {
-  if (process.env.OPENAI_MOCK === '1') return true;
-  return config.isTest && !config.openai.apiKey;
+  if (process.env.OPENROUTER_MOCK === '1') return true;
+  return config.isTest && !config.openrouter.apiKey;
 }
 
 function isConfigured() {
-  return isMock() || Boolean(config.openai.apiKey);
+  return isMock() || Boolean(config.openrouter.apiKey);
 }
 
-/** Cliente OpenAI (ou o cliente de simulação). Lança 503 quando não há chave configurada. */
+/** Cliente OpenRouter (ou o cliente de simulação). Lança 503 quando não há chave configurada. */
 function getClient() {
   if (isMock()) {
     if (!mockClient) mockClient = createMockClient();
     return mockClient;
   }
-  if (!config.openai.apiKey) throw new AppError(503, 'ai_unavailable', UNAVAILABLE_MESSAGE);
+  if (!config.openrouter.apiKey) throw new AppError(503, 'ai_unavailable', UNAVAILABLE_MESSAGE);
   if (!realClient) {
-    // require tardio: o SDK só é carregado quando realmente usado
-    const OpenAI = require('openai');
-    realClient = new OpenAI({ apiKey: config.openai.apiKey, timeout: DEFAULT_TIMEOUT_MS, maxRetries: 1 });
+    const { createClient } = require('./openrouter');
+    realClient = createClient({
+      apiKey: config.openrouter.apiKey,
+      baseUrl: config.openrouter.baseUrl,
+      httpReferer: config.appUrl,
+      appTitle: config.brandName,
+    });
   }
   return realClient;
 }
 
 /** Chave mascarada para o painel (nunca o valor inteiro). */
 function maskedKey() {
-  const key = config.openai.apiKey;
+  const key = config.openrouter.apiKey;
   if (!key) return null;
   return `…${key.slice(-4)}`;
 }
@@ -81,7 +85,7 @@ async function monthUsage() {
 }
 
 async function monthlyLimit() {
-  const value = Number(await getSetting('openai_monthly_token_limit'));
+  const value = Number(await getSetting('openrouter_monthly_token_limit'));
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
@@ -152,7 +156,7 @@ function isAbortError(err) {
   return Boolean(err && (err.name === 'AbortError' || err.name === 'APIUserAbortError' || err.code === 'ABORT_ERR'));
 }
 
-/** Converte erros do SDK em AppError 503 com mensagem voltada ao aluno (detalhe técnico só no log). */
+/** Converte erros do provedor em AppError 503 com mensagem voltada ao aluno (detalhe técnico só no log). */
 function mapError(err) {
   if (err instanceof AppError) return err;
   const status = err && Number(err.status);
@@ -164,7 +168,7 @@ function mapError(err) {
   else if (name === 'APIConnectionTimeoutError' || (err && err.code === 'ETIMEDOUT')) {
     message = 'A IA demorou demais para responder. Tente novamente.';
   }
-  console.error('[ai] erro na chamada à OpenAI:', err && err.message ? err.message : err);
+  console.error('[ai] erro na chamada ao OpenRouter:', err && err.message ? err.message : err);
   const mapped = new AppError(503, 'ai_unavailable', message);
   mapped.cause = err;
   return mapped;
@@ -177,7 +181,7 @@ function mapError(err) {
  * Chat completion (com ou sem streaming).
  * @param {object} options
  * @param {Array<{role:string, content:string}>} options.messages
- * @param {string} [options.model]         padrão: setting openai_model
+ * @param {string} [options.model]         padrão: setting openrouter_model
  * @param {boolean} [options.stream]       true → chama onDelta(text) a cada trecho
  * @param {number} [options.temperature]
  * @param {number} [options.maxTokens]
@@ -205,7 +209,7 @@ async function chat({
 
   await assertAvailable();
   const client = getClient();
-  const resolvedModel = model || (await getSetting('openai_model')) || config.openai.model;
+  const resolvedModel = model || (await getSetting('openrouter_model')) || config.openrouter.model;
   const started = Date.now();
 
   const params = { model: resolvedModel, messages, temperature, max_tokens: maxTokens };
@@ -215,11 +219,11 @@ async function chat({
   let content = '';
   let usage = null;
   let aborted = false;
+  let usedModel = resolvedModel;
 
   try {
     if (stream) {
       params.stream = true;
-      params.stream_options = { include_usage: true };
       const iterator = await client.chat.completions.create(params, requestOptions);
       for await (const chunk of iterator) {
         const delta = chunk && chunk.choices && chunk.choices[0] && chunk.choices[0].delta ? chunk.choices[0].delta.content : null;
@@ -228,12 +232,14 @@ async function chat({
           if (typeof onDelta === 'function') onDelta(delta);
         }
         if (chunk && chunk.usage) usage = chunk.usage;
+        if (chunk && chunk.model) usedModel = chunk.model;
       }
     } else {
       const completion = await client.chat.completions.create(params, requestOptions);
       const choice = completion && completion.choices && completion.choices[0];
       content = (choice && choice.message && choice.message.content) || '';
       usage = (completion && completion.usage) || null;
+      if (completion && completion.model) usedModel = completion.model;
     }
   } catch (err) {
     if (isAbortError(err) || (signal && signal.aborted)) {
@@ -243,7 +249,7 @@ async function chat({
       await recordUsage({
         userId,
         feature,
-        model: resolvedModel,
+        model: usedModel,
         usage: normalizeUsage(null, messages, content),
         status: 'error',
         error: err && err.message ? err.message : String(err),
@@ -254,8 +260,8 @@ async function chat({
   }
 
   const finalUsage = normalizeUsage(usage, messages, content);
-  await recordUsage({ userId, feature, model: resolvedModel, usage: finalUsage, status: 'ok', latencyMs: Date.now() - started });
-  return { content, usage: finalUsage, model: resolvedModel, latency_ms: Date.now() - started, aborted };
+  await recordUsage({ userId, feature, model: usedModel, usage: finalUsage, status: 'ok', latencyMs: Date.now() - started });
+  return { content, usage: finalUsage, model: usedModel, latency_ms: Date.now() - started, aborted };
 }
 
 /** Extrai um objeto JSON da resposta (tolera cercas ```json e texto ao redor). */
@@ -295,8 +301,8 @@ async function status() {
   const [usage, limit, model, essayModel, lastError] = await Promise.all([
     monthUsage().catch(() => ({ tokens: 0, requests: 0 })),
     monthlyLimit(),
-    getSetting('openai_model'),
-    getSetting('openai_essay_model'),
+    getSetting('openrouter_model'),
+    getSetting('openrouter_essay_model'),
     db
       .one(`SELECT error_message, created_at FROM ai_usage WHERE status = 'error' ORDER BY created_at DESC LIMIT 1`)
       .catch(() => null),
@@ -305,8 +311,8 @@ async function status() {
     configured: isConfigured(),
     mock: isMock(),
     key: maskedKey(),
-    model: model || config.openai.model,
-    essay_model: essayModel || config.openai.essayModel,
+    model: model || config.openrouter.model,
+    essay_model: essayModel || config.openrouter.essayModel,
     month_tokens: usage.tokens,
     month_requests: usage.requests,
     limit,

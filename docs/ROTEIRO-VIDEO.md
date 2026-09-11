@@ -137,7 +137,7 @@ Depois abrir **Meus Resumos**.
 * "A resposta vai aparecendo enquanto é escrita — não fica uma tela parada esperando."
 * "As conversas ficam salvas, então dá para voltar depois."
 
-**Destaque:** diga com clareza que **a chave da OpenAI fica no servidor**: "isso roda pelo servidor,
+**Destaque:** diga com clareza que **a chave do OpenRouter fica no servidor**: "isso roda pelo servidor,
 com a sua chave protegida. O aluno nunca tem acesso a ela, e existe um teto mensal de uso para a conta
 não estourar".
 
@@ -338,7 +338,7 @@ de liberar acesso. Depois `/admin/configuracoes` — mostrar marca, acesso, e o 
   bloquear a conta."
 * "E nas configurações: nome da marca, se a assinatura é obrigatória para usar, e o status das
   integrações."
-* "Repare que a chave da OpenAI aparece só como 'configurada', com os últimos caracteres. Ela nunca é
+* "Repare que a chave do OpenRouter aparece só como 'configurada', com os últimos caracteres. Ela nunca é
   exibida por inteiro, nem aqui, nem no navegador do aluno."
 
 ---
@@ -348,7 +348,7 @@ de liberar acesso. Depois `/admin/configuracoes` — mostrar marca, acesso, e o 
 **Frases-guia:**
 * "É isso, Guilherme. Tudo o que você pediu está no ar e funcionando."
 * "O que falta do seu lado é o conteúdo: as aulas, os vídeos e as questões que vão entrar."
-* "Te mandei junto um checklist com o que preciso de você — chave da OpenAI, conta do Stripe, domínio
+* "Te mandei junto um checklist com o que preciso de você — chave do OpenRouter, conta do Stripe, domínio
   e o e-mail — e um resumo item por item do que foi entregue."
 * "Qualquer dúvida, me chama que eu gravo um vídeo curto mostrando."
 

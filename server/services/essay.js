@@ -448,7 +448,7 @@ async function correctEssay(essayId, { timeoutMs = CORRECTION_TIMEOUT_MS } = {})
   };
 
   const { messages } = buildCorrectionPrompt(criteriaSet, exam, theme, content);
-  const model = (await getSetting('openai_essay_model')) || undefined;
+  const model = (await getSetting('openrouter_essay_model')) || undefined;
 
   const controller = new AbortController();
   let timedOut = false;
@@ -574,7 +574,7 @@ async function generateTheme(examId, { userId = null } = {}) {
   );
 
   const { messages } = buildThemePrompt(exam, existing.map((row) => row.title));
-  const model = (await getSetting('openai_model')) || undefined;
+  const model = (await getSetting('openrouter_model')) || undefined;
 
   const result = await ai.json({
     messages,

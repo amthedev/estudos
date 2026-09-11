@@ -7,16 +7,16 @@ que **já está pronto e entregue**.
 
 ## Parte 1 — O que o cliente precisa providenciar
 
-### 1. Chave da OpenAI (tutor e correção de redação)
+### 1. Chave do OpenRouter (tutor e correção de redação)
 
 | Item | Detalhe |
 |------|---------|
-| O que é | Uma chave de API da OpenAI, criada em [platform.openai.com/api-keys](https://platform.openai.com/api-keys). |
+| O que é | Uma chave de API do OpenRouter, criada em [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys). |
 | Por que | É o que faz o tutor responder, a correção de redação funcionar e os temas serem gerados. |
 | Como fazer | Criar a conta, adicionar um cartão, criar um projeto chamado "Foco de Elite" e gerar a chave dentro dele. |
-| O que enviar | A chave (começa com `sk-`), por canal privado. Ela é configurada **apenas no servidor**. |
-| Custo | Pago por uso. Com os modelos configurados (`gpt-4o-mini` para o tutor, `gpt-4o` para a redação), o gasto é de centavos por aluno ativo por dia. |
-| Proteção | Já existe um teto mensal de tokens na plataforma. Defina também um limite de gasto no painel da própria OpenAI, em **Settings → Limits**. |
+| O que enviar | A chave (normalmente começa com `sk-or-v1-`), por canal privado. Ela é configurada **apenas no servidor**. |
+| Custo | Pago por uso. Com os modelos configurados (`google/gemini-3.8-flash` para o tutor, `anthropic/claude-sonnet-5` para a redação), o gasto é de centavos por aluno ativo por dia. |
+| Proteção | Já existe um teto mensal de tokens na plataforma. Defina também um limite de crédito para a chave no painel do OpenRouter. |
 | Se faltar | A plataforma inteira continua funcionando. Só o tutor, a correção de redação e a geração de temas ficam indisponíveis, com aviso ao aluno. |
 
 ### 2. Conta no Stripe (cobrança recorrente)
@@ -130,7 +130,7 @@ que **já está pronto e entregue**.
 
 - [x] Banco PostgreSQL com schema versionado em migrations
 - [x] Seed com as provas, áreas, matérias, o conteúdo programático completo, os pesos por prova, os critérios de redação e os planos
-- [x] Chave da OpenAI protegida no servidor, com teto mensal de consumo de tokens
+- [x] Chave do OpenRouter protegida no servidor, com teto mensal de consumo de tokens
 - [x] Senhas com hash bcrypt, sessões separadas por perfil, proteção contra CSRF, limitação de tentativas e SQL parametrizado
 - [x] Registro de auditoria de toda escrita administrativa e de todos os erros do servidor
 - [x] Testes automatizados de integração cobrindo os fluxos principais e as regras de segurança
@@ -143,7 +143,7 @@ que **já está pronto e entregue**.
 1. Enviar a logo definitiva em SVG.
 2. Contratar o servidor (ou aprovar a opção Railway/Render).
 3. Apontar o DNS de `focoelite.com.br` para o servidor.
-4. Criar a chave da OpenAI e definir o limite de gasto.
+4. Criar a chave do OpenRouter e definir o limite de gasto.
 5. Criar e ativar a conta no Stripe, e decidir os valores dos planos.
 6. Configurar o e-mail de envio, com SPF e DKIM.
 7. Publicação, HTTPS e backup diário configurados.

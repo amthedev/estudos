@@ -4,7 +4,7 @@
 // Lê GET /api/admin/settings e GET /api/admin/settings/integrations e grava
 // por seção em PUT /api/admin/settings (a API aceita envio parcial).
 //
-// Segredos (OpenAI, Stripe, SMTP) NÃO passam por aqui: vivem em variáveis de
+// Segredos (OpenRouter, Stripe, SMTP) NÃO passam por aqui: vivem em variáveis de
 // ambiente no servidor. A tela mostra apenas o status e a chave mascarada.
 // =====================================================================
 import { api } from '../../core/api.js';
@@ -30,7 +30,7 @@ const STRIPE_EVENTS = [
 const SECTIONS = [
   { id: 'brand', label: 'Marca', icon: 'sparkles' },
   { id: 'access', label: 'Acesso', icon: 'shield-check' },
-  { id: 'openai', label: 'OpenAI', icon: 'bot' },
+  { id: 'openrouter', label: 'OpenRouter', icon: 'bot' },
   { id: 'stripe', label: 'Stripe', icon: 'credit-card' },
   { id: 'smtp', label: 'E-mail', icon: 'mail' },
   { id: 'schedule', label: 'Cronograma', icon: 'calendar-days' },
@@ -74,37 +74,37 @@ function brandAside() {
     </div>`;
 }
 
-function openaiAside() {
-  const openai = (state.integrations && state.integrations.openai) || {};
-  const used = Number(openai.month_tokens) || 0;
-  const limit = Number(openai.limit) || 0;
+function openrouterAside() {
+  const openrouter = (state.integrations && state.integrations.openrouter) || {};
+  const used = Number(openrouter.month_tokens) || 0;
+  const limit = Number(openrouter.limit) || 0;
   const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-  const statusBadge = openai.mock
+  const statusBadge = openrouter.mock
     ? badge('Modo de simulação', 'orange', { icon: 'wand-sparkles' })
-    : openai.configured
+    : openrouter.configured
       ? badge('Integração ativa', 'green', { icon: 'circle-check' })
       : badge('Não configurada', 'red', { icon: 'circle-alert' });
   return html`
     <div class="aset-integration">
       <div class="aset-integration-head">
         ${statusBadge}
-        ${openai.key ? html`<span class="text-xs text-3">Chave ${openai.key}</span>` : ''}
+        ${openrouter.key ? html`<span class="text-xs text-3">Chave ${openrouter.key}</span>` : ''}
       </div>
       <dl class="kv aset-kv">
         <dt>Consumo do mês</dt>
-        <dd>${num(used)} tokens em ${num(openai.month_requests)} chamadas</dd>
+        <dd>${num(used)} tokens em ${num(openrouter.month_requests)} chamadas</dd>
         <dt>Limite mensal</dt>
         <dd>${limit > 0 ? `${num(limit)} tokens` : 'Sem limite definido'}</dd>
-        ${openai.last_error
-          ? html`<dt>Último erro</dt><dd class="text-danger" title="${fmtDateTime(openai.last_error.at)}">${openai.last_error.message} · ${fmtRelative(openai.last_error.at)}</dd>`
+        ${openrouter.last_error
+          ? html`<dt>Último erro</dt><dd class="text-danger" title="${fmtDateTime(openrouter.last_error.at)}">${openrouter.last_error.message} · ${fmtRelative(openrouter.last_error.at)}</dd>`
           : ''}
       </dl>
       ${limit > 0 ? progressBar(pct, { color: pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : '', label: 'Uso do limite mensal' }) : ''}
-      ${openai.limit_reached ? alertBox({ type: 'warning', title: 'Limite mensal atingido', text: 'As funções de IA ficam indisponíveis para os alunos até a virada do mês ou o aumento do limite.' }) : ''}
+      ${openrouter.limit_reached ? alertBox({ type: 'warning', title: 'Limite mensal atingido', text: 'As funções de IA ficam indisponíveis para os alunos até a virada do mês ou o aumento do limite.' }) : ''}
       ${alertBox({
         type: 'info',
-        title: 'A chave da OpenAI fica no servidor',
-        text: 'Ela é lida da variável de ambiente OPENAI_API_KEY e nunca é exibida nem editada por aqui. Sem a chave, o tutor e a correção de redação respondem em modo de simulação.',
+        title: 'A chave do OpenRouter fica no servidor',
+        text: 'Ela é lida da variável de ambiente OPENROUTER_API_KEY e nunca é exibida nem editada por aqui. Sem a chave, o tutor e a correção de redação ficam indisponíveis.',
       })}
     </div>`;
 }
@@ -234,23 +234,23 @@ function mountForms() {
     }, 'Regras de acesso atualizadas.'),
   }));
 
-  state.forms.push(buildForm(qs('#aset-form-openai', state.el), [
-    { key: 'openai_model', label: 'Modelo do tutor', type: 'text', required: true, maxLength: 80, placeholder: 'gpt-4o-mini' },
-    { key: 'openai_essay_model', label: 'Modelo da correção de redação', type: 'text', required: true, maxLength: 80 },
-    { key: 'openai_monthly_token_limit', label: 'Limite mensal de tokens', type: 'number', min: 0, integer: true, hint: 'Use 0 para não limitar. Ao atingir o limite, as funções de IA pausam até o mês seguinte.' },
+  state.forms.push(buildForm(qs('#aset-form-openrouter', state.el), [
+    { key: 'openrouter_model', label: 'Modelo do tutor', type: 'text', required: true, maxLength: 120, placeholder: 'google/gemini-3.8-flash', hint: 'Use o identificador completo do catálogo do OpenRouter: provedor/modelo.' },
+    { key: 'openrouter_essay_model', label: 'Modelo da correção de redação', type: 'text', required: true, maxLength: 120, placeholder: 'anthropic/claude-sonnet-5' },
+    { key: 'openrouter_monthly_token_limit', label: 'Limite mensal de tokens', type: 'number', min: 0, integer: true, hint: 'Use 0 para não limitar. Ao atingir o limite, as funções de IA pausam até o mês seguinte.' },
   ], {
     values: {
-      openai_model: s.openai_model || '',
-      openai_essay_model: s.openai_essay_model || '',
-      openai_monthly_token_limit: Number(s.openai_monthly_token_limit) || 0,
+      openrouter_model: s.openrouter_model || '',
+      openrouter_essay_model: s.openrouter_essay_model || '',
+      openrouter_monthly_token_limit: Number(s.openrouter_monthly_token_limit) || 0,
     },
-    submitLabel: 'Salvar OpenAI',
+    submitLabel: 'Salvar OpenRouter',
     onSubmit: async (values) => {
       await save({
-        openai_model: values.openai_model,
-        openai_essay_model: values.openai_essay_model,
-        openai_monthly_token_limit: Number(values.openai_monthly_token_limit) || 0,
-      }, 'Configurações da OpenAI salvas.');
+        openrouter_model: values.openrouter_model,
+        openrouter_essay_model: values.openrouter_essay_model,
+        openrouter_monthly_token_limit: Number(values.openrouter_monthly_token_limit) || 0,
+      }, 'Configurações do OpenRouter salvas.');
       await refreshIntegrations();
     },
   }));
@@ -352,7 +352,7 @@ function paint() {
       ${navigation()}
     ${sectionCard({ id: 'brand', title: 'Marca', subtitle: 'Nome, logo e contato de suporte.', icon: 'sparkles', aside: brandAside() })}
     ${sectionCard({ id: 'access', title: 'Acesso', subtitle: 'Quem pode estudar na plataforma.', icon: 'shield-check' })}
-    ${sectionCard({ id: 'openai', title: 'OpenAI', subtitle: 'Tutor, correção de redação e geração de temas.', icon: 'bot', aside: openaiAside() })}
+    ${sectionCard({ id: 'openrouter', title: 'OpenRouter', subtitle: 'Tutor, correção de redação e geração de temas.', icon: 'bot', aside: openrouterAside() })}
     ${sectionCard({ id: 'stripe', title: 'Stripe', subtitle: 'Pagamentos e assinaturas.', icon: 'credit-card', body: stripeSection() })}
     ${sectionCard({ id: 'smtp', title: 'E-mail', subtitle: 'Envio de mensagens automáticas.', icon: 'mail', body: smtpSection() })}
     ${sectionCard({ id: 'schedule', title: 'Cronograma', subtitle: 'Revisões e blocos padrão do plano de estudos.', icon: 'calendar-days' })}
@@ -365,8 +365,8 @@ function paint() {
 async function refreshIntegrations() {
   try {
     state.integrations = await api.get('/api/admin/settings/integrations');
-    const aside = qs('#aset-aside-openai', state.el);
-    if (aside) render(aside, openaiAside());
+    const aside = qs('#aset-aside-openrouter', state.el);
+    if (aside) render(aside, openrouterAside());
   } catch (err) {
     console.warn('[admin/configuracoes] não foi possível atualizar o status das integrações', err);
   }

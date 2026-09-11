@@ -4,11 +4,11 @@
  * Tutor IA e Redação IA: conversa com contexto, resposta em SSE, correção síncrona com os
  * critérios da prova certa, registro de uso, limite mensal e isolamento entre alunos.
  *
- *   NODE_ENV=test OPENAI_MOCK=1 node --test tests/ai.test.js
+ *   NODE_ENV=test OPENROUTER_MOCK=1 node --test tests/ai.test.js
  *
- * Usa o cliente de simulação de services/ai.js (OPENAI_MOCK=1): nenhuma chamada de rede.
+ * Usa o cliente de simulação de services/ai.js (OPENROUTER_MOCK=1): nenhuma chamada de rede.
  */
-process.env.OPENAI_MOCK = '1';
+process.env.OPENROUTER_MOCK = '1';
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -316,7 +316,7 @@ describe('IA: Tutor e Redação', () => {
     });
 
     it('limite mensal de tokens atingido → 503 ai_unavailable', async () => {
-      await settings.setSetting('openai_monthly_token_limit', 1);
+      await settings.setSetting('openrouter_monthly_token_limit', 1);
       try {
         const res = await alice.agent.post(`/api/tutor/conversations/${conversation.id}/messages`, {
           content: 'Consegue revisar comigo o conteúdo de porcentagem?',
@@ -324,7 +324,7 @@ describe('IA: Tutor e Redação', () => {
         assert.equal(res.status, 503);
         assert.equal(res.body.error.code, 'ai_unavailable');
       } finally {
-        await settings.setSetting('openai_monthly_token_limit', null);
+        await settings.setSetting('openrouter_monthly_token_limit', null);
       }
     });
 
@@ -548,13 +548,13 @@ describe('IA: Tutor e Redação', () => {
         theme_title: 'Tema para testar indisponibilidade',
         content: ESSAY_TEXT,
       });
-      await settings.setSetting('openai_monthly_token_limit', 1);
+      await settings.setSetting('openrouter_monthly_token_limit', 1);
       try {
         const res = await alice.agent.post(`/api/essays/${criada.body.id}/submit`, {});
         assert.equal(res.status, 503);
         assert.equal(res.body.error.code, 'ai_unavailable');
       } finally {
-        await settings.setSetting('openai_monthly_token_limit', null);
+        await settings.setSetting('openrouter_monthly_token_limit', null);
       }
 
       const depois = await alice.agent.get(`/api/essays/${criada.body.id}`);

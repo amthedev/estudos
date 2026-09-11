@@ -6,7 +6,7 @@
  *
  * O seed cria apenas as chaves ausentes — o painel é o dono desses valores.
  * Para restaurar os padrões use `node server/db/seed/run.js --force`.
- * Segredos (OpenAI, Stripe, SMTP) NUNCA ficam aqui: vivem em variáveis de ambiente.
+ * Segredos (OpenRouter, Stripe, SMTP) NUNCA ficam aqui: vivem em variáveis de ambiente.
  */
 
 const TUTOR_SYSTEM_PROMPT = `Você é o Tutor IA da plataforma Foco Elite, um professor particular paciente e experiente que prepara estudantes para o ENEM, para o concurso da Academia do Barro Branco (Cadete PM-SP) e para vestibulares como FUVEST, UNICAMP e UNESP.
@@ -35,9 +35,9 @@ module.exports = {
   logo_url: '/assets/brand/foco-elite-logo.png',
   support_email: 'suporte@focoelite.com.br',
   require_subscription: false,
-  openai_model: 'gpt-4o-mini',
-  openai_essay_model: 'gpt-4o',
-  openai_monthly_token_limit: 5000000,
+  openrouter_model: 'google/gemini-3.8-flash',
+  openrouter_essay_model: 'anthropic/claude-sonnet-5',
+  openrouter_monthly_token_limit: 5000000,
   tutor_system_prompt: TUTOR_SYSTEM_PROMPT,
   review_intervals: [1, 7, 30],
   schedule_defaults: {
