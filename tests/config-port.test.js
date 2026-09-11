@@ -46,7 +46,10 @@ describe('Porta e host da aplicação', () => {
   function carrega(env) {
     const saida = execFileSync(
       process.execPath,
-      ['-e', 'const c = require("./server/config.js"); console.log(JSON.stringify({ port: c.port, host: c.host }))'],
+      [
+        '-e',
+        'const c = require("./server/config.js"); console.log(JSON.stringify({ port: c.port, host: c.host, env: c.env }))',
+      ],
       {
         cwd: temp,
         encoding: 'utf8',
@@ -60,6 +63,21 @@ describe('Porta e host da aplicação', () => {
       }
     );
     return JSON.parse(saida.trim().split('\n').pop());
+  }
+
+  /** Mesma carga, mas sem os segredos, para ver a aplicação recusar subir. */
+  function semSegredos(env) {
+    try {
+      execFileSync(process.execPath, ['-e', 'require("./server/config.js")'], {
+        cwd: temp,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { PATH: process.env.PATH, DATABASE_URL: 'postgres://usuario:senha@host:5432/focoelite', ...env },
+      });
+      return { erro: '' };
+    } catch (err) {
+      return { erro: String(err.stderr || err.message) };
+    }
   }
 
   it('escuta na 80 quando reconhece a Square Cloud', () => {
@@ -87,5 +105,20 @@ describe('Porta e host da aplicação', () => {
 
   it('aceita um host diferente quando pedido', () => {
     assert.equal(carrega({ HOST: '127.0.0.1' }).host, '127.0.0.1');
+  });
+
+  it('trata a hospedagem como produção quando NODE_ENV não vem', () => {
+    // Presumir desenvolvimento numa hospedagem daria à aplicação os segredos
+    // de sessão de desenvolvimento, que são previsíveis e estão publicados
+    // neste repositório: o site subiria funcionando e aberto, sem erro nenhum.
+    assert.equal(carrega({ SQUARECLOUD_APP_ID: 'app-123' }).env, 'production');
+    assert.equal(carrega({}).env, 'development');
+    assert.equal(carrega({ SQUARECLOUD_APP_ID: 'app-123', NODE_ENV: 'development' }).env, 'development');
+  });
+
+  it('recusa subir na hospedagem sem segredos de sessão', () => {
+    const { erro } = semSegredos({ SQUARECLOUD_APP_ID: 'app-123' });
+    assert.match(erro, /JWT_SECRET/);
+    assert.match(erro, /ADMIN_JWT_SECRET/);
   });
 });

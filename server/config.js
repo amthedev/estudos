@@ -30,8 +30,25 @@ const boolFromEnv = (fallback) =>
     return fallback;
   }, z.boolean());
 
+/**
+ * Ambiente presumido quando NODE_ENV não é informada.
+ *
+ * Presumir desenvolvimento numa hospedagem é perigoso: os segredos de sessão
+ * ganham um valor de desenvolvimento previsível — que está publicado neste
+ * repositório —, os cookies deixam de exigir HTTPS, e nada disso aparece como
+ * erro. A aplicação sobe, o site responde e qualquer pessoa consegue forjar
+ * uma sessão.
+ *
+ * A Square Cloud injeta SQUARECLOUD_APP_ID no processo. Havendo essa marca,
+ * o padrão passa a ser produção, e a aplicação recusa subir sem segredos de
+ * verdade em vez de ficar aberta em silêncio. NODE_ENV explícita sempre vence.
+ */
+const AMBIENTE_PADRAO = process.env.SQUARECLOUD_APP_ID ? 'production' : 'development';
+
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // O padrão muda conforme onde a aplicação está: numa hospedagem ela é
+  // produção até prova em contrário. Ver AMBIENTE_PADRAO, logo acima.
+  NODE_ENV: z.enum(['development', 'test', 'production']).default(AMBIENTE_PADRAO),
   PORT: z.coerce.number().int().min(1).max(65535).optional(),
   HOST: z.string().min(1).default('0.0.0.0'),
   APP_URL: z.string().url().default('http://localhost:4100'),

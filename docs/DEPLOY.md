@@ -501,9 +501,18 @@ ASAAS_WEBHOOK_TOKEN=...
 SMTP_HOST=... SMTP_PORT=587 SMTP_USER=... SMTP_PASS=...
 ```
 
+`HOST`, `PORT` e `SQUARECLOUD_APP_ID` aparecem na tela em cinza: são injetadas pela plataforma e não
+precisam ser cadastradas. Cadastrar `PORT=80` mesmo assim não faz mal e serve de rede de segurança.
+
 Gere os dois segredos de sessão com `openssl rand -hex 48` (precisam ser diferentes entre si e ter ao
 menos 32 caracteres, senão a aplicação recusa subir em produção). A `SQUARECLOUD_API_KEY` é a chave
 da conta, em Configurações da conta → API; é a mesma usada pelo Blob Storage.
+
+`NODE_ENV` não é obrigatória aqui: encontrando `SQUARECLOUD_APP_ID` no ambiente, a aplicação assume
+produção. Isso é deliberado e importa para a segurança — presumir desenvolvimento numa hospedagem
+daria aos cookies e às sessões os valores de desenvolvimento, que são previsíveis e estão publicados
+neste repositório, e o site subiria funcionando e aberto, sem erro nenhum no log. Ainda assim,
+cadastre `NODE_ENV=production` explicitamente: é uma linha, e não depende de nenhuma dedução.
 
 Se faltar alguma variável obrigatória, a aplicação não sobe e o log lista **todas** as que faltam de
 uma vez, com o formato esperado de cada uma — não uma por publicação.
