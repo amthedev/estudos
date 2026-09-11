@@ -120,7 +120,8 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 | Variável | Padrão | Para que serve |
 |----------|--------|----------------|
 | `NODE_ENV` | `development` | `development`, `test` ou `production`. Em produção os segredos passam a ser obrigatórios e fortes, os cookies viram `Secure` e o CSP ativa `upgrade-insecure-requests`. |
-| `PORT` | `4100` | Porta em que o Node escuta. Atrás do Nginx, continua sendo uma porta local. |
+| `PORT` | `80` na Square Cloud, `4100` no resto | Porta em que o Node escuta. Sem valor definido, a aplicação usa 80 quando reconhece a Square Cloud (que só roteia o tráfego para essa porta) e 4100 nos outros casos. Um valor explícito sempre vence. |
+| `HOST` | `0.0.0.0` | Interface em que o Node escuta. A Square Cloud exige `0.0.0.0`; ligar em `localhost` faz o site dar timeout sem erro no log. |
 | `APP_URL` | `http://localhost:4100` | URL pública da aplicação. Usada nos links de e-mail e nos retornos do Stripe Checkout. Em produção: `https://focoelite.com.br`. |
 | `BRAND_NAME` | `Foco Elite` | Nome usado em logs e no título das páginas. O nome comercial exibido ao aluno é a configuração `brand_name`, editável no painel. |
 | `TRUST_PROXY` | `1` em produção | Diz ao Express que há um proxy reverso na frente, para que o IP real chegue ao rate limit. Aceita `true`, `false`, um número de saltos ou `loopback`. |
@@ -132,6 +133,8 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 | `DATABASE_URL` | — | Obrigatória. String de conexão do PostgreSQL, ex.: `postgres://focoelite:senha@localhost:5432/focoelite`. |
 | `DATABASE_URL_TEST` | — | Obrigatória quando `NODE_ENV=test`. Aponta para um banco **separado**: o schema dele é recriado a cada execução dos testes. |
 | `PGSSL` | `false` | `true` quando o banco exige TLS (Neon, Supabase, RDS e afins). |
+| `PGSSL_CERT` | — | Certificado do PostgreSQL gerenciado da Square Cloud, que recusa conexão em texto puro. Aceita o `.pem` em texto ou em base64. |
+| `PGSSL_CERT_FILE` | — | Alternativa à anterior: caminho do `.pem` dentro do projeto, para quando o certificado não couber no limite de 4096 caracteres de uma variável de ambiente. |
 
 ### Segurança
 

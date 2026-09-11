@@ -7,7 +7,20 @@
 --     a várias provas por tabelas de ligação (lesson_exams, exam_topics)
 -- =====================================================================
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- pgcrypto só é usada aqui por causa de gen_random_uuid(). Do PostgreSQL 13 em
+-- diante essa função já vem no núcleo, e num banco gerenciado o usuário da
+-- aplicação normalmente não tem permissão para criar extensão — deixar o
+-- comando cru aqui derrubava a primeira migration por um motivo que não
+-- importa. Tenta criar e segue; a checagem logo abaixo é quem cobra o que o
+-- schema realmente precisa.
+DO $$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'pgcrypto indisponível: %', SQLERRM; END $$;
+DO $$ BEGIN
+  PERFORM gen_random_uuid();
+EXCEPTION WHEN undefined_function THEN
+  RAISE EXCEPTION 'Este banco não tem gen_random_uuid(). Use PostgreSQL 13 ou mais novo, ou habilite a extensão pgcrypto.';
+END $$;
 DO $$ BEGIN
   CREATE EXTENSION IF NOT EXISTS unaccent;
 EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'unaccent indisponível: %', SQLERRM; END $$;

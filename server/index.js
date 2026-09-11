@@ -27,8 +27,17 @@ async function main() {
   }
 
   const app = createApp();
-  const server = app.listen(config.port, () => {
-    console.log(`${config.brandName} v${config.version} — ${config.env} — http://localhost:${config.port}`);
+  // O host é explícito de propósito: a Square Cloud só roteia o tráfego da
+  // borda para quem escuta em 0.0.0.0, e uma aplicação ligada a localhost sobe
+  // com o log limpo e o endereço dando timeout, sem nada para investigar.
+  const server = app.listen(config.port, config.host, () => {
+    // Em produção o endereço público não é localhost: quem lê o log da
+    // hospedagem precisa ver onde o processo escutou e o endereço pelo qual o
+    // site responde, que são coisas diferentes.
+    const onde = config.isProd
+      ? `${config.host}:${config.port} — ${config.appUrl}`
+      : `http://localhost:${config.port}`;
+    console.log(`${config.brandName} v${config.version} — ${config.env} — ${onde}`);
   });
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;

@@ -229,6 +229,18 @@ async function main() {
     item(OK, 'APP_URL', config.appUrl);
   }
 
+  // A porta errada na Square Cloud não gera erro nenhum: a aplicação sobe, o
+  // log fica limpo e o endereço dá timeout. Como isso não aparece em log,
+  // aparece aqui.
+  const naSquareCloud = Boolean(process.env.SQUARECLOUD_APP_ID);
+  if (naSquareCloud && config.port !== 80) {
+    item(FALTA, 'Porta', `está ${config.port}; a Square Cloud só roteia para a 80 — o site daria timeout sem erro no log`);
+  } else if (naSquareCloud) {
+    item(OK, 'Porta', `${config.host}:${config.port}`);
+  } else {
+    item(OK, 'Porta', `${config.host}:${config.port} (fora da Square Cloud)`);
+  }
+
   // -------------------------------------------------------------- resultado
   console.log(linhas.join('\n'));
   console.log('');

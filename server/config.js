@@ -11,7 +11,9 @@ const dotenv = require('dotenv');
 const { z } = require('zod');
 
 const rootDir = path.resolve(__dirname, '..');
-dotenv.config({ path: path.join(rootDir, '.env') });
+const envFile = path.join(rootDir, '.env');
+const hasEnvFile = fs.existsSync(envFile);
+dotenv.config({ path: envFile });
 
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
 
@@ -30,13 +32,19 @@ const boolFromEnv = (fallback) =>
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().min(1).max(65535).default(4100),
+  PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  HOST: z.string().min(1).default('0.0.0.0'),
   APP_URL: z.string().url().default('http://localhost:4100'),
   BRAND_NAME: z.string().min(1).default('Foco Elite'),
 
   DATABASE_URL: z.string().min(1).optional(),
   DATABASE_URL_TEST: z.string().min(1).optional(),
   PGSSL: boolFromEnv(false),
+  // Certificado do PostgreSQL gerenciado da Square Cloud: um único .pem que
+  // serve como CA, certificado e chave do cliente. Pode vir como o próprio
+  // texto PEM ou em base64, que é como a API da Square Cloud o entrega.
+  PGSSL_CERT: z.string().optional(),
+  PGSSL_CERT_FILE: z.string().optional(),
 
   JWT_SECRET: z.string().min(16).optional(),
   ADMIN_JWT_SECRET: z.string().min(16).optional(),
@@ -81,13 +89,19 @@ const isProd = env.NODE_ENV === 'production';
 const isTest = env.NODE_ENV === 'test';
 const isDev = env.NODE_ENV === 'development';
 
+// Tudo que falta é acumulado e relatado de uma vez. Subir, falhar numa
+// variável, corrigir e subir de novo para falhar na seguinte custa um ciclo de
+// publicação inteiro a cada vez; quem está configurando merece a lista completa
+// na primeira tentativa.
+const problemas = [];
+
 // Banco: em teste usa obrigatoriamente o banco de testes (o schema é recriado a cada execução).
 const databaseUrl = isTest ? env.DATABASE_URL_TEST : env.DATABASE_URL;
 if (!databaseUrl) {
-  throw new Error(
+  problemas.push(
     isTest
-      ? 'DATABASE_URL_TEST é obrigatória quando NODE_ENV=test.'
-      : 'DATABASE_URL é obrigatória. Defina-a no arquivo .env.'
+      ? 'DATABASE_URL_TEST — obrigatória quando NODE_ENV=test.'
+      : 'DATABASE_URL — endereço do PostgreSQL, ex.: postgres://usuario:senha@host:5432/focoelite?sslmode=require'
   );
 }
 
@@ -95,11 +109,14 @@ if (!databaseUrl) {
 function resolveSecret(name, value) {
   if (value) {
     if (isProd && (value.length < 32 || value.startsWith('dev-'))) {
-      throw new Error(`${name} precisa ter ao menos 32 caracteres aleatórios em produção (ex.: openssl rand -hex 48).`);
+      problemas.push(`${name} — precisa de ao menos 32 caracteres aleatórios em produção. Gere com: openssl rand -hex 48`);
     }
     return value;
   }
-  if (isProd) throw new Error(`${name} é obrigatória em produção.`);
+  if (isProd) {
+    problemas.push(`${name} — obrigatória em produção. Gere com: openssl rand -hex 48`);
+    return null;
+  }
   const fallback = `${name.toLowerCase()}-inseguro-${env.NODE_ENV}-focoelite`;
   if (!isTest) console.warn(`[config] ${name} não definida; usando valor inseguro de desenvolvimento.`);
   return fallback;
@@ -107,8 +124,27 @@ function resolveSecret(name, value) {
 
 const jwtSecret = resolveSecret('JWT_SECRET', env.JWT_SECRET);
 const adminJwtSecret = resolveSecret('ADMIN_JWT_SECRET', env.ADMIN_JWT_SECRET);
-if (jwtSecret === adminJwtSecret) {
-  throw new Error('JWT_SECRET e ADMIN_JWT_SECRET precisam ser diferentes.');
+if (jwtSecret && adminJwtSecret && jwtSecret === adminJwtSecret) {
+  problemas.push('JWT_SECRET e ADMIN_JWT_SECRET — precisam ser dois valores diferentes.');
+}
+
+if (problemas.length) {
+  // O aviso muda conforme onde a aplicação está rodando: cobrar um arquivo .env
+  // de quem publicou numa hospedagem, onde esse arquivo não existe, manda a
+  // pessoa procurar no lugar errado.
+  const onde = hasEnvFile
+    ? `Defina no arquivo .env da raiz do projeto (${envFile}).`
+    : 'Não há arquivo .env aqui: defina estas variáveis no painel da hospedagem, na tela de variáveis de ambiente da aplicação, e publique de novo.';
+
+  throw new Error(
+    [
+      `Faltam ${problemas.length} configuração(ões) para a aplicação subir:`,
+      ...problemas.map((linha) => `  - ${linha}`),
+      '',
+      onde,
+      'Para conferir tudo de uma vez, sem subir o servidor: npm run check',
+    ].join('\n')
+  );
 }
 
 // trust proxy: em produção normalmente há um proxy reverso (nginx/caddy) na frente.
@@ -119,6 +155,50 @@ function resolveTrustProxy(value) {
   if (normalized === 'false') return false;
   if (/^\d+$/.test(normalized)) return Number(normalized);
   return value; // ex.: 'loopback', lista de IPs
+}
+
+/**
+ * Porta em que o processo escuta.
+ *
+ * A Square Cloud roteia o tráfego HTTPS da borda para a porta 80 do container,
+ * e só para ela: escutar em qualquer outra faz o endereço dar timeout com o
+ * log limpo, sem erro nenhum para investigar. A documentação da plataforma não
+ * promete injetar PORT no processo — a única variável que ela afirma injetar
+ * sozinha é SQUARECLOUD_APP_ID. Então é essa que serve para reconhecer onde a
+ * aplicação está rodando e escolher a porta 80 por conta própria.
+ *
+ * PORT explícita sempre vence, para quem hospedar em outro lugar.
+ */
+function resolvePort(value) {
+  if (value !== undefined) return value;
+  return process.env.SQUARECLOUD_APP_ID ? 80 : 4100;
+}
+
+/**
+ * Certificado do PostgreSQL gerenciado da Square Cloud.
+ *
+ * Os bancos de lá recusam conexão em texto puro e exigem o certificado que a
+ * plataforma emite para aquela instância — o mesmo arquivo .pem entra como CA,
+ * certificado e chave do cliente, como no exemplo oficial deles com `pg`.
+ * Aceita o PEM direto ou em base64, que é o formato devolvido pela API.
+ */
+function resolveDbCert(inline, file) {
+  const raw = (() => {
+    if (inline) return inline.includes('-----BEGIN') ? inline : Buffer.from(inline, 'base64').toString('utf8');
+    if (!file) return '';
+    const full = path.isAbsolute(file) ? file : path.join(rootDir, file);
+    if (!fs.existsSync(full)) {
+      throw new Error(`PGSSL_CERT_FILE aponta para um arquivo que não existe: ${full}`);
+    }
+    return fs.readFileSync(full, 'utf8');
+  })();
+
+  const cert = raw.trim();
+  if (!cert) return null;
+  if (!cert.includes('-----BEGIN')) {
+    throw new Error('O certificado do banco não parece ser um PEM válido (esperado um bloco -----BEGIN).');
+  }
+  return cert;
 }
 
 const deepFreeze = (obj) => {
@@ -144,13 +224,15 @@ const config = deepFreeze({
   storageProvider: env.STORAGE_PROVIDER || '',
   publicDir: path.join(rootDir, 'public'),
 
-  port: env.PORT,
+  port: resolvePort(env.PORT),
+  host: env.HOST,
   appUrl: env.APP_URL.replace(/\/+$/, ''),
   brandName: env.BRAND_NAME,
   trustProxy: resolveTrustProxy(env.TRUST_PROXY),
 
   databaseUrl,
   pgSsl: env.PGSSL,
+  pgSslCert: resolveDbCert(env.PGSSL_CERT, env.PGSSL_CERT_FILE),
 
   jwtSecret,
   adminJwtSecret,

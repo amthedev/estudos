@@ -30,9 +30,26 @@ types.setTypeParser(1231, (value) => {
 types.setTypeParser(20, (value) => (value === null ? null : Number(value)));
 types.setTypeParser(1016, types.getTypeParser(1007));
 
+/**
+ * TLS da conexão.
+ *
+ * O PostgreSQL gerenciado da Square Cloud recusa conexão em texto puro e exige
+ * o certificado emitido para aquela instância, que entra ao mesmo tempo como
+ * CA, certificado e chave do cliente — é assim no exemplo oficial deles com
+ * `pg`. Sem certificado, cai no comportamento dos outros provedores: TLS
+ * simples quando PGSSL estiver ligada.
+ */
+function sslOptions() {
+  if (config.pgSslCert) {
+    const cert = config.pgSslCert;
+    return { ca: cert, cert, key: cert };
+  }
+  return config.pgSsl ? { rejectUnauthorized: false } : false;
+}
+
 const pool = new Pool({
   connectionString: config.databaseUrl,
-  ssl: config.pgSsl ? { rejectUnauthorized: false } : false,
+  ssl: sslOptions(),
   max: config.isTest ? 5 : 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,

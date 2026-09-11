@@ -27,7 +27,8 @@ Arquivos de apoio, todos neste diretório:
 6. [Firewall](#6-firewall)
 7. [Backup diário](#7-backup-diário)
 8. [Atualizar a aplicação](#8-atualizar-a-aplicação)
-9. [Alternativa: Railway ou Render com Neon](#9-alternativa-railway-ou-render-com-neon)
+9. [Square Cloud (opção escolhida)](#9-square-cloud-opção-escolhida)
+9b. [Alternativa: Railway ou Render com Neon](#9b-alternativa-railway-ou-render-com-neon)
 10. [Stripe](#10-stripe)
 11. [OpenAI](#11-openai)
 12. [SMTP](#12-smtp)
@@ -447,17 +448,50 @@ Dependências, caches e arquivos grandes não devem estar versionados.
    não consome memória proporcional ao arquivo, porque o conteúdo é repassado ao Blob em partes.
 3. Ajuste `SUBDOMAIN` ou aponte o domínio próprio (item 13).
 
-### 9.2 Variáveis de ambiente
+### 9.2 A porta 80, que é a falha silenciosa da plataforma
 
-Cadastre no painel da Square Cloud, nunca no código:
+A Square Cloud encerra o HTTPS na borda e entrega o tráfego na **porta 80** do container. A
+documentação é direta: *"aplicações dinâmicas devem se vincular ao host `0.0.0.0` e à porta `80`;
+vincular a `localhost`/`127.0.0.1` ou qualquer outra porta causa um timeout do site"*.
+
+Isso merece destaque porque o modo de falha é traiçoeiro: escutando na porta errada, **a aplicação
+sobe, o log fica limpo e o endereço simplesmente não responde**. Não há erro para investigar.
+
+A aplicação já resolve isso sozinha. A Square Cloud injeta a variável `SQUARECLOUD_APP_ID` no
+processo, e é por ela que a aplicação reconhece onde está e passa a escutar na porta 80 — em vez de
+depender de `NODE_ENV`, que a plataforma não define, ou de `PORT`, que a documentação não promete
+injetar. O bind em `0.0.0.0` é explícito no código.
+
+Ainda assim, **cadastre `PORT=80` nas variáveis de ambiente**. Com os dois caminhos, qualquer um
+deles acerta. Uma `PORT` explícita sempre vence a detecção automática, o que mantém a aplicação
+hospedável em qualquer outro lugar.
+
+Confirme no log de deploy a linha final:
+
+```
+Foco de Elite v1.0.0 — production — 0.0.0.0:80 — https://focoelite.com.br
+```
+
+Se aparecer outra porta ali, o site vai dar timeout.
+
+### 9.3 Variáveis de ambiente
+
+No painel: abra a aplicação → aba **Settings** → seção **Environment Variables** (depois da
+reformulação de dezembro de 2025 a tela aparece como **Secrets**). **Salve e reinicie a aplicação** —
+as variáveis só entram em vigor no restart.
+
+O `.env` do projeto está no `.squarecloudignore` e não sobe com o deploy, de propósito: nenhum
+segredo passa pelo repositório, que é público. Então o painel é o caminho, não o arquivo.
 
 ```
 NODE_ENV=production
+PORT=80
 APP_URL=https://focoelite.com.br
-DATABASE_URL=postgres://usuario:senha@host:5432/focoelite
+DATABASE_URL=postgres://usuario:senha@host:porta/focoelite
 JWT_SECRET=...
 ADMIN_JWT_SECRET=...
 COOKIE_SECURE=true
+TRUST_PROXY=1
 STORAGE_PROVIDER=squarecloud
 SQUARECLOUD_API_KEY=...
 OPENAI_API_KEY=...
@@ -467,23 +501,91 @@ ASAAS_WEBHOOK_TOKEN=...
 SMTP_HOST=... SMTP_PORT=587 SMTP_USER=... SMTP_PASS=...
 ```
 
-A `SQUARECLOUD_API_KEY` é a chave da conta, em Configurações da conta → API. É a mesma chave usada
-pelo Blob Storage.
+Gere os dois segredos de sessão com `openssl rand -hex 48` (precisam ser diferentes entre si e ter ao
+menos 32 caracteres, senão a aplicação recusa subir em produção). A `SQUARECLOUD_API_KEY` é a chave
+da conta, em Configurações da conta → API; é a mesma usada pelo Blob Storage.
 
-### 9.3 Banco de dados
+Se faltar alguma variável obrigatória, a aplicação não sobe e o log lista **todas** as que faltam de
+uma vez, com o formato esperado de cada uma — não uma por publicação.
 
-A Square Cloud hospeda a aplicação, não o PostgreSQL. Use um banco gerenciado (Neon, Supabase ou
-Railway) e informe a `DATABASE_URL` completa, com SSL.
+Limites do recurso, que importam para o certificado do banco: 256 variáveis por aplicação, 1024
+caracteres na chave e **4096 caracteres no valor**.
 
-O schema e o conteúdo base sobem sozinhos na primeira publicação. O administrador é criado por você,
-abrindo `/admin/login` logo depois — é a tela de configuração inicial descrita em "Primeiro acesso ao
-painel". Para repor o acesso depois, o terminal do painel resolve:
+Pela CLI oficial, em lote, a partir do seu `.env` local:
+
+```bash
+squarecloud app env set --from-file .env --app <appID>
+```
+
+Cuidado com `squarecloud app env replace`: ele substitui o conjunto inteiro e apaga o que não for
+listado.
+
+### 9.4 Banco de dados
+
+A Square Cloud **tem** PostgreSQL gerenciado, e ele está incluído a partir do plano Standard — o
+plano Pro cobre com folga. A versão oferecida é a **17**; o projeto foi desenvolvido na 16 e o schema
+não usa nada específico de uma nem de outra.
+
+No painel, em Bancos de dados, crie uma instância `postgres`. Dois detalhes que a documentação
+avisa e que custam caro se passarem batidos:
+
+* **Memória mínima de 1024 MB** para PostgreSQL. Abaixo disso a criação é recusada.
+* **A senha e o certificado aparecem uma única vez.** *"Nem a senha nem o certificado podem ser
+  recuperados depois"* — só resetados, o que invalida na hora quem estiver conectado. Copie os dois
+  antes de fechar a tela.
+
+Os bancos de lá **recusam conexão em texto puro** e exigem o certificado emitido para aquela
+instância — o mesmo arquivo `.pem` entra como CA, certificado e chave do cliente. A aplicação já faz
+isso; você só precisa entregar o certificado, por um dos dois caminhos:
+
+* `PGSSL_CERT` — o conteúdo do `.pem`, em texto ou em base64 (é como a API da Square Cloud entrega).
+  Simples, mas lembre do limite de 4096 caracteres por valor: se o certificado não couber, use o
+  caminho abaixo.
+* `PGSSL_CERT_FILE` — o caminho do arquivo dentro da aplicação, por exemplo
+  `PGSSL_CERT_FILE=certs/squarecloud.pem`. Suba o `.pem` pelo gerenciador de arquivos do painel. O
+  disco da aplicação é persistente entre reinícios e publicações, e o arquivo **não** vai para o
+  repositório. Não versione esse certificado: ele é credencial, e o repositório é público.
+
+Com a `DATABASE_URL` e o certificado no lugar, a primeira publicação aplica as migrations e o
+conteúdo base sozinha. Depois abra `/admin/login` para criar o administrador (item "Primeiro acesso
+ao painel"). Para repor o acesso mais tarde:
 
 ```bash
 node scripts/create-admin.js --email seu@email.com --password "senha forte"
 ```
 
-### 9.4 Arquivos no Blob Storage
+**Alternativa externa**, se preferir não usar o banco da Square Cloud: a Neon tem região em São Paulo
+(`aws-sa-east-1`), e aí basta a `DATABASE_URL` com `sslmode=require`, sem certificado. Duas ressalvas
+do plano gratuito dela: o compute hiberna após 5 minutos de inatividade e não dá para desligar isso,
+e os 100 CU-hours/mês não cobrem um processo no ar 24 horas por dia — para produção, o plano pago.
+
+### 9.5 O que a plataforma faz com as dependências
+
+Três comportamentos que explicam surpresas em publicações futuras:
+
+* **`devDependencies` não são instaladas.** A instalação é em modo produção. No projeto isso é
+  inofensivo: as bibliotecas de front-end (`chart.js`, `marked`, `dompurify`) só geram os arquivos de
+  `public/vendor/`, que estão versionados e vão prontos para o servidor.
+* **`node_modules` persiste entre publicações**, e a instalação só roda *se a pasta não existir*.
+  Quando uma dependência nova entrar no `package.json`, ela pode não ser instalada na publicação
+  seguinte. Nesse caso, apague `node_modules` pelo gerenciador de arquivos e reinicie.
+* **`package-lock.json` é ignorado** — a instalação usa `npm install --no-package-lock`. Ou seja, a
+  árvore de dependências da Square Cloud não é necessariamente idêntica à da sua máquina.
+
+Sobre o runtime: `VERSION=recommended` resolve hoje para **Node.js 24.15.0** (foi o que apareceu no
+log do primeiro deploy). É um alias móvel — quando a Square Cloud promover o trilho, a aplicação
+troca de versão maior do Node sozinha no próximo restart. A documentação aceita fixar uma versão
+exata em `VERSION`, se um dia preferir previsibilidade a atualização automática.
+
+E sobre reinício automático: com `AUTORESTART=true`, a plataforma só reinicia uma aplicação que caiu
+se o uptime anterior passou de 60 segundos, a saída foi código 1 e não houve outro reinício
+automático na última hora. Consequência prática: **se o `bootstrap.js` falhar rápido — por exemplo
+por falta da `DATABASE_URL` — não há reinício nenhum, e a aplicação fica fora do ar até você
+reiniciar na mão.** Não existe ciclo de reinícios com migrations rodando repetidamente.
+
+Os logs do painel são as últimas 1000 linhas, sem histórico. Log antigo se perde.
+
+### 9.6 Arquivos no Blob Storage
 
 Com `STORAGE_PROVIDER=squarecloud`, tudo que a equipe envia pelo painel — videoaula, miniatura, logo,
 print de depoimento, PDF de edital e de prova — vai para o Blob e é servido pelo CDN da Square Cloud,
