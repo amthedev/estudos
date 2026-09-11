@@ -408,23 +408,6 @@ function checkoutUrl(checkout) {
 }
 
 /**
- * Dados do aluno que já temos, para o checkout hospedado chegar preenchido.
- * Lê do banco porque o CPF costuma ser gravado na mesma requisição que abre o
- * checkout, e o objeto em memória ainda não o tem.
- */
-async function customerDataFor(user) {
-  const row =
-    (await db.one('SELECT name, email, tax_id, provider_customer_id FROM users WHERE id = $1', [user.id])) || user;
-  const data = {
-    name: trimmed(row.name) || undefined,
-    email: trimmed(row.email) || undefined,
-  };
-  const taxId = onlyDigits(row.tax_id);
-  if (taxId) data.cpfCnpj = taxId;
-  return data;
-}
-
-/**
  * Cria o Checkout hospedado do Asaas. Assim o cartão nunca passa pelo nosso servidor:
  * o próprio Asaas coleta e valida os dados antes de criar a assinatura.
  */
@@ -464,14 +447,13 @@ async function createCheckout({ user, plan, paymentMethod = 'credit_card', succe
         value: Number(plan.price_cents || 0) / 100,
       },
     ],
-    // `customerData` em vez de `customer`: os dois são mutuamente exclusivos, e
-    // passar um cliente já cadastrado obriga que ele esteja COMPLETO no Asaas —
-    // CPF, telefone e endereço inteiro. Um aluno que só fez cadastro com nome e
-    // e-mail derrubava o checkout com "o campo cpfCnpj deve existir para o
-    // customer informado". Todos os subcampos de customerData são opcionais: o
-    // que faltar, o próprio checkout hospedado coleta do aluno na tela, que é
-    // justamente para isso que ele existe. O que já sabemos vai preenchido.
-    customerData: await customerDataFor(user),
+    // Nenhum dado de cliente vai aqui, de propósito. O Asaas aceita `customer`
+    // (id de um cadastro existente) ou `customerData`, nunca os dois — e exige
+    // o cadastro COMPLETO em qualquer um deles: CPF, telefone, endereço,
+    // número, CEP e bairro. A plataforma só tem nome e e-mail do aluno, então
+    // as duas formas eram recusadas. Omitindo, é o próprio checkout hospedado
+    // que pede esses dados ao aluno, uma vez só, na tela do Asaas — que é o
+    // formato do exemplo oficial de assinatura recorrente deles.
     ...(recorrente
       ? {
           subscription: {

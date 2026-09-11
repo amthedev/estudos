@@ -375,9 +375,11 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       const checkout = api.find('POST', /^\/checkouts$/);
       assert.deepEqual(checkout.body.billingTypes, ['CREDIT_CARD']);
       assert.deepEqual(checkout.body.chargeTypes, ['RECURRENT']);
-      assert.equal(checkout.body.customer, undefined, 'customer e customerData são mutuamente exclusivos');
-      assert.equal(checkout.body.customerData.email, student.user.email);
-      assert.equal(checkout.body.customerData.cpfCnpj, '39053344705', 'o CPF informado vai preenchido');
+      // Nem `customer` nem `customerData`: o Asaas exige cadastro completo em
+      // qualquer um dos dois, e a plataforma só tem nome e e-mail. Quem pede
+      // CPF, telefone e endereço ao aluno é o checkout hospedado.
+      assert.equal(checkout.body.customer, undefined);
+      assert.equal(checkout.body.customerData, undefined);
       assert.equal(checkout.body.subscription.cycle, 'YEARLY');
       assert.equal(checkout.body.items[0].value, 359.9);
       assert.equal(checkout.body.externalReference, `${student.user.id}:${plans.yearly}`);
