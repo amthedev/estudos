@@ -32,7 +32,7 @@ Regras:
 
 module.exports = {
   brand_name: 'Foco de Elite',
-  logo_url: '/assets/logo.svg',
+  logo_url: '/assets/brand/foco-elite-logo.png',
   support_email: 'suporte@focoelite.com.br',
   require_subscription: false,
   openai_model: 'gpt-4o-mini',

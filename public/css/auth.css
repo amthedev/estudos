@@ -72,7 +72,7 @@ body[data-page='admin-login'] .auth-aside {
 }
 
 .auth-brand img {
-  width: 154px;
+  width: 184px;
   height: auto;
 }
 
@@ -479,7 +479,7 @@ body[data-page='admin-login'] .auth-aside {
   }
 
   .auth-brand img {
-    width: 128px;
+    width: 154px;
   }
 
   .auth-aside-body,
@@ -523,7 +523,7 @@ body[data-page='admin-login'] .auth-aside {
   }
 
   .auth-brand img {
-    width: 116px;
+    width: 138px;
   }
 
   .auth-main {

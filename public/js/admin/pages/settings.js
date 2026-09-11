@@ -66,7 +66,7 @@ function sectionCard({ id, title, subtitle, icon: iconName, body, aside = '' }) 
 }
 
 function brandAside() {
-  const logo = state.settings.logo_url || '/assets/logo.svg';
+  const logo = state.settings.logo_url || '/assets/brand/foco-elite-logo.png';
   return html`
     <div class="aset-logo">
       <div class="aset-logo-preview"><img src="${logo}" alt="Prévia da logo" id="aset-logo-img" width="220" height="48"></div>
@@ -187,7 +187,7 @@ function mountForms() {
   state.forms.push(buildForm(qs('#aset-form-brand', state.el), [
     { key: 'brand_name', label: 'Nome da marca', type: 'text', required: true, maxLength: 80 },
     { key: 'support_email', label: 'E-mail de suporte', type: 'email', required: true, maxLength: 160 },
-    { key: 'logo_url', label: 'Logo da marca', type: 'file', folder: 'logos', accept: 'image', required: true, maxLength: 500, width: 'full', hint: 'Envie a imagem ou informe um endereço. O padrão é /assets/logo.svg.' },
+    { key: 'logo_url', label: 'Logo da marca', type: 'file', folder: 'logos', accept: 'image', required: true, maxLength: 500, width: 'full', hint: 'Envie a imagem ou informe um endereço. O padrão é /assets/brand/foco-elite-logo.png.' },
   ], {
     values: { brand_name: s.brand_name || '', support_email: s.support_email || '', logo_url: s.logo_url || '' },
     submitLabel: 'Salvar marca',

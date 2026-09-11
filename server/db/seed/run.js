@@ -46,6 +46,7 @@ const data = {
   essayThemes: require('./data/essay_themes'),
   plans: require('./data/plans'),
   landing: require('./data/landing'),
+  curatedAssets: require('./data/curated_assets'),
   studyPlans: require('./data/study_plans'),
 };
 
@@ -429,6 +430,56 @@ async function seedLanding(client, ctx) {
   }
 }
 
+async function seedCuratedAssets(client, ctx) {
+  for (const testimonial of data.curatedAssets.testimonials) {
+    const existing = await client.query('SELECT id FROM testimonials WHERE image_url = $1', [testimonial.image_url]);
+    if (existing.rowCount) {
+      ctx.summary.bump('testimonials', 'kept');
+      continue;
+    }
+
+    await client.query(
+      `INSERT INTO testimonials (name, role, image_url, rating, exam_id, sort_order, active)
+       VALUES ($1, $2, $3, 5, $4, $5, true)`,
+      [
+        testimonial.name,
+        testimonial.role,
+        testimonial.image_url,
+        requireId(ctx.exams, testimonial.exam, 'Prova'),
+        testimonial.sort_order,
+      ]
+    );
+    ctx.summary.bump('testimonials', 'created');
+  }
+
+  for (const pastExam of data.curatedAssets.pastExams) {
+    const examId = requireId(ctx.exams, pastExam.exam, 'Prova');
+    const existing = await client.query('SELECT id FROM past_exams WHERE pdf_url = $1', [pastExam.pdf_url]);
+    if (existing.rowCount) {
+      ctx.summary.bump('past_exams', 'kept');
+      continue;
+    }
+
+    await client.query(
+      `INSERT INTO past_exams (exam_id, year, day, title, board, pdf_url, answer_key_url,
+                               notes, sort_order, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
+      [
+        examId,
+        pastExam.year,
+        pastExam.day ?? null,
+        pastExam.title,
+        pastExam.board ?? null,
+        pastExam.pdf_url,
+        pastExam.answer_key_url ?? null,
+        pastExam.notes ?? null,
+        pastExam.sort_order ?? 0,
+      ]
+    );
+    ctx.summary.bump('past_exams', 'created');
+  }
+}
+
 
 /**
  * Planos de estudo: a sequência de aulas de cada prova. Recriar o plano apaga
@@ -740,6 +791,7 @@ async function runSeed(options = {}) {
     say('[seed]   temas de redação');    await seedEssayThemes(client, ctx);
     say('[seed]   planos');              await seedPlans(client, ctx);
     say('[seed]   página inicial');     await seedLanding(client, ctx);
+    say('[seed]   acervo de provas e resultados'); await seedCuratedAssets(client, ctx);
     say('[seed]   planos de estudo');   await seedStudyPlans(client, ctx);
   });
 

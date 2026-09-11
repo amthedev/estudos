@@ -191,6 +191,98 @@ async function initPlans() {
   window.dispatchEvent(new Event('landing:layout'));
 }
 
+function resultThumb(url) {
+  const source = String(url || '');
+  if (!source.includes('/assets/results/posts/') && !source.includes('/assets/results/messages/')) {
+    return source;
+  }
+
+  return source
+    .replace('/results/posts/', '/results/posts/thumbs/')
+    .replace('/results/messages/', '/results/messages/thumbs/')
+    .replace(/\.png$/i, '.jpg');
+}
+
+function resultCard(item, type) {
+  const name = item.name || 'Aluno Foco de Elite';
+  const role = item.role || item.exam_short_name || 'Resultado real';
+  const isPost = type === 'post';
+  return html`
+    <button class="result-card result-card-${type}" type="button"
+      data-media-src="${item.image_url}"
+      data-media-alt="Depoimento de ${name}: ${role}"
+      aria-label="Abrir depoimento de ${name}">
+      <span class="result-card-media">
+        <img src="${resultThumb(item.image_url)}" alt="" width="${isPost ? 440 : 340}" height="${isPost ? 550 : 604}" loading="lazy" decoding="async">
+        <span class="media-open" aria-hidden="true">${icon('maximize-2')}</span>
+      </span>
+      <span class="result-card-copy"><strong>${name}</strong><span>${role}</span></span>
+    </button>`;
+}
+
+async function initResults() {
+  const section = qs('#resultados');
+  const postsEl = qs('#results-posts');
+  const messagesEl = qs('#results-messages');
+  if (!section || !postsEl || !messagesEl) return;
+
+  let testimonials = [];
+  try {
+    const data = await api.get('/api/landing', { noRedirect: true, timeout: 8000 });
+    testimonials = Array.isArray(data && data.testimonials)
+      ? data.testimonials.filter((item) => item && item.image_url)
+      : [];
+  } catch (error) {
+    console.info('[landing] resultados indisponíveis no momento', error && error.message);
+  }
+
+  const posts = testimonials.filter((item) => item.image_url.includes('/results/posts/'));
+  const messages = testimonials.filter((item) => !item.image_url.includes('/results/posts/'));
+  if (!posts.length && !messages.length) {
+    section.hidden = true;
+    qsa('a[href="#resultados"]').forEach((link) => { link.hidden = true; });
+    return;
+  }
+
+  render(postsEl, posts.map((item) => resultCard(item, 'post')));
+  render(messagesEl, messages.map((item) => resultCard(item, 'message')));
+  if (!posts.length) postsEl.closest('.results-block').hidden = true;
+  if (!messages.length) messagesEl.closest('.results-block').hidden = true;
+
+  const step = () => Math.min(messagesEl.clientWidth * 0.78, 760);
+  qs('[data-results-prev]')?.addEventListener('click', () => messagesEl.scrollBy({ left: -step(), behavior: 'smooth' }));
+  qs('[data-results-next]')?.addEventListener('click', () => messagesEl.scrollBy({ left: step(), behavior: 'smooth' }));
+  window.dispatchEvent(new Event('landing:layout'));
+}
+
+function initMediaViewer() {
+  const dialog = qs('#media-viewer');
+  const image = qs('#media-viewer-image');
+  const caption = qs('#media-viewer-caption');
+  if (!dialog || !image || !caption) return;
+
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const trigger = event.target.closest('[data-media-src]');
+    if (!trigger) return;
+    const alt = trigger.dataset.mediaAlt || 'Imagem Foco de Elite';
+    image.src = trigger.dataset.mediaSrc;
+    image.alt = alt;
+    caption.textContent = alt;
+    dialog.showModal();
+  });
+
+  qs('[data-media-close]', dialog)?.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+  dialog.addEventListener('close', () => {
+    image.removeAttribute('src');
+    image.alt = '';
+    caption.textContent = '';
+  });
+}
+
 let observer = null;
 
 function observeReveal(elements) {
@@ -230,6 +322,8 @@ document.documentElement.classList.add('js');
 initNav();
 initScrollMotion();
 initHeroMotion();
+initMediaViewer();
 initYear();
 observeReveal(qsa('.reveal'));
 initPlans();
+initResults();

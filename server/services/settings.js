@@ -29,7 +29,7 @@ const TUTOR_SYSTEM_PROMPT = [
 
 const DEFAULTS = Object.freeze({
   brand_name: config.brandName,
-  logo_url: '/assets/logo.svg',
+  logo_url: '/assets/brand/foco-elite-logo.png',
   support_email: 'suporte@focoelite.com.br',
   require_subscription: config.requireSubscription,
   openai_model: config.openai.model,

@@ -396,14 +396,29 @@ A plataforma foi preparada para rodar na Square Cloud, com os arquivos no Blob S
 conta. Dois arquivos na raiz do projeto cuidam disso:
 
 * **`squarecloud.app`** — configuração da aplicação (nome, memória, arquivo principal, subdomínio e
-  comando de início). O comando é `npm run start:cloud`, que aplica as migrations pendentes antes de
-  subir o servidor, então publicar uma versão nova já atualiza o banco.
+  comando de início).
 * **`.squarecloudignore`** — o que não sobe: `node_modules`, testes, documentação e o `.env`.
+
+O comando de início é `npm run start:cloud`, que antes de subir o servidor executa
+`scripts/bootstrap.js`:
+
+1. aplica as migrations pendentes;
+2. garante o conteúdo base (provas, matérias, assuntos, critérios de redação, planos de estudo e os
+   textos da página inicial);
+3. cria o administrador, **só se ainda não existir nenhum**, a partir de `ADMIN_EMAIL` e
+   `ADMIN_PASSWORD`.
+
+Tudo é idempotente: publicar uma versão nova roda de novo sem duplicar nada e sem desfazer o que a
+equipe editou pelo painel. O administrador é criado uma única vez de propósito — se fosse recriado a
+cada reinício, uma troca de senha feita no painel voltaria sozinha para o valor da variável.
 
 ### 9.1 Publicar
 
-1. Gere o pacote com o conteúdo do projeto (sem `node_modules`) e envie pelo painel da Square Cloud,
-   ou use a CLI oficial na pasta do projeto.
+O jeito mais direto é conectar o repositório do GitHub no painel da Square Cloud: a cada versão nova
+enviada para a branch `main`, o deploy acontece a partir dela, sem pacote manual.
+
+1. Ou, se preferir o envio manual: gere o pacote com o conteúdo do projeto (sem `node_modules`) e
+   envie pelo painel da Square Cloud, ou use a CLI oficial na pasta do projeto.
 2. Ajuste `MEMORY` em `squarecloud.app` conforme o plano. 1024 MB atende bem; o envio de vídeo em si
    não consome memória proporcional ao arquivo, porque o conteúdo é repassado ao Blob em partes.
 3. Ajuste `SUBDOMAIN` ou aponte o domínio próprio (item 13).
@@ -434,8 +449,8 @@ pelo Blob Storage.
 ### 9.3 Banco de dados
 
 A Square Cloud hospeda a aplicação, não o PostgreSQL. Use um banco gerenciado (Neon, Supabase ou
-Railway) e informe a `DATABASE_URL` completa, com SSL. Depois da primeira publicação, crie o
-administrador uma única vez, pelo terminal do painel:
+Railway) e informe a `DATABASE_URL` completa, com SSL. O administrador é criado sozinho na primeira publicação, a partir de `ADMIN_EMAIL` e
+`ADMIN_PASSWORD`. Se preferir criar à mão, ou trocar depois, use o terminal do painel:
 
 ```bash
 node scripts/create-admin.js --email seu@email.com --password "senha forte"

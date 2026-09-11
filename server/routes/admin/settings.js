@@ -20,7 +20,7 @@ const ai = require('../../services/ai');
 const stripeService = require('../../services/stripe');
 const mailer = require('../../services/mailer');
 
-/** URL absoluta (https://…) ou caminho interno (/assets/logo.svg). */
+/** URL absoluta (https://…) ou caminho interno (/assets/brand/foco-elite-logo.png). */
 const assetUrl = z
   .string()
   .trim()

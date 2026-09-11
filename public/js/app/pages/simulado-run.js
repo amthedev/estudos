@@ -105,7 +105,7 @@ function paint() {
       <div class="sim-run">
         <header class="sim-run-top">
           <div class="sim-run-id">
-            <img src="/assets/logo-mark.svg" alt="" width="28" height="28">
+            <img src="/assets/brand/foco-elite-mark.png" alt="" width="1254" height="1254">
             <div>
               <h1 class="sim-run-title">${attempt.title}</h1>
               <p class="sim-run-sub">

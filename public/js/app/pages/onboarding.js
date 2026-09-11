@@ -632,7 +632,7 @@ function paint(ctx) {
     html`
       <div class="onb" data-step="${state.step + 1}">
         <header class="onb-head">
-          <img src="/assets/logo.svg" alt="Foco de Elite" width="176" height="38">
+          <img src="/assets/brand/foco-elite-logo.png" alt="Foco de Elite" width="1983" height="793">
           <p>Vamos montar o seu plano de estudos</p>
         </header>
 
@@ -700,7 +700,7 @@ export default async function renderOnboarding(ctx) {
       ctx.el,
       html`
         <div class="onb" data-step="error">
-          <header class="onb-head"><img src="/assets/logo.svg" alt="Foco de Elite" width="176" height="38"></header>
+          <header class="onb-head"><img src="/assets/brand/foco-elite-logo.png" alt="Foco de Elite" width="1983" height="793"></header>
           <div class="card onb-card"><div class="onb-body">
             ${errorState({
               title: 'Não foi possível carregar as provas',

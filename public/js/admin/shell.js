@@ -79,7 +79,7 @@ function renderBoot() {
     root,
     html`
       <div class="shell-boot" role="status" aria-live="polite">
-        <img src="/assets/logo-mark.svg" alt="" width="56" height="56">
+        <img src="/assets/brand/foco-elite-mark.png" alt="" width="1254" height="1254">
         <span>Carregando o painel…</span>
       </div>`
   );
@@ -90,7 +90,7 @@ function renderBootError(err) {
     root,
     html`
       <div class="shell-boot">
-        <img src="/assets/logo-mark.svg" alt="" width="56" height="56">
+        <img src="/assets/brand/foco-elite-mark.png" alt="" width="1254" height="1254">
         <div class="card shell-boot-card">
           <div class="card-body">
             ${alertBox({
@@ -157,8 +157,8 @@ function renderShell() {
         <aside class="sidebar" id="sidebar" aria-label="Menu do painel">
           <div class="sidebar-brand">
             <a href="/admin" aria-label="${brandName()} — Visão geral">
-              <img class="brand-full" src="/assets/logo.svg" alt="${brandName()}" width="220" height="48">
-              <img class="brand-mark" src="/assets/logo-mark.svg" alt="${brandName()}" width="36" height="36">
+              <img class="brand-full" src="/assets/brand/foco-elite-logo.png" alt="${brandName()}" width="1983" height="793">
+              <img class="brand-mark" src="/assets/brand/foco-elite-mark.png" alt="${brandName()}" width="1254" height="1254">
             </a>
             <span class="badge badge-blue" title="Painel administrativo">Administrador</span>
             <button type="button" class="btn btn-icon btn-ghost sidebar-close" data-action="close-drawer" aria-label="Fechar menu">${icon('x')}</button>
