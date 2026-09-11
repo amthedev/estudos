@@ -56,16 +56,45 @@ describe('Configuração inicial do administrador', () => {
     assert.equal(total.total, 0, 'nada disso pode ter criado um administrador');
   });
 
-  it('recusa quando o e-mail já pertence a outro usuário (mesmo não-admin)', async () => {
-    await ctx.registerStudent({ email: 'ocupado@focoelite.com.br' });
+  it('recusa promover a conta de outra pessoa sem a senha dela', async () => {
+    // O e-mail é único na plataforma inteira, então a conta existente é
+    // promovida em vez de recusada — mas só para quem prova ser o dono.
+    await ctx.registerStudent({ email: 'ocupado@focoelite.com.br', password: 'SenhaDoAluno123' });
     const res = await ctx.request('POST', '/api/admin/auth/setup', {
-      body: { name: 'Guilherme', email: 'ocupado@focoelite.com.br', password: 'senhaForte123' },
+      body: { name: 'Invasor', email: 'ocupado@focoelite.com.br', password: 'chuteiUmaSenha' },
     });
     assert.equal(res.status, 409);
-    assert.ok(res.body.error.details?.some((d) => d.path === 'email'));
+    assert.ok(res.body.error.details?.some((d) => d.path === 'password'));
 
     const total = await ctx.db.one("SELECT count(*)::int AS total FROM users WHERE role = 'admin'");
-    assert.equal(total.total, 0);
+    assert.equal(total.total, 0, 'ninguém vira administrador chutando senha');
+
+    const intacto = await ctx.db.one("SELECT role FROM users WHERE lower(email) = 'ocupado@focoelite.com.br'");
+    assert.equal(intacto.role, 'student', 'a conta do aluno continua como estava');
+  });
+
+  it('promove a própria conta de aluno quando a senha confere', async () => {
+    // O caso real: o dono do projeto criou a conta de aluno com o próprio
+    // e-mail e depois não conseguia usá-lo no painel, sem alternativa — o
+    // e-mail é o dele.
+    const aluno = await ctx.registerStudent({ email: 'dono@focoelite.com.br', password: 'MinhaSenha2026' });
+    const res = await ctx.request('POST', '/api/admin/auth/setup', {
+      body: { name: 'Dono da Plataforma', email: 'dono@focoelite.com.br', password: 'MinhaSenha2026' },
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.user.role, 'admin');
+    assert.equal(res.body.user.id, aluno.user.id, 'é a mesma conta, promovida');
+    assert.equal(res.body.user.name, 'Dono da Plataforma');
+
+    const total = await ctx.db.one("SELECT count(*)::int AS total FROM users WHERE role = 'admin'");
+    assert.equal(total.total, 1);
+
+    // a sessão antiga de aluno não continua valendo depois da promoção
+    const antiga = await aluno.agent.get('/api/auth/me');
+    assert.ok([401, 403].includes(antiga.status), `sessão antiga respondeu ${antiga.status}`);
+
+    // e o painel volta a recusar novas configurações
+    await ctx.db.query("UPDATE users SET role = 'student' WHERE id = $1", [aluno.user.id]);
   });
 
   it('quando duas pessoas tentam ao mesmo tempo, só uma vira administrador', async () => {

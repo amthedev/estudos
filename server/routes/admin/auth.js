@@ -75,21 +75,44 @@ router.post(
         throw new AppError(409, 'conflict', 'Já existe um administrador configurado. Entre normalmente.');
       }
 
-      const emailTaken = await client.one('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
-      if (emailTaken) {
-        throw new AppError(409, 'conflict', 'Este e-mail já está em uso.', [
-          { path: 'email', message: 'Este e-mail já está em uso.' },
-        ]);
+      const passwordHash = await bcrypt.hash(password, config.bcryptRounds);
+
+      // Aluno e administrador dividem a tabela de usuários, e o e-mail é único
+      // na plataforma inteira. Quem já criou a conta de aluno com o próprio
+      // e-mail ficava sem poder usá-lo aqui — e sem alternativa, porque o
+      // e-mail é o mesmo que ele usa. Então a conta é promovida em vez de
+      // recusada, mediante a senha dela: é a prova de que a conta é de quem
+      // está configurando, e não de outra pessoa que passou por aqui antes.
+      const existente = await client.one(
+        'SELECT id, name, password_hash FROM users WHERE lower(email) = lower($1)',
+        [email]
+      );
+      if (existente) {
+        const confere = await bcrypt.compare(password, existente.password_hash || '');
+        if (!confere) {
+          throw new AppError(
+            409,
+            'conflict',
+            'Este e-mail já tem uma conta de aluno. Digite a senha dessa conta para transformá-la em administrador.',
+            [{ path: 'password', message: 'Senha da conta existente não confere.' }]
+          );
+        }
+        return client.one(
+          `UPDATE users
+              SET role = 'admin', status = 'active', name = $2, password_hash = $3,
+                  token_version = token_version + 1
+            WHERE id = $1
+            RETURNING ${auth.USER_COLUMNS}`,
+          [existente.id, name || existente.name, passwordHash]
+        );
       }
 
-      const passwordHash = await bcrypt.hash(password, config.bcryptRounds);
-      const row = await client.one(
+      return client.one(
         `INSERT INTO users (name, email, password_hash, role, status)
          VALUES ($1, $2, $3, 'admin', 'active')
          RETURNING ${auth.USER_COLUMNS}`,
         [name, email, passwordHash]
       );
-      return row;
     });
 
     await db.query('UPDATE users SET last_login_at = now(), last_seen_at = now() WHERE id = $1', [created.id]);
