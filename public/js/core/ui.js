@@ -334,6 +334,10 @@ export function modal({ title = '', subtitle = '', body = '', actions = [], size
 
 /**
  * confirm({ title, message, danger, confirmText, cancelText }) → Promise<boolean>
+ *
+ * A mensagem entra crua no template: o html já escapa texto simples e deixa
+ * SafeHtml passar. Escapar antes fazia aspas e & chegarem à tela como &quot; e
+ * &amp;, o que aparecia em toda confirmação de exclusão que cita um nome.
  */
 export function confirm({ title = 'Confirmar', message = '', danger = false, confirmText, cancelText = 'Cancelar', icon: iconName } = {}) {
   return new Promise((resolve) => {
@@ -346,7 +350,7 @@ export function confirm({ title = 'Confirmar', message = '', danger = false, con
     const bodyHtml = html`
       <div class="flex gap-3 items-start">
         ${iconName || danger ? html`<span class="icon-box ${danger ? 'red' : ''}">${icon(iconName || 'triangle-alert')}</span>` : ''}
-        <div class="flex-1 text-2" style="padding-top:8px">${message instanceof SafeHtml ? message : escapeHtml(message)}</div>
+        <div class="flex-1 text-2" style="padding-top:8px">${message}</div>
       </div>
     `;
     modal({

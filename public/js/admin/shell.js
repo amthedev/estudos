@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { href: '/admin/questoes', label: 'Questões', icon: 'file-text' },
   { href: '/admin/editais', label: 'Editais', icon: 'scroll-text' },
   { href: '/admin/provas-anteriores', label: 'Provas anteriores', icon: 'file' },
+  { href: '/admin/planos-de-estudo', label: 'Planos de estudo', icon: 'calendar-days' },
   { href: '/admin/vestibulares', label: 'Vestibulares', icon: 'graduation-cap' },
   { href: '/admin/simulados', label: 'Simulados', icon: 'target' },
   { href: '/admin/redacao', label: 'Redação', icon: 'pen-line' },

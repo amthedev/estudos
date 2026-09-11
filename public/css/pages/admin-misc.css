@@ -1334,3 +1334,108 @@
 .en-dates span { color: var(--text-2); font-size: 12px; white-space: nowrap; }
 
 .en-links { display: inline-flex; gap: var(--s-1); flex-wrap: wrap; }
+
+/* -------------------------------------------------- planos de estudo */
+.sp-plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-bottom: var(--s-5);
+}
+
+.sp-plan {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--s-3) var(--s-4);
+  min-width: 15rem;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+
+.sp-plan:hover {
+  border-color: var(--border-2);
+  background: var(--card-2);
+}
+
+.sp-plan.is-active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.sp-plan-name {
+  font-family: var(--font-label);
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+
+.sp-plan-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.sp-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--s-5);
+}
+
+.sp-detail-head h2 {
+  margin: 0 0 var(--s-1);
+}
+
+.sp-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* A semana é o que o professor lê primeiro: separa os blocos da sequência. */
+.sp-week-row td {
+  padding-top: var(--s-5);
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-pos {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+.sp-title {
+  color: var(--text);
+}
+
+.sp-notes,
+.sp-topic {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* Em uma linha só: quebrar deixa a coluna de ações com o dobro da altura. */
+.sp-actions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.sp-actions .btn[disabled] {
+  opacity: 0.35;
+  pointer-events: none;
+}
