@@ -34,7 +34,7 @@ module.exports = {
   brand_name: 'Foco de Elite',
   logo_url: '/assets/brand/foco-elite-logo.png',
   support_email: 'suporte@focoelite.com.br',
-  require_subscription: false,
+  require_subscription: true,
   openrouter_model: 'qwen/qwen3.8-flash',
   openrouter_essay_model: 'qwen/qwen3.8-flash',
   openrouter_monthly_token_limit: 5000000,

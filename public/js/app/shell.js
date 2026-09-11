@@ -448,10 +448,10 @@ function guard(route, info) {
     return false;
   }
   const path = info.path;
-  if (!store.onboarded && path !== '/app/onboarding') return '/app/onboarding';
-  if (!store.hasAccess && route && path !== '/app/onboarding' && !route.public && !ALLOWED_WITHOUT_ACCESS.has(route.path)) {
+  if (!store.hasAccess && route && !route.public && !ALLOWED_WITHOUT_ACCESS.has(route.path)) {
     return '/app/assinatura';
   }
+  if (store.hasAccess && !store.onboarded && path !== '/app/onboarding') return '/app/onboarding';
   return undefined;
 }
 

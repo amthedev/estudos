@@ -163,7 +163,7 @@ estiver fora do formato esperado, o servidor não sobe e a mensagem diz exatamen
 | `STRIPE_SECRET_KEY` | vazio | Chave secreta da conta. Sem ela, checkout e portal respondem 503 com mensagem ao aluno. |
 | `STRIPE_WEBHOOK_SECRET` | vazio | Segredo do endpoint de webhook, usado para validar a assinatura de cada evento recebido. Sem ele, o webhook é recusado. |
 | `STRIPE_PUBLISHABLE_KEY` | vazio | Chave pública. Só é necessária se a interface passar a montar elementos do Stripe no navegador. |
-| `REQUIRE_SUBSCRIPTION` | `false` | `true` exige assinatura ativa para o aluno usar a plataforma (perfil e tela de assinatura continuam liberados). Também existe como configuração `require_subscription` no painel. |
+| `REQUIRE_SUBSCRIPTION` | `true` | Exige assinatura ativa para o aluno usar a plataforma (cadastro, perfil e tela de assinatura continuam liberados). Também existe como configuração `require_subscription` no painel. |
 
 ### E-mail
 

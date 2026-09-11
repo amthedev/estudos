@@ -271,12 +271,12 @@ function initRegister() {
   bindSubmit({
     validate: () => [checkName(), checkEmail(), checkPassword(), checkConfirm()].every(Boolean),
     submit: async () => {
-      await api.post(
+      const result = await api.post(
         '/api/auth/register',
         { name: name.value.trim(), email: email.value.trim(), password: password.value },
         { noRedirect: true }
       );
-      location.assign('/app/onboarding');
+      location.assign(safeNext(result && result.next, '/app/assinatura'));
     },
   });
 }

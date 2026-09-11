@@ -427,9 +427,17 @@ describe('Painel administrativo', () => {
     });
     assert.equal(theme.status, 201, JSON.stringify(theme.body));
 
+    const generated = await admin.agent.post('/api/admin/essays/themes/generate', {
+      exam_id: content.exam,
+    });
+    assert.equal(generated.status, 201, JSON.stringify(generated.body));
+    assert.equal(generated.body.generated_by_ai, true);
+    assert.ok(generated.body.prompt_text);
+    assert.ok(generated.body.support_texts);
+
     const themes = await admin.agent.get(`/api/admin/essays/themes?exam_id=${content.exam}`);
     assert.equal(themes.status, 200);
-    assert.equal(themes.body.total, 1);
+    assert.equal(themes.body.total, 2);
 
     const essay = await db.one(
       `INSERT INTO essays (user_id, exam_id, theme_id, theme_title, content, word_count, status, score, max_score,
@@ -633,6 +641,7 @@ describe('Painel administrativo', () => {
   });
 
   it('resume o uso da IA por dia, recurso e aluno', async () => {
+    await db.query('DELETE FROM ai_usage');
     for (const [feature, tokens, status] of [['tutor', 1200, 'ok'], ['tutor', 800, 'ok'], ['essay', 3000, 'error']]) {
       await db.query(
         `INSERT INTO ai_usage (user_id, feature, model, prompt_tokens, completion_tokens, total_tokens, status, latency_ms)

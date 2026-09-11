@@ -63,6 +63,12 @@ function currentTheme() {
 
 const aiAvailable = () => Boolean(state && state.aiStatus && state.aiStatus.available);
 
+function paperLineCount() {
+  const configured = Number(state && state.criteria && state.criteria.max_lines);
+  if (!Number.isFinite(configured) || configured <= 0) return 30;
+  return Math.min(40, Math.max(20, Math.round(configured)));
+}
+
 // ---------------------------------------------------------------------
 // Estrutura da página
 // ---------------------------------------------------------------------
@@ -188,7 +194,7 @@ function themeCard(theme) {
       </label>
       ${theme.prompt_text || theme.support_texts
         ? html`
-          <details class="ess-theme-more">
+          <details class="ess-theme-more" ${selected && theme.generated_by_ai ? raw('open') : ''}>
             <summary>Ver proposta e textos motivadores</summary>
             <div class="ess-theme-body">
               ${theme.prompt_text ? html`<h4 class="ess-theme-sub">Proposta</h4><div class="prose prose-sm">${md(theme.prompt_text)}</div>` : ''}
@@ -289,6 +295,7 @@ function counterBlock() {
 function stepEditor() {
   const theme = currentTheme();
   const title = currentThemeTitle();
+  const lineCount = paperLineCount();
   return html`
     <div class="ess-editor">
       <section class="card ess-editor-card">
@@ -301,7 +308,7 @@ function stepEditor() {
         </div>
         ${theme && (theme.prompt_text || theme.support_texts)
           ? html`
-            <details class="ess-proposal">
+            <details class="ess-proposal" open>
               <summary>${icon('file-text', { size: 15 })}<span>Ver a proposta e os textos motivadores</span></summary>
               <div class="ess-proposal-body">
                 ${theme.prompt_text ? html`<h4 class="ess-theme-sub">Proposta</h4><div class="prose prose-sm">${md(theme.prompt_text)}</div>` : ''}
@@ -311,8 +318,19 @@ function stepEditor() {
           : ''}
         <div class="card-body ess-editor-body">
           <label class="sr-only" for="ess-content">Texto da sua redação</label>
-          <textarea class="textarea ess-textarea" id="ess-content" data-ess-content maxlength="${MAX_CONTENT_CHARS}"
-                    placeholder="Comece pela introdução, apresentando o tema e a sua tese…">${state.content || ''}</textarea>
+          <div class="ess-paper" style="--essay-line-count:${lineCount}">
+            <div class="ess-paper-head">
+              <span>Folha de redação</span>
+              <span>${lineCount} linhas</span>
+            </div>
+            <div class="ess-paper-writing">
+              <div class="ess-paper-numbers" aria-hidden="true">
+                ${Array.from({ length: lineCount }, (_, index) => html`<span>${index + 1}</span>`)}
+              </div>
+              <textarea class="ess-textarea" id="ess-content" data-ess-content maxlength="${MAX_CONTENT_CHARS}"
+                        spellcheck="true" placeholder="Escreva sua redação aqui…">${state.content || ''}</textarea>
+            </div>
+          </div>
           ${counterBlock()}
         </div>
         <div class="card-footer ess-actions">
@@ -482,7 +500,7 @@ async function generateTheme(button) {
     if (!state) return;
     state.themes = [theme, ...state.themes.filter((row) => row.id !== theme.id)];
     state.themeId = theme.id;
-    toast('Tema gerado. Leia a proposta antes de começar.', { type: 'success' });
+    toast('Tema, proposta e textos motivadores gerados. Leia tudo antes de escrever.', { type: 'success' });
     paint();
   } catch (err) {
     toast(err && err.message ? err.message : 'Não foi possível gerar um tema agora.', { type: 'error' });

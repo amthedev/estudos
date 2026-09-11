@@ -146,7 +146,12 @@ router.post(
     });
 
     auth.issueStudentCookie(res, user);
-    res.status(201).json({ user: auth.sanitizeUser(user) });
+    const access = await computeAccess(user.id);
+    res.status(201).json({
+      user: auth.sanitizeUser(user),
+      access: { allowed: access.allowed, reason: access.reason, required: access.required },
+      next: access.allowed ? '/app/onboarding' : '/app/assinatura',
+    });
   })
 );
 

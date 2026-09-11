@@ -13,6 +13,7 @@
  *   request(), agent(cookie), registerStudent(), loginAdmin(), resetDb(), closeAll()
  */
 process.env.NODE_ENV = 'test';
+process.env.REQUIRE_SUBSCRIPTION = 'false';
 
 const http = require('node:http');
 const bcrypt = require('bcryptjs');
@@ -64,7 +65,12 @@ async function resetDb() {
  * @param {{ reset?: boolean }} [options] reset=false pula a recriação do schema
  */
 async function createTestContext({ reset = true } = {}) {
-  if (reset) await runMigrations({ reset: true, quiet: true });
+  if (reset) {
+    await runMigrations({ reset: true, quiet: true });
+    // A aplicação publicada nasce paga; os testes abrem o acesso e ligam a
+    // exigência apenas nos cenários que verificam cobrança.
+    await settings.setSetting('require_subscription', false);
+  }
   else settings.invalidateCache();
 
   const app = createApp();

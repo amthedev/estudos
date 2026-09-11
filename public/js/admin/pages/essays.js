@@ -109,6 +109,49 @@ async function openThemeForm(row) {
   });
 }
 
+function openAiThemeForm() {
+  const exams = state.exams.filter((exam) => exam.has_essay !== false);
+  if (!exams.length) {
+    toast('Cadastre primeiro uma prova que tenha redação.', { type: 'warning' });
+    return;
+  }
+
+  const body = document.createElement('div');
+  let form = null;
+  const dialog = modal({
+    title: 'Gerar tema com IA',
+    subtitle: 'A IA cria o tema, a proposta e os textos motivadores no estilo da prova escolhida.',
+    body,
+    actions: [],
+    onClose: () => {
+      if (form) form.destroy();
+    },
+  });
+
+  form = buildForm(body, [
+    {
+      key: 'exam_id',
+      label: 'Prova',
+      type: 'select',
+      required: true,
+      options: exams.map((exam) => ({ value: exam.id, label: exam.name })),
+      hint: 'O tema será publicado imediatamente e poderá ser revisado antes de os alunos usarem.',
+    },
+  ], {
+    values: { exam_id: exams[0].id },
+    submitLabel: 'Gerar tema com IA',
+    cancel: { label: 'Cancelar', onClick: () => dialog.close() },
+    autofocus: true,
+    async onSubmit(values) {
+      const theme = await api.post('/api/admin/essays/themes/generate', { exam_id: values.exam_id });
+      toast('Tema, proposta e textos motivadores gerados.', { type: 'success' });
+      dialog.close();
+      if (state && state.themesTable) await state.themesTable.reload();
+      if (state) openThemeForm(theme);
+    },
+  });
+}
+
 async function removeTheme(row, table) {
   const ok = await confirm({
     title: 'Excluir tema',
@@ -143,7 +186,10 @@ function mountThemesTab(container) {
       <section class="card">
         <div class="card-header">
           <h2 class="card-title">${icon('lightbulb')}<span>Temas de redação</span></h2>
-          <button type="button" class="btn btn-primary btn-sm" data-act="new-theme">${icon('plus')}<span>Novo tema</span></button>
+          <div class="btn-group">
+            <button type="button" class="btn btn-secondary btn-sm" data-act="generate-theme">${icon('sparkles')}<span>Gerar com IA</span></button>
+            <button type="button" class="btn btn-primary btn-sm" data-act="new-theme">${icon('plus')}<span>Novo tema</span></button>
+          </div>
         </div>
         <div class="card-body" data-themes-table></div>
       </section>`
@@ -163,7 +209,7 @@ function mountThemesTab(container) {
     search: true,
     searchPlaceholder: 'Buscar pelo título do tema',
     sort: { key: 'created_at', dir: 'desc' },
-    emptyText: 'Nenhum tema cadastrado',
+    emptyText: 'Nenhum tema ainda. Gere com IA ou cadastre manualmente.',
     rowKey: 'id',
     filters: [
       { key: 'exam_id', label: 'Prova', options: state.exams.map((exam) => ({ value: exam.id, label: exam.short_name || exam.name })) },
@@ -489,6 +535,10 @@ async function renderEssaysPage(ctx) {
   }, { active: state.tab });
 
   state.off.push(
+    on(ctx.el, 'click', '[data-act="generate-theme"]', (event) => {
+      event.preventDefault();
+      openAiThemeForm();
+    }),
     on(ctx.el, 'click', '[data-act="new-theme"]', (event) => {
       event.preventDefault();
       openThemeForm(null);

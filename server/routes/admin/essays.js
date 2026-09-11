@@ -5,6 +5,7 @@
  *
  *   GET    /api/admin/essays/themes            lista paginada (q, exam_id, status, year)
  *   GET    /api/admin/essays/themes/:id
+ *   POST   /api/admin/essays/themes/generate   { exam_id } → gera e publica um tema com IA
  *   POST   /api/admin/essays/themes            { exam_id?, title, prompt_text?, support_texts?, source?, year?, active? }
  *   PUT    /api/admin/essays/themes/:id
  *   DELETE /api/admin/essays/themes/:id        409 quando o tema já foi usado em redações
@@ -19,9 +20,11 @@
  */
 const router = require('express').Router();
 const db = require('../../db/pool');
+const essays = require('../../services/essay');
 const { validate, z } = require('../../middleware/validate');
 const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
+const { aiLimiter } = require('../../middleware/rateLimit');
 const { parsePagination, paginate, parseSort } = require('../../utils/pagination');
 const { slugify } = require('../../utils/slug');
 
@@ -46,6 +49,7 @@ const themeBody = z.object({
   year: z.preprocess(emptyToNull, z.coerce.number().int().min(1950).max(2100).nullable().optional()),
   active: z.boolean().optional(),
 });
+const themeGenerateBody = z.object({ exam_id: uuid });
 const themeUpdate = themeBody.partial().refine((body) => Object.keys(body).length > 0, 'Nada para atualizar.');
 
 const themeListQuery = z.object({
@@ -193,6 +197,21 @@ router.get(
       delete item.prompt_text;
     }
     res.json(paginate(items, totalRow.total, { page, limit }));
+  })
+);
+
+router.post(
+  '/themes/generate',
+  aiLimiter,
+  validate({ body: themeGenerateBody }),
+  wrap(async (req, res) => {
+    const created = await essays.generateTheme(req.valid.body.exam_id, { userId: req.admin.id });
+    const theme = await db.one(`${SELECT_THEME} WHERE th.id = $1`, [created.id]);
+    await audit(req, 'essay_theme.generate', 'essay_theme', created.id, {
+      title: created.title,
+      exam_id: created.exam_id,
+    });
+    res.status(201).json(theme);
   })
 );
 

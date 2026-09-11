@@ -86,7 +86,7 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
-  REQUIRE_SUBSCRIPTION: boolFromEnv(false),
+  REQUIRE_SUBSCRIPTION: boolFromEnv(true),
 
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),

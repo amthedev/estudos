@@ -4,6 +4,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { createTestContext } = require('./helpers');
 const mailer = require('../server/services/mailer');
+const settings = require('../server/services/settings');
 
 describe('Fundação: saúde, autenticação, CSRF e recuperação de senha', () => {
   let ctx;
@@ -66,10 +67,36 @@ describe('Fundação: saúde, autenticação, CSRF e recuperação de senha', ()
       assert.ok(res.cookies.fe_session, 'cookie fe_session deve ser emitido');
       assert.equal(res.cookies.fe_admin, undefined);
       assert.ok(res.body.user.last_login_at, 'last_login_at deve ser preenchido');
+      assert.equal(res.body.access.allowed, true);
+      assert.equal(res.body.next, '/app/onboarding');
 
       const profile = await ctx.db.one('SELECT * FROM student_profiles WHERE user_id = $1', [res.body.user.id]);
       assert.ok(profile, 'perfil do aluno deve existir');
       assert.equal(profile.onboarding_completed, false);
+    });
+
+    it('permite criar a conta, mas encaminha para o pagamento quando a assinatura é obrigatória', async () => {
+      await settings.setSetting('require_subscription', true);
+      try {
+        const email = `pagamento-${Date.now()}@teste.focoelite.com.br`;
+        const res = await ctx.request('POST', '/api/auth/register', {
+          body: { name: 'Aluno sem Plano', email, password: 'Senha@12345' },
+        });
+        assert.equal(res.status, 201);
+        assert.equal(res.body.access.allowed, false);
+        assert.equal(res.body.access.reason, 'no_subscription');
+        assert.equal(res.body.next, '/app/assinatura');
+
+        const content = await ctx.agent(res.cookie).get('/api/dashboard');
+        assert.equal(content.status, 402);
+        assert.equal(content.body.error.code, 'payment_required');
+
+        const billing = await ctx.agent(res.cookie).get('/api/billing/status');
+        assert.equal(billing.status, 200);
+        assert.equal(billing.body.access.allowed, false);
+      } finally {
+        await settings.setSetting('require_subscription', false);
+      }
     });
 
     it('rejeita cadastro com dados inválidos (400 validation_error com details em português)', async () => {
