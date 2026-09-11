@@ -235,7 +235,10 @@ function planCard(plan) {
             <button type="button" class="btn btn-secondary btn-block sub-pix-cta" data-action="checkout" data-id="${plan.id}" data-method="pix" ${disabled ? 'disabled' : ''}>
               ${icon('zap')}<span>Pagar com Pix</span>
             </button>
-            ${hasTrial ? html`<p class="sub-payment-note">Pix é imediato e não inclui o teste grátis.</p>` : ''}
+            <p class="sub-payment-note">
+              Pagamento único de todo o período, à vista. Não renova sozinho: quando acabar, é só
+              pagar de novo.${hasTrial ? ' O teste de 24h vale só no cartão.' : ''}
+            </p>
           ` : ''}
         </div>
         ${disabled ? html`<p class="hint text-center mt-2">Pagamentos indisponíveis no momento.</p>` : ''}

@@ -391,8 +391,12 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.equal(user.tax_id, '39053344705');
     });
 
-    it('Pix nos planos longos cobra normalmente e nunca recebe o teste', async () => {
-      const before = Date.now();
+    it('Pix vai como cobrança avulsa, sem assinatura e sem teste', async () => {
+      // O Asaas recusa Pix recorrente: "o método de pagamento CREDIT_CARD é o
+      // único permitido para operações RECURRENT" e "o tipo de cobrança
+      // DETACHED é obrigatório para o método de pagamento PIX". Mandar o campo
+      // `subscription` junto derruba o checkout inteiro — foi o erro que
+      // apareceu em produção.
       const res = await student.agent.post('/api/billing/checkout', {
         plan_id: plans.sixMonths,
         payment_method: 'pix',
@@ -403,13 +407,24 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
 
       const checkout = api.find('POST', /^\/checkouts$/);
       assert.deepEqual(checkout.body.billingTypes, ['PIX']);
-      assert.equal(checkout.body.subscription.cycle, 'SEMIANNUALLY');
-      const firstChargeAt = new Date(`${checkout.body.subscription.nextDueDate.replace(' ', 'T')}Z`).getTime();
-      assert.ok(Math.abs(firstChargeAt - before) < 5_000);
+      assert.deepEqual(checkout.body.chargeTypes, ['DETACHED']);
+      assert.equal(checkout.body.subscription, undefined, 'Pix não pode levar o campo subscription');
+      assert.equal(checkout.body.items[0].value, 219.9, 'cobra o período inteiro de uma vez');
 
       const savedCheckout = await ctx.db.one('SELECT payment_method, trial_ends_at FROM payment_checkouts WHERE user_id = $1', [student.user.id]);
       assert.equal(savedCheckout.payment_method, 'pix');
       assert.equal(savedCheckout.trial_ends_at, null);
+    });
+
+    it('cartão continua como assinatura recorrente', async () => {
+      const res = await student.agent.post('/api/billing/checkout', {
+        plan_id: plans.sixMonths,
+        payment_method: 'credit_card',
+      });
+      assert.equal(res.status, 200);
+      const checkout = api.find('POST', /^\/checkouts$/);
+      assert.deepEqual(checkout.body.chargeTypes, ['RECURRENT']);
+      assert.equal(checkout.body.subscription.cycle, 'SEMIANNUALLY');
     });
 
     it('o plano mensal também não recebe teste no cartão', async () => {
@@ -584,6 +599,80 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.equal(after.body.subscription.is_active, true);
       assert.equal(after.body.subscription.provider, 'asaas');
       assert.equal(after.body.subscription.payment_method, 'pix');
+    });
+
+    it('confirmado e recebido da mesma cobrança creditam o período uma vez só', async () => {
+      // O Asaas emite os dois eventos para a MESMA cobrança: confirmada na
+      // hora, recebida quando o dinheiro cai. Antes os dois estendiam o
+      // período, e quem pagasse uma vez o plano de 12+3 meses recebia 27
+      // meses. A idempotência por id de evento não pega, porque são eventos
+      // diferentes — a chave tem que ser a cobrança.
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_conf', reference }));
+      const depoisDoPrimeiro = await ctx.db.one('SELECT current_period_end, last_payment_id FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(new Date(depoisDoPrimeiro.current_period_end).toISOString().slice(0, 10), '2027-06-10');
+      assert.equal(depoisDoPrimeiro.last_payment_id, 'pay_000001');
+
+      const segundo = await sendWebhook(paymentEvent('PAYMENT_RECEIVED', { id: 'evt_receb', reference }));
+      assert.equal(segundo.status, 200);
+      // Não é duplicata de evento — são dois eventos distintos, e os dois são
+      // processados. O que não pode é o período mudar.
+      assert.equal(segundo.body.duplicate, false);
+      assert.equal(segundo.body.processed, true);
+
+      const depoisDoSegundo = await ctx.db.one(
+        'SELECT current_period_end, last_payment_at FROM subscriptions WHERE user_id = $1',
+        [student.user.id]
+      );
+      assert.equal(
+        new Date(depoisDoSegundo.current_period_end).toISOString().slice(0, 10),
+        '2027-06-10',
+        'o segundo evento da mesma cobrança não pode somar período'
+      );
+      assert.equal(
+        await ctx.db.one('SELECT count(*)::int AS total FROM subscriptions WHERE user_id = $1', [student.user.id]).then((r) => r.total),
+        1,
+        'nem criar uma segunda assinatura'
+      );
+    });
+
+    it('cobrança seguinte, de outro id, renova normalmente', async () => {
+      // A trava é por cobrança, não por assinatura: a renovação do ciclo
+      // seguinte chega com outro id de pagamento e precisa somar.
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_c1', reference }));
+      await sendWebhook(
+        paymentEvent('PAYMENT_CONFIRMED', {
+          id: 'evt_c2',
+          reference,
+          overrides: { id: 'pay_000002', paymentDate: '2027-06-10', confirmedDate: '2027-06-10' },
+        })
+      );
+      const row = await ctx.db.one('SELECT current_period_end, last_payment_id FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.last_payment_id, 'pay_000002');
+      // renovação sem bônus: 12 meses a partir do fim do período anterior
+      assert.equal(new Date(row.current_period_end).toISOString().slice(0, 10), '2028-06-10');
+    });
+
+    it('Pix avulso libera o acesso mesmo sem assinatura no Asaas', async () => {
+      // Pix no Asaas é cobrança avulsa: o evento chega sem `subscription`.
+      // Antes esse pagamento era ignorado ("evento sem assinatura vinculada")
+      // e o aluno pagava sem receber acesso.
+      const antes = await student.agent.get('/api/billing/status');
+      assert.equal(antes.body.access.allowed, false);
+
+      const res = await sendWebhook(
+        paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pix_avulso', reference, subscription: null })
+      );
+      assert.equal(res.status, 200);
+
+      const row = await ctx.db.one('SELECT * FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'active');
+      assert.equal(row.provider_subscription_id, null, 'não existe assinatura do lado do Asaas');
+      assert.equal(row.payment_method, 'pix');
+      assert.equal(row.cancel_at_period_end, true, 'pagamento único não renova sozinho');
+      assert.equal(new Date(row.current_period_end).toISOString().slice(0, 10), '2027-06-10');
+
+      const depois = await student.agent.get('/api/billing/status');
+      assert.equal(depois.body.access.allowed, true);
     });
 
     it('evento de criação atrasado não rebaixa uma assinatura já paga', async () => {

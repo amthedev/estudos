@@ -422,9 +422,17 @@ async function createCheckout({ user, plan, paymentMethod = 'credit_card', succe
   const firstChargeAt = trialDays > 0 ? addDays(now, trialDays) : now;
   const schedule = planSchedule(plan, firstChargeAt);
   const reference = buildReference(user.id, plan.id);
+
+  // O Asaas só faz assinatura recorrente no cartão: "o método de pagamento
+  // CREDIT_CARD é o único permitido para operações RECURRENT", e Pix exige
+  // cobrança avulsa (DETACHED). Por isso o Pix aqui é pagamento único do
+  // período contratado — o aluno paga os 6 ou 15 meses de uma vez e não
+  // renova sozinho. Mandar `subscription` junto com Pix faz o Asaas recusar
+  // o checkout inteiro.
+  const recorrente = billingType === 'CREDIT_CARD';
   const created = await request('POST', '/checkouts', {
     billingTypes: [billingType],
-    chargeTypes: ['RECURRENT'],
+    chargeTypes: [recorrente ? 'RECURRENT' : 'DETACHED'],
     minutesToExpire: 60,
     externalReference: reference,
     callback: {
@@ -441,10 +449,14 @@ async function createCheckout({ user, plan, paymentMethod = 'credit_card', succe
       },
     ],
     customer: customerId,
-    subscription: {
-      cycle: schedule.cycle,
-      nextDueDate: toAsaasDateTime(firstChargeAt),
-    },
+    ...(recorrente
+      ? {
+          subscription: {
+            cycle: schedule.cycle,
+            nextDueDate: toAsaasDateTime(firstChargeAt),
+          },
+        }
+      : {}),
   });
   const url = checkoutUrl(created);
   if (!url) {

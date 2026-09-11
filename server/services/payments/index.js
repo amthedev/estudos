@@ -139,15 +139,74 @@ async function syncPlan(plan) {
  * Campos nulos não apagam o que já estava gravado.
  */
 async function applySubscription(tx, data) {
-  if (!data || !data.user_id || !data.provider || !data.provider_subscription_id) {
-    throw new Error('applySubscription exige user_id, provider e provider_subscription_id.');
+  if (!data || !data.user_id || !data.provider) {
+    throw new Error('applySubscription exige user_id e provider.');
   }
+
+  // Pix avulso não gera assinatura no Asaas, então não há id do provedor para
+  // conciliar. Nesses casos a linha é encontrada pelo id local, que o chamador
+  // já buscou pelo aluno, ou criada do zero.
+  if (!data.provider_subscription_id) {
+    if (data.id) {
+      return tx.one(
+        `UPDATE subscriptions SET
+           plan_id = COALESCE($2, plan_id),
+           provider_customer_id = COALESCE($3, provider_customer_id),
+           status = $4,
+           current_period_start = COALESCE($5, current_period_start),
+           current_period_end = COALESCE($6, current_period_end),
+           cancel_at_period_end = $7,
+           canceled_at = COALESCE($8, canceled_at),
+           last_payment_at = COALESCE($9, last_payment_at),
+           last_payment_id = COALESCE($10, last_payment_id),
+           payment_method = COALESCE($11, payment_method)
+         WHERE id = $1
+         RETURNING *`,
+        [
+          data.id,
+          data.plan_id ?? null,
+          data.provider_customer_id ?? null,
+          data.status,
+          data.current_period_start ?? null,
+          data.current_period_end ?? null,
+          Boolean(data.cancel_at_period_end),
+          data.canceled_at ?? null,
+          data.last_payment_at ?? null,
+          data.last_payment_id ?? null,
+          data.payment_method ?? null,
+        ]
+      );
+    }
+    return tx.one(
+      `INSERT INTO subscriptions (
+         user_id, plan_id, provider, provider_customer_id, provider_subscription_id,
+         status, current_period_start, current_period_end, cancel_at_period_end,
+         canceled_at, last_payment_at, last_payment_id, payment_method
+       ) VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING *`,
+      [
+        data.user_id,
+        data.plan_id ?? null,
+        data.provider,
+        data.provider_customer_id ?? null,
+        data.status,
+        data.current_period_start ?? null,
+        data.current_period_end ?? null,
+        Boolean(data.cancel_at_period_end),
+        data.canceled_at ?? null,
+        data.last_payment_at ?? null,
+        data.last_payment_id ?? null,
+        data.payment_method ?? null,
+      ]
+    );
+  }
+
   return tx.one(
     `INSERT INTO subscriptions (
        user_id, plan_id, provider, provider_customer_id, provider_subscription_id,
        status, current_period_start, current_period_end, cancel_at_period_end,
-       canceled_at, last_payment_at, payment_method
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       canceled_at, last_payment_at, last_payment_id, payment_method
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (provider, provider_subscription_id) WHERE provider_subscription_id IS NOT NULL
      DO UPDATE SET
        user_id = EXCLUDED.user_id,
@@ -159,6 +218,7 @@ async function applySubscription(tx, data) {
        cancel_at_period_end = EXCLUDED.cancel_at_period_end,
        canceled_at = COALESCE(EXCLUDED.canceled_at, subscriptions.canceled_at),
        last_payment_at = COALESCE(EXCLUDED.last_payment_at, subscriptions.last_payment_at),
+       last_payment_id = COALESCE(EXCLUDED.last_payment_id, subscriptions.last_payment_id),
        payment_method = COALESCE(EXCLUDED.payment_method, subscriptions.payment_method)
      RETURNING *`,
     [
@@ -173,6 +233,7 @@ async function applySubscription(tx, data) {
       Boolean(data.cancel_at_period_end),
       data.canceled_at ?? null,
       data.last_payment_at ?? null,
+      data.last_payment_id ?? null,
       data.payment_method ?? null,
     ]
   );
@@ -276,13 +337,29 @@ async function applyAsaasCheckoutEvent(tx, event) {
  */
 async function applyAsaasEvent(tx, event) {
   const info = asaas.normalizeEvent(event.payload);
-  if (!info.subscription_id) return { skipped: 'evento sem assinatura vinculada' };
-
-  const current = await tx.one(
-    `SELECT * FROM subscriptions WHERE provider = 'asaas' AND provider_subscription_id = $1`,
-    [info.subscription_id]
-  );
   const reference = asaas.parseReference(info.external_reference);
+
+  // Pix é cobrança avulsa no Asaas — não existe assinatura do lado de lá, e o
+  // evento chega sem `subscription`. O acesso desses alunos vem do pagamento
+  // em si, conciliado pelo externalReference que o checkout gravou. Sem isso,
+  // quem pagasse por Pix nunca receberia acesso.
+  const avulso = !info.subscription_id;
+  if (avulso && !(info.payment && reference.user_id)) {
+    return { skipped: 'evento sem assinatura vinculada' };
+  }
+
+  const current = avulso
+    ? await tx.one(
+        `SELECT * FROM subscriptions
+          WHERE provider = 'asaas' AND user_id = $1 AND provider_subscription_id IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [reference.user_id]
+      )
+    : await tx.one(
+        `SELECT * FROM subscriptions WHERE provider = 'asaas' AND provider_subscription_id = $1`,
+        [info.subscription_id]
+      );
   const userId = await resolveUser(tx, { current, reference, customerId: info.customer_id });
   if (!userId) {
     console.warn(`[pagamentos] evento ${event.type} da assinatura ${info.subscription_id} sem aluno correspondente.`);
@@ -296,7 +373,7 @@ async function applyAsaasEvent(tx, event) {
   });
   const plan = await resolvePlan(tx, { current, reference, checkout });
 
-  if (checkout && checkout.provider_subscription_id !== info.subscription_id) {
+  if (info.subscription_id && checkout && checkout.provider_subscription_id !== info.subscription_id) {
     await tx.query(
       `UPDATE payment_checkouts
           SET provider_subscription_id = $1,
@@ -312,11 +389,12 @@ async function applyAsaasEvent(tx, event) {
   const stillPaid = Boolean(previousEnd && previousEnd.getTime() > now.getTime());
 
   const patch = {
+    id: current ? current.id : null,
     user_id: userId,
     plan_id: plan ? plan.id : null,
     provider: 'asaas',
     provider_customer_id: info.customer_id || (current && current.provider_customer_id) || null,
-    provider_subscription_id: info.subscription_id,
+    provider_subscription_id: info.subscription_id || null,
     cancel_at_period_end: Boolean(current && current.cancel_at_period_end),
     payment_method: info.payment_method || (checkout && checkout.payment_method) || null,
   };
@@ -346,6 +424,18 @@ async function applyAsaasEvent(tx, event) {
     }
     case 'PAYMENT_CONFIRMED':
     case 'PAYMENT_RECEIVED': {
+      // O Asaas emite CONFIRMED e RECEIVED como eventos distintos para a MESMA
+      // cobrança: confirmada na hora, recebida quando o dinheiro cai. Os dois
+      // caem aqui, e creditar nos dois dobrava o período — quem pagasse uma vez
+      // o plano de 12+3 meses ganhava 27. A idempotência por id de evento não
+      // pega, porque os eventos são diferentes; a chave certa é a cobrança.
+      const paymentId = (info.payment && info.payment.id) || null;
+      if (paymentId && current && current.last_payment_id === paymentId) {
+        return {
+          subscription_id: current.id,
+          unchanged: 'cobrança já creditada',
+        };
+      }
       const paidAt = (info.payment && info.payment.paid_at) || now;
       const first = !current || !current.last_payment_at;
       const months = asaas.accessMonths(plan, { first });
@@ -355,8 +445,10 @@ async function applyAsaasEvent(tx, event) {
       patch.current_period_start = paidAt;
       patch.current_period_end = asaas.addMonths(from, months);
       patch.last_payment_at = paidAt;
+      patch.last_payment_id = paymentId;
       patch.payment_method = (info.payment && info.payment.method) || patch.payment_method;
-      patch.cancel_at_period_end = false;
+      // Pix avulso não renova sozinho: o acesso vale o período pago e acaba.
+      patch.cancel_at_period_end = avulso;
       break;
     }
     case 'PAYMENT_OVERDUE': {
@@ -407,7 +499,7 @@ async function applyAsaasEvent(tx, event) {
   const row = await applySubscription(tx, patch);
 
   // No plano anual promocional, a renovação vem depois dos 3 meses de bônus.
-  if (event.type === 'SUBSCRIPTION_CREATED' && plan && Number(plan.bonus_months) > 0) {
+  if (event.type === 'SUBSCRIPTION_CREATED' && info.subscription_id && plan && Number(plan.bonus_months) > 0) {
     const firstChargeAt = info.next_due_date || (checkout && checkout.trial_ends_at) || now;
     const nextDueDate = asaas.toISODate(asaas.addMonths(firstChargeAt, asaas.accessMonths(plan)));
     try {
