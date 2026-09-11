@@ -134,8 +134,27 @@ function accessBlock() {
   return '';
 }
 
+/**
+ * Destaques da faixa do topo.
+ *
+ * Vêm dos benefícios dos planos, que o professor edita no painel — antes eram
+ * quatro itens fixos no código, prometendo recursos mesmo que ele deixasse de
+ * oferecer algum. Pega os do plano mais completo, que é o que tem mais itens.
+ */
+function heroHighlights() {
+  const maisCompleto = plans.reduce(
+    (melhor, plan) => {
+      const lista = Array.isArray(plan.features) ? plan.features : [];
+      return lista.length > melhor.length ? lista : melhor;
+    },
+    []
+  );
+  return maisCompleto.slice(0, 4);
+}
+
 function heroBlock() {
   const active = Boolean(status.subscription && status.subscription.is_active);
+  const destaques = heroHighlights();
   return html`
     <header class="sub-hero">
       <img
@@ -153,12 +172,11 @@ function heroBlock() {
           : 'Escolha o período e comece sua preparação com direção.'}</p>
       </div>
     </header>
-    <div class="sub-benefits" aria-label="Recursos incluídos nos planos">
-      <span>${icon('play-circle')}<strong>Videoaulas</strong></span>
-      <span>${icon('target')}<strong>Simulados</strong></span>
-      <span>${icon('pen-line')}<strong>Redação IA</strong></span>
-      <span>${icon('calendar-check')}<strong>Cronograma</strong></span>
-    </div>`;
+    ${destaques.length
+      ? html`<div class="sub-benefits" aria-label="Recursos incluídos nos planos">
+          ${destaques.map((texto) => html`<span>${icon('circle-check')}<strong>${texto}</strong></span>`)}
+        </div>`
+      : ''}`;
 }
 
 function billingLabel(plan) {

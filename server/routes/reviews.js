@@ -55,11 +55,15 @@ router.get(
   validate({ query: listQuery }),
   wrap(async (req, res) => {
     const { status = 'pending', from, to, limit } = req.valid.query;
-    const [items, counts] = await Promise.all([
+    // Os intervalos são configuráveis no painel (review_intervals). A tela
+    // precisa deles para dizer "X dias depois da aula" com o número certo, em
+    // vez de repetir 1/7/30 fixos enquanto o professor usa outro ritmo.
+    const [items, counts, intervals] = await Promise.all([
       reviews.listReviews(req.user.id, { status, from, to, limit }),
       reviews.getCounts(req.user.id),
+      reviews.getIntervals(),
     ]);
-    res.json({ items, counts, today: todayISO(), status });
+    res.json({ items, counts, today: todayISO(), status, interval_days: intervals });
   })
 );
 

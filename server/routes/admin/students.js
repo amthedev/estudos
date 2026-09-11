@@ -53,8 +53,10 @@ const profileSchema = z
     exam_id: nullable(z.string().uuid()),
     other_exam_name: nullable(z.string().trim().max(120)),
     study_days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
-    hours_per_day: z.number().min(0.5).max(16).optional(),
-    level: z.enum(['iniciante', 'intermediario', 'avancado']).optional(),
+    // Aceitam nulo porque a tela oferece o vazio: "Não informado" no nível e o
+    // campo de horas apagável. Sem nullable, limpar era recusado em silêncio.
+    hours_per_day: nullable(z.number().min(0.5).max(16)),
+    level: nullable(z.enum(['iniciante', 'intermediario', 'avancado'])),
     weakest_subject_id: nullable(z.string().uuid()),
     exam_date: nullable(isoDate),
     target_course: nullable(z.string().trim().max(120)),

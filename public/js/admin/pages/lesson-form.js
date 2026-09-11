@@ -163,7 +163,13 @@ function paintVideo() {
     title: val('title'),
   });
   if (meta) {
-    const providerLabel = { youtube: 'YouTube', vimeo: 'Vimeo', external: 'Vídeo externo', none: 'Link não reconhecido' }[info.provider || 'external'];
+    // 'upload' é o caso normal desta tela: o campo do endereço é somente
+    // leitura e só é preenchido pelo envio do arquivo. Sem esta chave o badge
+    // saía escrito "undefined" depois de todo upload.
+    const providerLabel =
+      { upload: 'Vídeo da plataforma', youtube: 'YouTube', vimeo: 'Vimeo', external: 'Vídeo externo', none: 'Link não reconhecido' }[
+        info.provider || 'external'
+      ] || 'Vídeo';
     render(meta, html`
       ${badge(providerLabel, info.provider === 'none' ? 'orange' : 'blue', { icon: info.provider === 'none' ? 'triangle-alert' : 'circle-play' })}
       ${info.duration_min ? badge(fmtMinutes(info.duration_min), 'gray', { icon: 'clock' }) : ''}

@@ -335,16 +335,16 @@ async function sendAll() {
       })),
     });
 
-    const falhas = new Map((result.errors || []).map((error) => [error.title, error.message]));
-    for (const item of enviados) {
-      if (falhas.has(item.title)) {
-        item.status = 'error';
-        item.message = falhas.get(item.title);
-      } else {
-        item.status = 'done';
-        item.message = '';
-      }
-    }
+    // Casado pela linha, não pelo título: o servidor identifica cada erro pela
+    // posição, títulos repetidos colapsariam num Map, e o título que o servidor
+    // devolve vem com os espaços aparados — um título com espaço na ponta
+    // nunca casava e a aula aparecia como enviada mesmo tendo falhado.
+    const falhas = new Map((result.errors || []).map((error) => [error.line, error.message]));
+    enviados.forEach((item, index) => {
+      const falha = falhas.get(index + 1);
+      item.status = falha ? 'error' : 'done';
+      item.message = falha || '';
+    });
     state.result = result;
     toast(
       result.imported

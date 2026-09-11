@@ -261,8 +261,12 @@ async function submitProfile(values) {
       onboarding_completed: Boolean(values.onboarding_completed),
     },
   };
-  if (values.level) payload.profile.level = values.level;
-  if (values.hours_per_day) payload.profile.hours_per_day = Number(values.hours_per_day);
+  // Enviados sempre, nulos quando vazios: o formulário oferece o vazio de
+  // propósito ("Não informado" no nível, horas apagáveis), e omitir o campo
+  // fazia o valor antigo continuar — limpar não tinha efeito nenhum.
+  payload.profile.level = values.level || null;
+  payload.profile.hours_per_day =
+    values.hours_per_day === '' || values.hours_per_day == null ? null : Number(values.hours_per_day);
 
   state.data = await api.put(`/api/admin/students/${state.id}`, payload);
   toast('Dados do aluno salvos.', { type: 'success' });

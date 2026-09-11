@@ -469,9 +469,14 @@ export function buildForm(el, fields, opts = {}) {
         case 'json': {
           const text = String(control?.value ?? '').trim();
           if (typeof value === 'string' && text) {
-            let reason = '';
-            try { JSON.parse(text); } catch (err) { reason = err?.message || ''; }
-            return `JSON inválido${reason ? `: ${reason}` : '.'}`;
+            // O retorno precisa estar preso ao erro: solto, ele recusava
+            // também o JSON válido, e o campo nunca podia ser salvo.
+            try {
+              JSON.parse(text);
+            } catch (err) {
+              const reason = err?.message || '';
+              return `JSON inválido${reason ? `: ${reason}` : '.'}`;
+            }
           }
           break;
         }

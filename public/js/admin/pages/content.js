@@ -58,10 +58,17 @@ function toggleExpanded(type, id) {
   else state.expanded.add(k);
 }
 
-/** Lista de irmãos de um nó (usada na reordenação). */
+/**
+ * Lista de irmãos de um nó, sempre o array REAL do estado.
+ *
+ * Devolver uma cópia aqui quebrava a reordenação de áreas em silêncio: o
+ * servidor recebia a ordem nova e a tela continuava desenhando a antiga, que
+ * vem de state.data.areas. O admin clicava em subir e nada acontecia, embora o
+ * banco já tivesse mudado.
+ */
 function siblingsOf(type, id) {
   const { areas } = state.data;
-  if (type === 'area') return areas.filter((a) => a.id);
+  if (type === 'area') return areas;
   for (const area of areas) {
     if (type === 'subject') {
       const found = area.subjects.find((s) => s.id === id);
@@ -597,14 +604,22 @@ async function toggleActive(type, id) {
 
 async function move(type, id, direction) {
   const list = siblingsOf(type, id);
-  const index = list.findIndex((item) => item.id === id);
+  // A lista de áreas carrega a pseudo-área "Sem área", que não tem id e não
+  // entra na ordenação: o vizinho é o próximo irmão de verdade, e a posição
+  // dela na tela não muda.
+  const reais = list.filter((item) => item.id);
+  const index = reais.findIndex((item) => item.id === id);
   const target = index + direction;
-  if (index < 0 || target < 0 || target >= list.length) return;
-  const [moved] = list.splice(index, 1);
-  list.splice(target, 0, moved);
+  if (index < 0 || target < 0 || target >= reais.length) return;
+
+  const de = list.indexOf(reais[index]);
+  const para = list.indexOf(reais[target]);
+  [list[de], list[para]] = [list[para], list[de]];
   repaint();
   try {
-    await api.patch(`/api/admin/content/${ENDPOINT[type]}/reorder`, { ids: list.map((item) => item.id) });
+    await api.patch(`/api/admin/content/${ENDPOINT[type]}/reorder`, {
+      ids: list.filter((item) => item.id).map((item) => item.id),
+    });
   } catch (err) {
     toast((err && err.message) || 'Não foi possível reordenar.', { type: 'error' });
     await reload({ keepState: true });

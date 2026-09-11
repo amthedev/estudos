@@ -19,12 +19,19 @@ import { mountQuestionRunner } from '../../components/question-runner.js';
 
 const HEX_COLOR = /^#[0-9a-f]{3,8}$/i;
 
-/** Etapas do método (settings.review_intervals padrão: 1, 7 e 30 dias). */
-const STAGES = {
-  1: { label: '1ª revisão', hint: '1 dia depois da aula' },
-  2: { label: '2ª revisão', hint: '7 dias depois da aula' },
-  3: { label: '3ª revisão', hint: '30 dias depois da aula' },
-};
+/**
+ * Rótulo e explicação de cada etapa.
+ *
+ * Os prazos vêm da API (`interval_days`), porque são configuráveis no painel:
+ * o texto fixo em 1/7/30 mentia para o aluno assim que o professor mudasse o
+ * ritmo. Todas as etapas contam a partir da aula, não da revisão anterior.
+ */
+function stageInfo(stage) {
+  const label = `${stage}ª revisão`;
+  const dias = state && Array.isArray(state.intervalDays) ? state.intervalDays[stage - 1] : null;
+  if (!dias) return { label, hint: '' };
+  return { label, hint: `${dias} ${dias === 1 ? 'dia' : 'dias'} depois da aula` };
+}
 
 const SECTIONS = [
   { id: 'overdue', title: 'Atrasadas', icon: 'triangle-alert', tone: 'red', empty: 'Nenhuma revisão atrasada. Muito bom.' },
@@ -43,9 +50,7 @@ const colorVar = (value) => {
 };
 
 function stageBadge(stage) {
-  const info = STAGES[stage];
-  if (!info) return badge(`Revisão ${stage}`, 'gray');
-  return badge(info.label, 'gray', { icon: 'refresh-cw' });
+  return badge(stageInfo(stage).label, 'gray', { icon: 'refresh-cw' });
 }
 
 /** Agrupa as revisões nas seções da tela. */
@@ -76,7 +81,7 @@ function addDaysISO(iso, days) {
 // ---------------------------------------------------------------------
 
 function reviewRow(review, sectionId) {
-  const info = STAGES[review.stage];
+  const info = stageInfo(review.stage);
   const isDone = sectionId === 'done';
   const overdue = sectionId === 'overdue';
   return html`
@@ -157,7 +162,9 @@ function listView() {
       : emptyState({
           icon: 'refresh-cw',
           title: 'Você ainda não tem revisões',
-          text: 'Ao concluir uma aula, o Foco de Elite agenda revisões em 1, 7 e 30 dias — é assim que o conteúdo fixa.',
+          text: state && Array.isArray(state.intervalDays) && state.intervalDays.length
+            ? `Ao concluir uma aula, o Foco de Elite agenda revisões em ${state.intervalDays.join(', ')} dias — é assim que o conteúdo fixa.`
+            : 'Ao concluir uma aula, o Foco de Elite agenda revisões espaçadas — é assim que o conteúdo fixa.',
           action: { label: 'Ver aulas', href: '/app/aulas', icon: 'play' },
         })}`;
 }
@@ -212,7 +219,9 @@ function runnerHeader(review) {
         <h1>${review.topic_name}</h1>
         <p class="meta">
           ${review.subject_name ? html`<span>${review.subject_name}</span>` : ''}
-          ${STAGES[review.stage] ? html`<span>${STAGES[review.stage].label} · ${STAGES[review.stage].hint}</span>` : ''}
+          ${stageInfo(review.stage).hint
+            ? html`<span>${stageInfo(review.stage).label} · ${stageInfo(review.stage).hint}</span>`
+            : html`<span>${stageInfo(review.stage).label}</span>`}
         </p>
       </div>
     </header>`;
@@ -328,6 +337,7 @@ async function load(ctx) {
     ]);
     if (!state || state.token !== token) return;
     const today = pending.today || done.today;
+    state.intervalDays = pending.interval_days || done.interval_days || null;
     state.counts = pending.counts || null;
     state.groups = groupReviews(pending.items || [], done.items || [], today);
     state.reviews = [...(pending.items || []), ...(done.items || [])];
