@@ -80,30 +80,23 @@ router.post(
       // Aluno e administrador dividem a tabela de usuários, e o e-mail é único
       // na plataforma inteira. Quem já criou a conta de aluno com o próprio
       // e-mail ficava sem poder usá-lo aqui — e sem alternativa, porque o
-      // e-mail é o mesmo que ele usa. Então a conta é promovida em vez de
-      // recusada, mediante a senha dela: é a prova de que a conta é de quem
-      // está configurando, e não de outra pessoa que passou por aqui antes.
-      const existente = await client.one(
-        'SELECT id, name, password_hash FROM users WHERE lower(email) = lower($1)',
-        [email]
-      );
+      // e-mail é o dele. Então a conta é promovida, com o nome e a senha que
+      // vierem deste formulário.
+      //
+      // Não se pede a senha antiga: esta tela só existe enquanto não há nenhum
+      // administrador, e quem chega nela já poderia criar um do zero. Exigir a
+      // senha não protegeria nada e só atrapalharia quem esqueceu a do aluno.
+      // O que de fato protege é fechar esta porta, o que acontece no instante
+      // em que o primeiro administrador existe.
+      const existente = await client.one('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
       if (existente) {
-        const confere = await bcrypt.compare(password, existente.password_hash || '');
-        if (!confere) {
-          throw new AppError(
-            409,
-            'conflict',
-            'Este e-mail já tem uma conta de aluno. Digite a senha dessa conta para transformá-la em administrador.',
-            [{ path: 'password', message: 'Senha da conta existente não confere.' }]
-          );
-        }
         return client.one(
           `UPDATE users
               SET role = 'admin', status = 'active', name = $2, password_hash = $3,
                   token_version = token_version + 1
             WHERE id = $1
             RETURNING ${auth.USER_COLUMNS}`,
-          [existente.id, name || existente.name, passwordHash]
+          [existente.id, name, passwordHash]
         );
       }
 
