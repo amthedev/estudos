@@ -22,7 +22,11 @@ const ai = require('./ai');
 const { getSetting } = require('./settings');
 const { AppError } = require('../middleware/errors');
 
-const CORRECTION_TIMEOUT_MS = 90_000;
+// Uma correção completa é longa: parecer, cinco competências comentadas com
+// trechos do texto, erros gramaticais e cinco análises. Redação de 450 palavras
+// ou mais leva mais de um minuto no modelo econômico, e 90s deixava sem folga —
+// era o que travava a correção acima de ~400 palavras.
+const CORRECTION_TIMEOUT_MS = 180_000;
 const MAX_CONTENT_CHARS = 6000;
 const MAX_SUPPORT_CHARS = 2500;
 const MAX_LIST_ITEMS = 12;
@@ -458,12 +462,23 @@ async function correctEssay(essayId, { timeoutMs = CORRECTION_TIMEOUT_MS } = {})
   const { messages } = buildCorrectionPrompt(criteriaSet, exam, theme, content);
   const model = (await getSetting('openrouter_essay_model')) || undefined;
 
-  const controller = new AbortController();
+  // Cada tentativa precisa do próprio relógio. Um AbortController só, criado
+  // aqui fora, cobria as duas: se a primeira consumisse o prazo, a retentativa
+  // nascia com o sinal já abortado e nem chegava a sair — a retentativa que eu
+  // tinha acrescentado não funcionava nesse caso.
   let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
+  const comPrazo = async (executar) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    try {
+      return await executar(controller.signal);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   let result;
   try {
@@ -476,8 +491,8 @@ async function correctEssay(essayId, { timeoutMs = CORRECTION_TIMEOUT_MS } = {})
       retryMaxTokens: 8000,
       userId: essay.user_id,
       feature: 'essay',
-      signal: controller.signal,
       timeoutMs,
+      runWithSignal: comPrazo,
     });
     if (result && result.aborted) {
       throw new AppError(503, 'ai_unavailable', 'A correção demorou mais que o esperado. Tente novamente em instantes.');
@@ -493,8 +508,6 @@ async function correctEssay(essayId, { timeoutMs = CORRECTION_TIMEOUT_MS } = {})
     throw failure instanceof AppError
       ? failure
       : new AppError(503, 'ai_unavailable', 'Não foi possível corrigir a redação agora. Tente novamente em instantes.');
-  } finally {
-    clearTimeout(timer);
   }
 
   const { correction, score, max_score: maxScore } = normalizeCorrection(result.data, criteriaSet);

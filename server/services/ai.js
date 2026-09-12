@@ -316,7 +316,14 @@ function parseJsonResponse(text) {
  * o provedor cortar a primeira resposta e o JSON ficar incompleto.
  */
 async function json(options = {}) {
-  const { retryMaxTokens, ...chatOptions } = options;
+  const { retryMaxTokens, runWithSignal, ...chatOptions } = options;
+  // Quem chama pode querer um prazo por tentativa em vez de um para as duas.
+  // Sem isso, uma primeira tentativa demorada abortava a retentativa antes de
+  // ela sair.
+  const executar = (request) =>
+    runWithSignal
+      ? runWithSignal((signal) => chat({ ...request, signal, stream: false, responseFormat: { type: 'json_object' } }))
+      : chat({ ...request, stream: false, responseFormat: { type: 'json_object' } });
   const initialMaxTokens = Number(chatOptions.maxTokens);
   const retryLimit = Number(retryMaxTokens);
   const canRetry =
@@ -328,7 +335,7 @@ async function json(options = {}) {
   for (let index = 0; index < attempts.length; index += 1) {
     const maxTokens = attempts[index];
     const request = maxTokens === undefined ? chatOptions : { ...chatOptions, maxTokens };
-    const result = await chat({ ...request, stream: false, responseFormat: { type: 'json_object' } });
+    const result = await executar(request);
     const data = parseJsonResponse(result.content);
     if (data) return { ...result, data };
 

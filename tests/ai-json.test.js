@@ -114,6 +114,61 @@ describe('Respostas JSON da IA', () => {
     );
   });
 
+  it('dá um prazo novo a cada tentativa, em vez de um para as duas', async () => {
+    // O defeito real: um AbortController só cobria as duas tentativas. Quando a
+    // primeira consumia o prazo, a retentativa nascia com o sinal já abortado e
+    // nem chegava a sair — foi o que travou a correção de redações longas.
+    const sinais = [];
+    let tentativa = 0;
+    ai.setClientForTests({
+      chat: {
+        completions: {
+          async create(params, options) {
+            const signal = options && options.signal;
+            // O estado é registrado AQUI, durante a chamada: depois do finally
+            // do prazo todo sinal aparece abortado, e a asserção não diria nada.
+            sinais.push({ signal, abortadoAoChamar: Boolean(signal && signal.aborted) });
+            tentativa += 1;
+            const cortada = tentativa === 1;
+            return {
+              model: 'teste/modelo',
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: cortada ? '{"title":"cort' : '{"title":"inteiro"}' },
+                  finish_reason: cortada ? 'length' : 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+            };
+          },
+        },
+      },
+    });
+
+    // Cada tentativa recebe um AbortController próprio, como faz a correção.
+    const comPrazo = async (executar) => {
+      const controller = new AbortController();
+      try {
+        return await executar(controller.signal);
+      } finally {
+        controller.abort(); // encerra o prazo desta tentativa, não da seguinte
+      }
+    };
+
+    const res = await ai.json({
+      messages: pergunta,
+      maxTokens: 4000,
+      retryMaxTokens: 8000,
+      runWithSignal: comPrazo,
+    });
+
+    assert.equal(res.data.title, 'inteiro', 'a retentativa precisa acontecer');
+    assert.equal(sinais.length, 2);
+    assert.notEqual(sinais[0].signal, sinais[1].signal, 'cada tentativa tem o próprio sinal');
+    assert.equal(sinais[1].abortadoAoChamar, false, 'a segunda não pode nascer abortada pela primeira');
+  });
+
   it('não repete uma resposta malformada que não foi cortada', async () => {
     let chamadas = 0;
     const cliente = clienteQueResponde('isto não é JSON', 'stop');
