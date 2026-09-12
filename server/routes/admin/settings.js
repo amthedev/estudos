@@ -6,6 +6,7 @@
  *   GET /api/admin/settings               todas as chaves administráveis (padrões + o que está no banco)
  *   GET /api/admin/settings/integrations  status do OpenRouter, do Asaas e do SMTP (chaves sempre mascaradas)
  *   PUT /api/admin/settings               grava as chaves enviadas, validando uma a uma
+ *   POST /api/admin/settings/smtp-test    envia um e-mail de teste para conferir o SMTP
  *
  * Segredos (OPENROUTER_API_KEY, ASAAS_API_KEY, SMTP_PASS…) NÃO passam por aqui: vivem apenas em
  * variáveis de ambiente. O painel só vê status e os últimos caracteres — nunca a chave inteira.
@@ -115,6 +116,71 @@ router.put(
     const saved = await settings.setMany(body);
     await audit(req, 'settings.update', 'settings', null, { keys });
     res.json(withExtras(saved));
+  })
+);
+
+/**
+ * Dispara um e-mail de teste.
+ *
+ * Sem isto, a única forma de saber se o SMTP funciona era ler o log do
+ * servidor — e a hospedagem usada não dá terminal. Quem configura precisa
+ * conseguir confirmar de dentro do painel que a recuperação de senha vai
+ * chegar ao aluno.
+ */
+router.post(
+  '/smtp-test',
+  validate({ body: z.object({ to: z.string().trim().email('Informe um e-mail válido.').max(160).optional() }) }),
+  wrap(async (req, res) => {
+    const destino = req.valid.body.to || req.admin.email;
+
+    if (!mailer.isConfigured()) {
+      res.status(400).json({
+        error: {
+          code: 'validation_error',
+          message:
+            'SMTP não configurado. Cadastre SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM ' +
+            'nas variáveis de ambiente da hospedagem e reinicie a aplicação.',
+        },
+      });
+      return;
+    }
+
+    // A conexão é conferida antes do envio porque os dois erros pedem ações
+    // diferentes: credencial recusada é dado errado no painel da hospedagem;
+    // mensagem recusada costuma ser remetente não verificado no provedor.
+    const conexao = await mailer.verifyTransport();
+    if (!conexao.ok) {
+      await audit(req, 'settings.smtp_test', 'settings', null, { to: destino, ok: false, erro: conexao.error });
+      res.status(502).json({
+        error: {
+          code: 'smtp_error',
+          message: `O servidor de e-mail recusou a conexão: ${conexao.error}`,
+          details: { etapa: 'conexao' },
+        },
+      });
+      return;
+    }
+
+    const mensagem = mailer.testEmail({ name: req.admin.name });
+    const envio = await mailer.sendMail({ to: destino, ...mensagem });
+    await audit(req, 'settings.smtp_test', 'settings', null, { to: destino, ok: envio.sent, erro: envio.error || null });
+
+    if (!envio.sent) {
+      res.status(502).json({
+        error: {
+          code: 'smtp_error',
+          message: `O servidor de e-mail recusou a mensagem: ${envio.error || 'motivo não informado'}`,
+          details: { etapa: 'envio' },
+        },
+      });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      to: destino,
+      message: `E-mail de teste enviado para ${destino}. Confira a caixa de entrada e o spam.`,
+    });
   })
 );
 

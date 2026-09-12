@@ -9,7 +9,7 @@
 // =====================================================================
 import { api } from '../../core/api.js';
 import {
-  html, render, toast, qs, qsa, on,
+  html, render, toast, qs, qsa, on, setLoading,
   pageHeader, errorState, skeleton, badge, progressBar, alertBox,
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
@@ -153,6 +153,24 @@ function asaasSection() {
     </div>`;
 }
 
+/**
+ * Dispara o e-mail de teste e mostra o resultado sem rodeios.
+ *
+ * A hospedagem não dá terminal, então era impossível saber se o SMTP
+ * funcionava sem pedir uma recuperação de senha de verdade e torcer.
+ */
+async function enviarEmailDeTeste(button) {
+  setLoading(button, true);
+  try {
+    const res = await api.post('/api/admin/settings/smtp-test', {});
+    toast(res.message, { type: 'success', duration: 8000 });
+  } catch (err) {
+    toast(err.message || 'Não foi possível enviar o e-mail de teste.', { type: 'error', duration: 10000 });
+  } finally {
+    setLoading(button, false);
+  }
+}
+
 function smtpSection() {
   const smtp = (state.integrations && state.integrations.smtp) || {};
   return html`
@@ -171,11 +189,20 @@ function smtpSection() {
         <dd>${smtp.from || 'Não definido'}</dd>
       </dl>
       ${smtp.configured
-        ? ''
+        ? html`<div class="aset-integration-actions">
+            <button type="button" class="btn btn-secondary" data-action="smtp-test">
+              ${icon('send')}<span>Enviar e-mail de teste</span>
+            </button>
+            <span class="hint">Vai para o seu e-mail de administrador. Confira também o spam.</span>
+          </div>`
         : alertBox({
           type: 'warning',
           title: 'Sem SMTP configurado',
-          text: 'Os e-mails de recuperação de senha e de aulas particulares não são enviados; em desenvolvimento, o link aparece no console do servidor. Configure SMTP_HOST, SMTP_PORT, SMTP_USER e SMTP_PASS no servidor.',
+          text:
+            'Os e-mails de recuperação de senha e de aulas particulares não são enviados — quem esquecer a senha ' +
+            'não consegue voltar sozinho. Cadastre SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM nas ' +
+            'variáveis de ambiente da hospedagem e reinicie a aplicação. Serviços como o Brevo dão esses dados ' +
+            'prontos no plano gratuito.',
         })}
     </div>`;
 }
@@ -417,6 +444,7 @@ export default async function renderSettings(ctx) {
   on(ctx.el, 'click', '[data-action]', (event, target) => {
     const action = target.dataset.action;
     if (action === 'copy-webhook') copyWebhook();
+    else if (action === 'smtp-test') enviarEmailDeTeste(target);
     else if (action === 'reload' || action === 'retry') load();
   });
   on(ctx.el, 'click', '.aset-nav-item', (event, target) => {

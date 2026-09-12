@@ -45,7 +45,7 @@ que **já está pronto e entregue**.
 |------|---------|
 | O que é | Um servidor SMTP autenticado para a plataforma enviar mensagens. |
 | Por que | Recuperação de senha e avisos ao aluno. |
-| Opções | O SMTP do e-mail profissional do domínio (Google Workspace, Zoho, Titan), ou um serviço de envio como Brevo, SendGrid, Mailgun ou Amazon SES. |
+| Opção escolhida | **Brevo** ([brevo.com](https://www.brevo.com/)), plano gratuito: 300 e-mails por dia, sem cartão. O passo a passo está em `docs/DEPLOY.md`, seção 12. |
 | O que enviar | Servidor, porta, usuário e senha, e o endereço remetente (sugestão: `no-reply@focoelite.com.br`). |
 | Importante | Configurar SPF e DKIM no DNS. Sem isso, o e-mail de recuperação cai no spam. |
 | Se faltar | O aluno que esquecer a senha não consegue recuperá-la sozinho — só com intervenção pelo painel. |

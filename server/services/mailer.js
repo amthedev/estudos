@@ -149,4 +149,50 @@ function passwordResetEmail({ name, link, brandName = config.brandName, expiresM
   return { subject, html: layout({ brandName, title: subject, bodyHtml, footerText }), text, link };
 }
 
-module.exports = { sendMail, passwordResetEmail, isConfigured, smtpStatus, outbox, extractLink };
+/** Mensagem de teste do painel: confirma que o SMTP entrega de verdade. */
+function testEmail({ name }) {
+  const quando = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const text = [
+    `Olá, ${name || 'tudo certo'}!`,
+    '',
+    'Este é um e-mail de teste do Foco de Elite. Se ele chegou, o envio está funcionando:',
+    'a recuperação de senha e os avisos de agendamento vão sair normalmente.',
+    '',
+    `Enviado em ${quando}.`,
+  ].join('\n');
+
+  return {
+    subject: 'Teste de envio — Foco de Elite',
+    text,
+    html: `<p>Olá, ${name || 'tudo certo'}!</p>
+<p>Este é um e-mail de teste do Foco de Elite. Se ele chegou, o envio está funcionando:
+a recuperação de senha e os avisos de agendamento vão sair normalmente.</p>
+<p style="color:#94A3B8;font-size:13px">Enviado em ${quando}.</p>`,
+  };
+}
+
+/**
+ * Confere se o servidor SMTP aceita a conexão e as credenciais, sem enviar nada.
+ * Separa "credencial errada" de "mensagem recusada", que são problemas
+ * diferentes e com soluções diferentes.
+ */
+async function verifyTransport() {
+  if (!isConfigured()) return { ok: false, error: 'SMTP não configurado.' };
+  try {
+    await getTransport().verify();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+}
+
+module.exports = {
+  sendMail,
+  passwordResetEmail,
+  testEmail,
+  verifyTransport,
+  isConfigured,
+  smtpStatus,
+  outbox,
+  extractLink,
+};

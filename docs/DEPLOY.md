@@ -795,17 +795,38 @@ geração de temas informam que a IA está indisponível no momento.
 
 ## 12. SMTP
 
-O e-mail é usado para a recuperação de senha e para avisos da plataforma. Qualquer provedor SMTP
-serve; os mais comuns são Amazon SES, Brevo, SendGrid, Mailgun ou o SMTP autenticado do e-mail
-profissional do domínio.
+O e-mail é usado para a recuperação de senha e para os avisos de aula particular. Sem ele, o aluno
+que esquecer a senha **não consegue voltar sozinho** — só com alguém intervindo pelo painel.
+
+Qualquer provedor SMTP serve. A escolha do projeto é o **Brevo**: o plano gratuito dá 300 e-mails por
+dia, não pede cartão, e é o único que funciona antes de o domínio estar apontado.
+
+### Brevo, passo a passo
+
+1. Crie a conta em [brevo.com](https://www.brevo.com/) e confirme o e-mail.
+2. Vá em **SMTP & API → SMTP**. A tela mostra o servidor, a porta, o login e um botão para gerar a
+   chave SMTP. A chave aparece uma vez só — copie antes de fechar.
+3. Em **Senders** (remetentes), cadastre o endereço que vai no `SMTP_FROM` e confirme pelo link que o
+   Brevo envia. Enquanto o domínio não estiver apontado, use um e-mail seu; depois troque para
+   `no-reply@focoelite.com.br`.
+4. Cadastre as variáveis na hospedagem e **reinicie a aplicação** — variável só vale no restart.
 
 ```ini
-SMTP_HOST=smtp.seuprovedor.com
+SMTP_HOST=smtp-relay.brevo.com
 SMTP_PORT=587
-SMTP_USER=no-reply@focoelite.com.br
-SMTP_PASS=<senha ou chave de API>
+SMTP_USER=<o login que o Brevo mostra>
+SMTP_PASS=<a chave SMTP gerada>
 SMTP_FROM="Foco de Elite <no-reply@focoelite.com.br>"
 ```
+
+### Conferir se funcionou
+
+No painel, em **Configurações → E-mail**, o botão **Enviar e-mail de teste** dispara uma mensagem
+para o seu endereço de administrador e diz o que aconteceu. Os dois erros possíveis pedem ações
+diferentes, e a mensagem separa um do outro:
+
+* **"recusou a conexão"** — usuário ou chave errados nas variáveis da hospedagem.
+* **"recusou a mensagem"** — no Brevo, quase sempre remetente não verificado (passo 3).
 
 * Porta **587** usa STARTTLS (o padrão). Porta **465** exige `SMTP_SECURE=true`.
 * O remetente precisa ser um endereço do domínio, autorizado por **SPF** e **DKIM** (registros
