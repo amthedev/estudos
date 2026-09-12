@@ -14,10 +14,16 @@ const assert = require('node:assert/strict');
 const { createTestContext } = require('./helpers');
 
 /** Data em AAAA-MM-DD deslocada em dias a partir de hoje. */
+/**
+ * Data em 'AAAA-MM-DD' deslocada em dias, no MESMO fuso que o servidor usa.
+ *
+ * toISOString() devolve a data em UTC: depois das 21h em Brasília o dia já
+ * virou lá, e o teste pedia 7 dias mas gravava 8 — passava de manhã e falhava
+ * à noite.
+ */
 function isoInDays(days) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  const dates = require('../server/utils/dates');
+  return dates.addDays(dates.todayISO(), days);
 }
 
 describe('Editais', () => {

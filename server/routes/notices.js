@@ -16,6 +16,7 @@ const db = require('../db/pool');
 const { validate, z } = require('../middleware/validate');
 const { AppError, wrap } = require('../middleware/errors');
 const { optionalUser } = require('../middleware/auth');
+const dates = require('../utils/dates');
 
 const SELECT_NOTICE = `
   SELECT n.id, n.exam_id, n.year, n.title, n.status, n.board, n.pdf_url, n.external_url, n.summary,
@@ -27,12 +28,19 @@ const SELECT_NOTICE = `
    WHERE n.status IN ('published', 'archived') AND e.active`;
 
 /** Dias que faltam para uma data, ou null quando a data não existe ou já passou. */
+/**
+ * Dias de calendário até a data, no fuso de São Paulo.
+ *
+ * Comparar o instante de agora com a meia-noite do alvo dava um dia a mais
+ * durante a noite: às 21h de Recife, "daqui a 7 dias" virava 8, porque faltava
+ * menos de um dia inteiro para a meia-noite e o Math.ceil arredondava para
+ * cima. O aluno via o prazo do edital errado todas as noites. A conta certa é
+ * entre datas, não entre instantes.
+ */
 function daysUntil(date) {
   if (!date) return null;
-  const target = new Date(`${date}T00:00:00-03:00`);
-  const today = new Date();
-  const diff = Math.ceil((target - today) / 86400000);
-  return diff >= 0 ? diff : null;
+  const diff = dates.diffDays(dates.todayISO(), date);
+  return diff !== null && diff >= 0 ? diff : null;
 }
 
 /** Acrescenta a contagem regressiva das datas que o aluno acompanha. */
