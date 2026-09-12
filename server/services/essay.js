@@ -595,6 +595,10 @@ async function generateTheme(examId, { userId = null } = {}) {
     model,
     temperature: 0.9,
     maxTokens: 4500,
+    // O segundo teto só é usado se o provedor cortar o primeiro JSON: um tema
+    // com três textos motivadores longos ainda pode esbarrar em 4500, e o
+    // professor não deve receber erro por causa disso.
+    retryMaxTokens: 9000,
     userId,
     feature: 'essay_theme',
   });
