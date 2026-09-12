@@ -803,22 +803,55 @@ não, usa o SMTP. Nenhuma das duas exige mudança no código.
 
 ### Qual usar
 
-| | Exige domínio próprio? | Grátis | Quando usar |
+O Resend **só envia de um domínio verificado no painel dele** — a verificação é por registro de DNS,
+então exige ser dono do domínio raiz. Subdomínio funciona (e é o recomendado), mas continua
+dependendo do domínio raiz ser seu.
+
+Enquanto `focoelite.com.br` não existir, há dois caminhos:
+
+| | Remetente | Grátis | Observação |
 |---|---|---|---|
-| **Brevo** (SMTP) | Não | 300/dia | **Agora.** Funciona com um e-mail comum como remetente. |
-| **Resend** (API) | **Sim** | 3.000/mês | Depois, quando `focoelite.com.br` estiver apontado. |
+| **Resend** com outro domínio seu | `no-reply@mail.<seu-dominio>` | 3.000/mês | Em uso hoje. O nome de exibição mostra "Foco de Elite". |
+| **Brevo** por SMTP | um e-mail comum verificado | 300/dia | Alternativa sem domínio nenhum. |
 
-O Resend **só envia de um domínio verificado no painel dele** — não existe o atalho de usar um
-endereço pessoal. Como registrar e propagar um domínio leva tempo, ele não serve para destravar a
-plataforma hoje. O Brevo serve: aceita remetente comum, e depois é só trocar.
+### O arranjo atual (provisório)
 
-### Brevo, passo a passo (o caminho de agora)
+O envio sai de um subdomínio de **`perto-de-vencer.com`**, que é um domínio do desenvolvedor, porque
+`focoelite.com.br` ainda não foi registrado.
 
-1. Crie a conta em [brevo.com](https://www.brevo.com/) e confirme o e-mail.
-2. Em **Senders**, cadastre o endereço que vai no `SMTP_FROM` — pode ser um Gmail seu — e confirme
-   pelo link que o Brevo envia.
-3. Em **SMTP & API → SMTP**, copie o login e gere a chave SMTP. Ela aparece uma vez só.
-4. Cadastre as variáveis na hospedagem e **reinicie a aplicação**.
+```ini
+RESEND_API_KEY=re_...
+SMTP_FROM="Foco de Elite <nao-responda@mail.perto-de-vencer.com>"
+```
+
+O que o aluno vê na caixa de entrada é o **nome de exibição** — "Foco de Elite" — e não o domínio,
+que só aparece se ele expandir o remetente.
+
+> **Isto é uma ponte, não a configuração final.** Um aluno que olhe o endereço vai ver um domínio
+> que não tem relação com a plataforma, e isso gera desconfiança justamente no e-mail de recuperação
+> de senha, que já é alvo comum de golpe. Registrar `focoelite.com.br` resolve o e-mail, o endereço
+> do site e a marca de uma vez — é item do checklist do cliente.
+
+Use um **subdomínio** (`mail.perto-de-vencer.com`), não o domínio raiz: separa a reputação de envio
+do outro projeto e fica fácil de descartar depois.
+
+### Quando `focoelite.com.br` existir
+
+1. Em **Domains**, no Resend, adicione o domínio (ou `mail.focoelite.com.br`) e cadastre os registros
+   de DNS que ele mostrar.
+2. Espere virar **Verified**.
+3. Troque uma variável na hospedagem e reinicie:
+
+```ini
+SMTP_FROM="Foco de Elite <no-reply@focoelite.com.br>"
+```
+
+A `RESEND_API_KEY` continua a mesma. Não há nada a mudar no código.
+
+### Alternativa sem domínio nenhum: Brevo por SMTP
+
+Deixe `RESEND_API_KEY` vazia e cadastre o SMTP. O Brevo aceita um e-mail comum como remetente, basta
+verificá-lo em **Senders**:
 
 ```ini
 SMTP_HOST=smtp-relay.brevo.com
@@ -828,22 +861,7 @@ SMTP_PASS=<a chave SMTP gerada>
 SMTP_FROM="Foco de Elite <seu-email-verificado>"
 ```
 
-Sem domínio autenticado o e-mail sai, mas tem mais chance de cair no spam — Gmail e Yahoo exigem
-autenticação desde 2024. Para recuperação de senha em baixo volume isso é aceitável no começo;
-quando o domínio existir, autentique-o no Brevo ou troque para o Resend.
-
-### Resend, quando o domínio estiver pronto (o caminho definitivo)
-
-1. Em **Domains**, adicione `focoelite.com.br` e cadastre os registros de DNS que ele mostrar.
-2. Espere virar **Verified**.
-3. Em **API Keys**, crie a chave — aparece uma vez só.
-4. Cadastre na hospedagem e reinicie. A partir daí o Resend passa a ser usado, e as variáveis de
-   SMTP podem ser apagadas.
-
-```ini
-RESEND_API_KEY=re_...
-SMTP_FROM="Foco de Elite <no-reply@focoelite.com.br>"
-```
+Havendo as duas configurações, o Resend é o usado.
 
 ### Conferir se funcionou
 

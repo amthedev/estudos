@@ -45,8 +45,10 @@ que **já está pronto e entregue**.
 |------|---------|
 | O que é | Um servidor SMTP autenticado para a plataforma enviar mensagens. |
 | Por que | Recuperação de senha e avisos ao aluno. |
-| Para começar | **Brevo** ([brevo.com](https://www.brevo.com/)), plano gratuito: 300 e-mails por dia. Aceita um e-mail comum como remetente, então funciona antes do domínio existir. |
-| Depois do domínio | **Resend** ([resend.com](https://resend.com/)), 3.000 por mês, enviando como `no-reply@focoelite.com.br`. Exige o domínio verificado. A troca é só de variável, sem mexer no código. |
+| Serviço | **Resend** ([resend.com](https://resend.com/)), plano gratuito: 3.000 e-mails por mês. Já está configurado e funcionando. |
+| Situação hoje | O envio sai de um domínio provisório do desenvolvedor, porque `focoelite.com.br` ainda não foi registrado. O aluno vê "Foco de Elite" como remetente, mas o endereço não é da plataforma. |
+| O que muda com o domínio | Assim que `focoelite.com.br` for registrado e verificado no Resend, o remetente passa a ser `no-reply@focoelite.com.br`. É a troca de uma variável, sem mexer no código. |
+| Por que importa | E-mail de recuperação de senha vindo de um domínio sem relação com a plataforma gera desconfiança — e é justamente o tipo de mensagem que os golpes imitam. |
 | Passo a passo | `docs/DEPLOY.md`, seção 12. |
 | O que enviar | Servidor, porta, usuário e senha, e o endereço remetente (sugestão: `no-reply@focoelite.com.br`). |
 | Importante | Configurar SPF e DKIM no DNS. Sem isso, o e-mail de recuperação cai no spam. |
