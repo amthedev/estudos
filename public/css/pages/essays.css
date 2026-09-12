@@ -362,9 +362,14 @@
   color: var(--primary-2);
   cursor: pointer;
   list-style: none;
+  transition: color var(--t-fast), background var(--t-fast);
 }
 .ess-proposal > summary::-webkit-details-marker {
   display: none;
+}
+.ess-proposal > summary:hover {
+  color: var(--text);
+  background: var(--card-2);
 }
 .ess-proposal-body {
   padding: 0 var(--s-5) var(--s-4);
@@ -374,21 +379,46 @@
 .ess-editor-body {
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
-  padding: var(--s-6);
+  padding: var(--s-8) var(--s-6);
   background: var(--bg-2);
 }
-.ess-paper {
+.ess-paper-shell {
   --essay-rule-height: 32px;
+  position: relative;
+  width: min(100%, 940px);
+  margin-inline: auto;
+  padding-left: 22px;
+  scroll-margin-top: calc(var(--topbar-h) + var(--s-4));
+}
+.ess-paper-shell::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 94px;
+  bottom: 64px;
+  left: 9px;
+  width: 38px;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse at center,
+      transparent 0 6px,
+      var(--gold-2) 6px 8px,
+      var(--gold) 8px 10px,
+      transparent 10px
+    ) center top / 38px var(--essay-rule-height) repeat-y;
+}
+.ess-paper {
+  position: relative;
   overflow: hidden;
-  border: 1px solid var(--border-2);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--paper-muted);
+  border-radius: var(--radius-xs);
   background: var(--paper);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
 }
 .ess-paper-head {
-  min-height: 44px;
-  padding: 0 var(--s-4);
+  min-height: 76px;
+  padding: var(--s-3) var(--s-6) var(--s-3) var(--s-8);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -396,24 +426,78 @@
   border-bottom: 1px solid var(--paper-line);
   background: var(--paper-2);
   color: var(--paper-muted);
+}
+.ess-paper-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ess-paper-brand img {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.ess-paper-brand > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ess-paper-brand small {
+  color: var(--paper-muted);
   font-family: var(--font-label);
-  font-size: var(--fs-xs);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.ess-paper-brand strong {
+  color: var(--paper-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  line-height: 1.35;
+}
+.ess-paper-meta {
+  display: flex;
+  align-items: center;
+  color: var(--paper-muted);
+  font-family: var(--font-label);
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+.ess-paper-meta span + span {
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--paper-line);
 }
 .ess-paper-writing {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  min-height: calc(var(--essay-line-count, 30) * var(--essay-rule-height) + 40px);
+  grid-template-columns: 60px minmax(0, 1fr);
+  min-height: calc(var(--essay-line-count, 30) * var(--essay-rule-height) + 36px);
   transition: box-shadow var(--t-fast);
 }
 .ess-paper-writing:focus-within {
-  box-shadow: inset 0 0 0 2px var(--primary);
+  box-shadow: inset 0 0 0 2px var(--primary-2);
 }
 .ess-paper-numbers {
-  padding-top: 20px;
+  padding-top: 18px;
   border-right: 1px solid var(--paper-margin);
+  box-shadow: 3px 0 0 var(--paper-margin);
   background: var(--paper-2);
+  background-image:
+    radial-gradient(
+      circle at 9px center,
+      var(--paper) 0 4px,
+      var(--paper-muted) 4px 5px,
+      transparent 5px
+    );
+  background-position: 0 18px;
+  background-size: 100% var(--essay-rule-height);
+  background-repeat: repeat-y;
   color: var(--paper-muted);
   font-family: var(--font-data);
   font-size: 10px;
@@ -423,13 +507,14 @@
 .ess-paper-numbers span {
   display: block;
   height: var(--essay-rule-height);
+  padding-left: 10px;
   line-height: var(--essay-rule-height);
 }
 .ess-textarea {
   width: 100%;
-  min-height: calc(var(--essay-line-count, 30) * var(--essay-rule-height) + 40px);
+  min-height: calc(var(--essay-line-count, 30) * var(--essay-rule-height) + 36px);
   margin: 0;
-  padding: 20px 28px;
+  padding: 18px 30px;
   border: 0;
   border-radius: 0;
   outline: 0;
@@ -443,14 +528,20 @@
     var(--paper-line) calc(var(--essay-rule-height) - 1px),
     var(--paper-line) var(--essay-rule-height)
   );
-  background-position: 0 20px;
+  background-position: 0 18px;
   line-height: var(--essay-rule-height);
   font-family: var(--font-reading);
-  font-size: var(--fs-md);
+  font-size: 16px;
   resize: vertical;
 }
 .ess-textarea::placeholder {
   color: var(--paper-muted);
+}
+.ess-paper-footer {
+  min-height: 50px;
+  padding: 11px var(--s-6) 11px 60px;
+  border-top: 1px solid var(--paper-line);
+  background: var(--paper-2);
 }
 .ess-counter {
   display: flex;
@@ -460,9 +551,15 @@
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
+.ess-paper-footer .ess-counter {
+  color: var(--paper-muted);
+}
 .ess-counter strong {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+.ess-paper-footer .ess-counter strong {
+  color: var(--paper-text);
 }
 .ess-counter.is-ok strong {
   color: var(--success);
@@ -811,24 +908,57 @@
   .ess-actions-end .btn {
     flex: 1;
   }
-  .ess-textarea {
+  .ess-editor-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ess-editor-theme {
+    width: 100%;
+  }
+  .ess-save {
+    align-self: flex-start;
+  }
+  .ess-paper-shell {
+    --essay-rule-height: 30px;
+    padding-left: 0;
+  }
+  .ess-paper-shell::before {
+    display: none;
+  }
+  .ess-paper-head {
+    min-height: 68px;
+    padding: 10px var(--s-3);
+    flex-wrap: wrap;
+  }
+  .ess-paper-brand img {
+    width: 30px;
+    height: 30px;
+  }
+  .ess-paper-brand strong {
     font-size: var(--fs-base);
-    padding-inline: var(--s-4);
+  }
+  .ess-paper-meta {
+    font-size: 9px;
+  }
+  .ess-textarea {
+    font-size: 15px;
+    padding: 18px var(--s-3);
   }
   .ess-editor-body {
     padding: var(--s-3);
   }
-  .ess-paper {
-    --essay-rule-height: 30px;
-  }
   .ess-paper-writing {
-    grid-template-columns: 34px minmax(0, 1fr);
-  }
-  .ess-paper-head {
-    padding-inline: var(--s-3);
+    grid-template-columns: 42px minmax(0, 1fr);
   }
   .ess-paper-numbers {
     font-size: 9px;
+    background-image: none;
+  }
+  .ess-paper-numbers span {
+    padding-left: 0;
+  }
+  .ess-paper-footer {
+    padding: 10px var(--s-3);
   }
   .ess-counter-target {
     margin-left: 0;

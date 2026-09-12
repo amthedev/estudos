@@ -61,6 +61,11 @@ function currentTheme() {
   return state.themes.find((row) => row.id === state.themeId) || null;
 }
 
+function currentExamLabel() {
+  const exam = state.exams.find((row) => row.id === state.examId);
+  return exam ? exam.short_name || exam.name : 'Redação';
+}
+
 const aiAvailable = () => Boolean(state && state.aiStatus && state.aiStatus.available);
 
 function paperLineCount() {
@@ -308,7 +313,7 @@ function stepEditor() {
         </div>
         ${theme && (theme.prompt_text || theme.support_texts)
           ? html`
-            <details class="ess-proposal" open>
+            <details class="ess-proposal">
               <summary>${icon('file-text', { size: 15 })}<span>Ver a proposta e os textos motivadores</span></summary>
               <div class="ess-proposal-body">
                 ${theme.prompt_text ? html`<h4 class="ess-theme-sub">Proposta</h4><div class="prose prose-sm">${md(theme.prompt_text)}</div>` : ''}
@@ -318,20 +323,33 @@ function stepEditor() {
           : ''}
         <div class="card-body ess-editor-body">
           <label class="sr-only" for="ess-content">Texto da sua redação</label>
-          <div class="ess-paper" style="--essay-line-count:${lineCount}">
-            <div class="ess-paper-head">
-              <span>Folha de redação</span>
-              <span>${lineCount} linhas</span>
-            </div>
-            <div class="ess-paper-writing">
-              <div class="ess-paper-numbers" aria-hidden="true">
-                ${Array.from({ length: lineCount }, (_, index) => html`<span>${index + 1}</span>`)}
+          <div class="ess-paper-shell" style="--essay-line-count:${lineCount}">
+            <div class="ess-paper">
+              <div class="ess-paper-head">
+                <div class="ess-paper-brand">
+                  <img src="/assets/brand/foco-elite-favicon.png" alt="" width="34" height="34">
+                  <span>
+                    <small>Foco de Elite</small>
+                    <strong>Caderno de redação</strong>
+                  </span>
+                </div>
+                <div class="ess-paper-meta" aria-label="Informações da folha">
+                  <span>${currentExamLabel()}</span>
+                  <span>${lineCount} linhas</span>
+                </div>
               </div>
-              <textarea class="ess-textarea" id="ess-content" data-ess-content maxlength="${MAX_CONTENT_CHARS}"
-                        spellcheck="true" placeholder="Escreva sua redação aqui…">${state.content || ''}</textarea>
+              <div class="ess-paper-writing">
+                <div class="ess-paper-numbers" aria-hidden="true">
+                  ${Array.from({ length: lineCount }, (_, index) => html`<span>${index + 1}</span>`)}
+                </div>
+                <textarea class="ess-textarea" id="ess-content" data-ess-content maxlength="${MAX_CONTENT_CHARS}"
+                          spellcheck="true" placeholder="Escreva sua redação aqui…">${state.content || ''}</textarea>
+              </div>
+              <div class="ess-paper-footer">
+                ${counterBlock()}
+              </div>
             </div>
           </div>
-          ${counterBlock()}
         </div>
         <div class="card-footer ess-actions">
           <button type="button" class="btn btn-ghost" data-action="to-step-2">${icon('arrow-left')}<span>Trocar o tema</span></button>
@@ -563,6 +581,7 @@ async function saveDraft() {
 
 async function goToStep(step) {
   if (!state) return;
+  const previousStep = state.step;
   if (step === 2 && !state.examId) {
     toast('Escolha a prova para continuar.', { type: 'warning' });
     return;
@@ -592,6 +611,14 @@ async function goToStep(step) {
   }
   state.step = step;
   paint();
+  if (step === 3 && previousStep !== 3) {
+    const token = state.token;
+    requestAnimationFrame(() => {
+      if (!state || state.token !== token) return;
+      const paper = qs('.ess-paper-shell', state.el);
+      if (paper) paper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
   if (step === 2 && !state.themes.length && !state.loadingThemes && !state.themesError) loadThemes();
 }
 
