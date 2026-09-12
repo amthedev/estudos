@@ -816,12 +816,12 @@ Enquanto `focoelite.com.br` não existir, há dois caminhos:
 
 ### O arranjo atual (provisório)
 
-O envio sai de um subdomínio de **`perto-de-vencer.com`**, que é um domínio do desenvolvedor, porque
-`focoelite.com.br` ainda não foi registrado.
+O envio sai de **`perto-de-vencer.com`**, um domínio do desenvolvedor que já estava verificado no
+Resend, porque `focoelite.com.br` ainda não foi registrado.
 
 ```ini
 RESEND_API_KEY=re_...
-SMTP_FROM="Foco de Elite <nao-responda@mail.perto-de-vencer.com>"
+SMTP_FROM="Foco de Elite <nao-responda@perto-de-vencer.com>"
 ```
 
 O que o aluno vê na caixa de entrada é o **nome de exibição** — "Foco de Elite" — e não o domínio,
@@ -832,8 +832,9 @@ que só aparece se ele expandir o remetente.
 > de senha, que já é alvo comum de golpe. Registrar `focoelite.com.br` resolve o e-mail, o endereço
 > do site e a marca de uma vez — é item do checklist do cliente.
 
-Use um **subdomínio** (`mail.perto-de-vencer.com`), não o domínio raiz: separa a reputação de envio
-do outro projeto e fica fácil de descartar depois.
+Um subdomínio (`mail.perto-de-vencer.com`) separaria melhor a reputação de envio do outro projeto,
+mas exigiria cadastrar os registros de DNS e esperar a verificação. Como o arranjo é temporário e o
+volume é baixo, o domínio raiz já verificado resolve sem espera.
 
 ### Quando `focoelite.com.br` existir
 

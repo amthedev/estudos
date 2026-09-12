@@ -70,6 +70,36 @@ describe('Teste de envio de e-mail pelo painel', () => {
     assert.match(res.body.error.message, /Authentication failed/, 'o motivo do provedor tem que aparecer');
   });
 
+  it('domínio não verificado vira instrução, não só o erro cru', async () => {
+    // Foi o erro real ao configurar: o Resend nomeia o domínio, mas não diz o
+    // que fazer. A dica é o que transforma a mensagem em ação.
+    mailer.isConfigured = () => true;
+    mailer.verifyTransport = async () => ({ ok: true });
+    mailer.sendMail = async () => ({
+      sent: false,
+      error: 'The mail.exemplo.com domain is not verified. Please, add and verify your domain',
+    });
+
+    const res = await admin.agent.post('/api/admin/settings/smtp-test', {});
+    assert.equal(res.status, 502);
+    assert.match(res.body.error.message, /mail\.exemplo\.com/, 'mantém o domínio que o provedor citou');
+    assert.match(res.body.error.message, /SMTP_FROM/, 'e diz onde mexer');
+  });
+
+  it('chave sem permissão para o domínio também vira instrução', async () => {
+    mailer.isConfigured = () => true;
+    mailer.verifyTransport = async () => ({ ok: true });
+    mailer.sendMail = async () => ({
+      sent: false,
+      error: 'This API key is not authorized to send emails from mail.exemplo.com',
+    });
+
+    const res = await admin.agent.post('/api/admin/settings/smtp-test', {});
+    assert.equal(res.status, 502);
+    assert.match(res.body.error.message, /permissão/i);
+    assert.match(res.body.error.message, /acesso total/i);
+  });
+
   it('mensagem recusada aponta o envio, não a conexão', async () => {
     // Conexão boa, mensagem rejeitada: no Resend isso costuma ser domínio
     // ainda não verificado, que se resolve no painel do provedor.

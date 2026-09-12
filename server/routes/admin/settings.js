@@ -169,10 +169,20 @@ router.post(
     await audit(req, 'settings.smtp_test', 'settings', null, { to: destino, ok: envio.sent, erro: envio.error || null });
 
     if (!envio.sent) {
+      // Dois tropeços respondem por quase toda recusa de envio, e os dois têm
+      // conserto óbvio — desde que a pessoa saiba qual é. A explicação do
+      // provedor vem junto, porque é ela que nomeia o domínio ou a chave.
+      const motivo = envio.error || 'motivo não informado';
+      const dica = /not verified|verify your domain/i.test(motivo)
+        ? ' O remetente do SMTP_FROM precisa ser de um domínio verificado no provedor.'
+        : /not authorized|unauthorized/i.test(motivo)
+          ? ' A chave não tem permissão para esse domínio: gere uma com acesso total ou apontada para ele.'
+          : '';
+
       res.status(502).json({
         error: {
           code: 'smtp_error',
-          message: `O servidor de e-mail recusou a mensagem: ${envio.error || 'motivo não informado'}`,
+          message: `O servidor de e-mail recusou a mensagem: ${motivo}${dica}`,
           details: { etapa: 'envio' },
         },
       });
