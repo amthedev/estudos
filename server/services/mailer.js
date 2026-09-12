@@ -13,13 +13,27 @@
  */
 const nodemailer = require('nodemailer');
 const config = require('../config');
+const resend = require('./resend');
 
 const outbox = [];
 const OUTBOX_LIMIT = 50;
 let transport = null;
 
+/**
+ * Provedor em uso: 'resend', 'smtp' ou null.
+ *
+ * O Resend tem prioridade por ser a escolha do projeto. O SMTP continua
+ * valendo para quem preferir outro serviço — nenhuma das duas formas exige
+ * mudança no resto do código, que só chama sendMail.
+ */
+function provider() {
+  if (resend.isConfigured()) return 'resend';
+  if (config.smtp.enabled) return 'smtp';
+  return null;
+}
+
 function isConfigured() {
-  return config.smtp.enabled;
+  return provider() !== null;
 }
 
 function getTransport() {
@@ -50,8 +64,20 @@ function escapeHtml(value) {
 
 /** Status para o painel (sem expor segredos). */
 function smtpStatus() {
+  const atual = provider();
+  if (atual === 'resend') {
+    return {
+      configured: true,
+      provider: 'resend',
+      provider_label: 'Resend',
+      key_last4: resend.status().key_last4,
+      from: config.smtp.from,
+    };
+  }
   return {
-    configured: isConfigured(),
+    configured: atual === 'smtp',
+    provider: atual,
+    provider_label: atual === 'smtp' ? 'SMTP' : null,
     host: config.smtp.host,
     port: config.smtp.port,
     secure: config.smtp.secure,
@@ -91,6 +117,10 @@ async function sendMail({ to, subject, html, text, link }) {
   }
 
   try {
+    if (provider() === 'resend') {
+      const enviado = await resend.send({ from: config.smtp.from, to, subject, text, html });
+      return { sent: true, preview: null, messageId: enviado.id || null };
+    }
     const info = await getTransport().sendMail({ from: config.smtp.from, to, subject, text, html });
     return { sent: true, preview: null, messageId: info.messageId };
   } catch (err) {
@@ -177,7 +207,11 @@ a recuperação de senha e os avisos de agendamento vão sair normalmente.</p>
  * diferentes e com soluções diferentes.
  */
 async function verifyTransport() {
-  if (!isConfigured()) return { ok: false, error: 'SMTP não configurado.' };
+  const atual = provider();
+  if (!atual) return { ok: false, error: 'Nenhum provedor de e-mail configurado.' };
+  // O Resend não tem endpoint de verificação: a credencial só é conferida no
+  // envio. Por isso, ali o teste real é a própria mensagem de teste.
+  if (atual === 'resend') return resend.verify();
   try {
     await getTransport().verify();
     return { ok: true };
@@ -187,6 +221,7 @@ async function verifyTransport() {
 }
 
 module.exports = {
+  provider,
   sendMail,
   passwordResetEmail,
   testEmail,

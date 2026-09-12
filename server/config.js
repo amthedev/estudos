@@ -91,6 +91,8 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_SECURE: boolFromEnv(undefined).optional(),
   SMTP_FROM: z.string().default('Foco Elite <no-reply@focoelite.com.br>'),
+  // Resend: envio por API, sem SMTP. Quando a chave existe, é o provedor usado.
+  RESEND_API_KEY: z.string().optional(),
   SQUARECLOUD_API_KEY: z.string().optional(),
   STORAGE_PROVIDER: z.string().optional(),
 
@@ -347,6 +349,14 @@ const config = deepFreeze({
     essayModel: env.OPENROUTER_ESSAY_MODEL,
     monthlyTokenLimit: env.OPENROUTER_MONTHLY_TOKEN_LIMIT,
     enabled: Boolean(env.OPENROUTER_API_KEY),
+  },
+
+  // Provedor de e-mail. O Resend tem prioridade quando a chave está presente:
+  // é a escolha do projeto, e o SMTP fica como alternativa para quem preferir
+  // outro serviço sem mexer no código.
+  resend: {
+    apiKey: env.RESEND_API_KEY ?? null,
+    enabled: Boolean(env.RESEND_API_KEY),
   },
 
   smtp: {

@@ -5,12 +5,12 @@
  *
  *   NODE_ENV=test node --test tests/smtp-test.test.js
  *
- * A hospedagem não dá terminal, então não havia como saber se o SMTP estava
+ * A hospedagem não dá terminal, então não havia como saber se o envio estava
  * funcionando sem pedir uma recuperação de senha de verdade e torcer. Esta
- * rota confirma de dentro do painel.
+ * rota confirma de dentro do painel, valendo para Resend ou SMTP.
  *
- * O que não pode quebrar: aluno nenhum chega aqui, sem SMTP a mensagem diz o
- * que fazer em vez de falhar seco, e credencial recusada é distinguida de
+ * O que não pode quebrar: aluno nenhum chega aqui, sem provedor a mensagem diz
+ * o que fazer em vez de falhar seco, e credencial recusada é distinguida de
  * mensagem recusada — são problemas diferentes, com soluções diferentes.
  */
 const { describe, it, before, after, afterEach } = require('node:test');
@@ -18,7 +18,7 @@ const assert = require('node:assert/strict');
 const { createTestContext } = require('./helpers');
 const mailer = require('../server/services/mailer');
 
-describe('Teste de SMTP pelo painel', () => {
+describe('Teste de envio de e-mail pelo painel', () => {
   let ctx;
   let admin;
   let student;
@@ -48,11 +48,12 @@ describe('Teste de SMTP pelo painel', () => {
     assert.ok([401, 403].includes(res.status), `respondeu ${res.status} a um aluno`);
   });
 
-  it('sem SMTP configurado, explica o que cadastrar', async () => {
+  it('sem provedor configurado, explica o que cadastrar', async () => {
     mailer.isConfigured = () => false;
     const res = await admin.agent.post('/api/admin/settings/smtp-test', {});
     assert.equal(res.status, 400);
-    assert.match(res.body.error.message, /SMTP_HOST/);
+    assert.match(res.body.error.message, /RESEND_API_KEY/, 'nomeia a variável que falta');
+    assert.match(res.body.error.message, /domínio verificado/i, 'avisa da exigência do Resend');
     assert.match(res.body.error.message, /reinicie/i, 'variável só vale depois do restart');
   });
 
@@ -70,8 +71,8 @@ describe('Teste de SMTP pelo painel', () => {
   });
 
   it('mensagem recusada aponta o envio, não a conexão', async () => {
-    // Conexão boa, mensagem rejeitada: no Brevo isso costuma ser remetente
-    // não verificado, que se resolve no painel do provedor.
+    // Conexão boa, mensagem rejeitada: no Resend isso costuma ser domínio
+    // ainda não verificado, que se resolve no painel do provedor.
     mailer.isConfigured = () => true;
     mailer.verifyTransport = async () => ({ ok: true });
     mailer.sendMail = async () => ({ sent: false, error: 'Sender address not verified' });
@@ -83,7 +84,7 @@ describe('Teste de SMTP pelo painel', () => {
     assert.match(res.body.error.message, /not verified/);
   });
 
-  it('com SMTP funcionando, envia para o próprio administrador', async () => {
+  it('com o envio funcionando, manda para o próprio administrador', async () => {
     mailer.isConfigured = () => true;
     mailer.verifyTransport = async () => ({ ok: true });
     const enviados = [];

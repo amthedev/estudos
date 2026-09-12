@@ -176,15 +176,22 @@ function smtpSection() {
   return html`
     <div class="aset-integration">
       <div class="aset-integration-head">
-        ${smtp.configured ? badge('SMTP ativo', 'green', { icon: 'circle-check' }) : badge('SMTP não configurado', 'orange', { icon: 'triangle-alert' })}
+        ${smtp.configured
+          ? badge(`${smtp.provider_label || 'E-mail'} ativo`, 'green', { icon: 'circle-check' })
+          : badge('E-mail não configurado', 'orange', { icon: 'triangle-alert' })}
       </div>
       <dl class="kv aset-kv">
-        <dt>Servidor</dt>
-        <dd>${smtp.host ? `${smtp.host}:${smtp.port || ''}` : 'Não definido'}</dd>
-        <dt>Conexão segura</dt>
-        <dd>${smtp.secure ? 'Sim (TLS)' : 'Não'}</dd>
-        <dt>Usuário</dt>
-        <dd>${smtp.user || 'Não definido'}</dd>
+        ${smtp.provider === 'resend'
+          ? html`<dt>Provedor</dt>
+              <dd>Resend (API)</dd>
+              <dt>Chave</dt>
+              <dd>•••• ${smtp.key_last4 || '----'}</dd>`
+          : html`<dt>Servidor</dt>
+              <dd>${smtp.host ? `${smtp.host}:${smtp.port || ''}` : 'Não definido'}</dd>
+              <dt>Conexão segura</dt>
+              <dd>${smtp.secure ? 'Sim (TLS)' : 'Não'}</dd>
+              <dt>Usuário</dt>
+              <dd>${smtp.user || 'Não definido'}</dd>`}
         <dt>Remetente</dt>
         <dd>${smtp.from || 'Não definido'}</dd>
       </dl>
@@ -197,12 +204,12 @@ function smtpSection() {
           </div>`
         : alertBox({
           type: 'warning',
-          title: 'Sem SMTP configurado',
+          title: 'Sem provedor de e-mail',
           text:
             'Os e-mails de recuperação de senha e de aulas particulares não são enviados — quem esquecer a senha ' +
-            'não consegue voltar sozinho. Cadastre SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM nas ' +
-            'variáveis de ambiente da hospedagem e reinicie a aplicação. Serviços como o Brevo dão esses dados ' +
-            'prontos no plano gratuito.',
+            'não consegue voltar sozinho. Cadastre RESEND_API_KEY e SMTP_FROM nas variáveis de ambiente da ' +
+            'hospedagem e reinicie a aplicação. O endereço do remetente precisa ser de um domínio verificado ' +
+            'no painel do Resend.',
         })}
     </div>`;
 }

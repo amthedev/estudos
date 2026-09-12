@@ -138,8 +138,9 @@ router.post(
         error: {
           code: 'validation_error',
           message:
-            'SMTP não configurado. Cadastre SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM ' +
-            'nas variáveis de ambiente da hospedagem e reinicie a aplicação.',
+            'Nenhum provedor de e-mail configurado. Cadastre RESEND_API_KEY e SMTP_FROM nas variáveis ' +
+            'de ambiente da hospedagem e reinicie a aplicação. O endereço do SMTP_FROM precisa ser de ' +
+            'um domínio verificado no Resend.',
         },
       });
       return;
@@ -148,6 +149,8 @@ router.post(
     // A conexão é conferida antes do envio porque os dois erros pedem ações
     // diferentes: credencial recusada é dado errado no painel da hospedagem;
     // mensagem recusada costuma ser remetente não verificado no provedor.
+    // No Resend a credencial só é conferida no envio; no SMTP dá para checar
+    // a conexão antes. Em ambos os casos, o erro chega separado do de mensagem.
     const conexao = await mailer.verifyTransport();
     if (!conexao.ok) {
       await audit(req, 'settings.smtp_test', 'settings', null, { to: destino, ok: false, erro: conexao.error });

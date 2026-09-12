@@ -798,26 +798,45 @@ geração de temas informam que a IA está indisponível no momento.
 O e-mail é usado para a recuperação de senha e para os avisos de aula particular. Sem ele, o aluno
 que esquecer a senha **não consegue voltar sozinho** — só com alguém intervindo pelo painel.
 
-Qualquer provedor SMTP serve. A escolha do projeto é o **Brevo**: o plano gratuito dá 300 e-mails por
-dia, não pede cartão, e é o único que funciona antes de o domínio estar apontado.
+A escolha do projeto é o **Resend**: envia por API, o plano gratuito dá 3.000 e-mails por mês, e a
+configuração é uma variável só.
 
-### Brevo, passo a passo
+### Resend, passo a passo
 
-1. Crie a conta em [brevo.com](https://www.brevo.com/) e confirme o e-mail.
-2. Vá em **SMTP & API → SMTP**. A tela mostra o servidor, a porta, o login e um botão para gerar a
-   chave SMTP. A chave aparece uma vez só — copie antes de fechar.
-3. Em **Senders** (remetentes), cadastre o endereço que vai no `SMTP_FROM` e confirme pelo link que o
-   Brevo envia. Enquanto o domínio não estiver apontado, use um e-mail seu; depois troque para
-   `no-reply@focoelite.com.br`.
-4. Cadastre as variáveis na hospedagem e **reinicie a aplicação** — variável só vale no restart.
+1. Crie a conta em [resend.com](https://resend.com/).
+2. Em **Domains**, adicione `focoelite.com.br`. O Resend mostra os registros de DNS (SPF, DKIM e o
+   de verificação) para cadastrar no registrador do domínio.
+3. Espere a verificação virar **Verified**. Costuma levar de minutos a algumas horas, conforme a
+   propagação do DNS.
+4. Em **API Keys**, crie uma chave. Ela aparece uma vez só — copie antes de fechar.
+5. Cadastre as variáveis na hospedagem e **reinicie a aplicação** — variável só vale no restart.
 
 ```ini
-SMTP_HOST=smtp-relay.brevo.com
-SMTP_PORT=587
-SMTP_USER=<o login que o Brevo mostra>
-SMTP_PASS=<a chave SMTP gerada>
+RESEND_API_KEY=re_...
 SMTP_FROM="Foco de Elite <no-reply@focoelite.com.br>"
 ```
+
+> **O domínio precisa estar verificado.** O Resend recusa qualquer remetente de domínio que você não
+> comprovou ser seu — não existe o atalho de usar um e-mail pessoal. Enquanto o DNS de
+> `focoelite.com.br` não estiver apontado, o envio não funciona, e o erro será
+> *"The domain is not verified"*.
+
+### Alternativa: SMTP
+
+Quem preferir outro serviço não precisa mexer no código. Basta deixar `RESEND_API_KEY` vazia e
+cadastrar as variáveis de SMTP — qualquer provedor serve (Brevo, Amazon SES, Mailgun, ou o SMTP
+autenticado do e-mail profissional do domínio).
+
+```ini
+SMTP_HOST=smtp.seuprovedor.com
+SMTP_PORT=587
+SMTP_USER=no-reply@focoelite.com.br
+SMTP_PASS=<senha ou chave>
+SMTP_FROM="Foco de Elite <no-reply@focoelite.com.br>"
+```
+
+Porta **587** usa STARTTLS (o padrão). Porta **465** exige `SMTP_SECURE=true`. Havendo as duas
+configurações, o Resend é o usado.
 
 ### Conferir se funcionou
 
@@ -825,8 +844,9 @@ No painel, em **Configurações → E-mail**, o botão **Enviar e-mail de teste*
 para o seu endereço de administrador e diz o que aconteceu. Os dois erros possíveis pedem ações
 diferentes, e a mensagem separa um do outro:
 
-* **"recusou a conexão"** — usuário ou chave errados nas variáveis da hospedagem.
-* **"recusou a mensagem"** — no Brevo, quase sempre remetente não verificado (passo 3).
+* **"recusou a conexão"** — chave ou credenciais erradas nas variáveis da hospedagem.
+* **"recusou a mensagem"** — no Resend, quase sempre domínio ainda não verificado. A mensagem traz a
+  explicação do próprio provedor, que costuma dizer exatamente o que falta.
 
 * Porta **587** usa STARTTLS (o padrão). Porta **465** exige `SMTP_SECURE=true`.
 * O remetente precisa ser um endereço do domínio, autorizado por **SPF** e **DKIM** (registros
