@@ -746,7 +746,14 @@ O webhook é a fonte de verdade que libera o teste, confirma pagamentos e bloque
    | `SUBSCRIPTION_DELETED` | Cancela a renovação e preserva somente o período já pago. |
    | `PAYMENT_CONFIRMED` / `PAYMENT_RECEIVED` | Confirma a cobrança e libera o período contratado. |
    | `PAYMENT_OVERDUE` | Marca a assinatura como atrasada. |
-   | `PAYMENT_REFUNDED` / `PAYMENT_DELETED` | Revoga ou reavalia o acesso da cobrança. |
+   | `PAYMENT_REFUNDED` / `PAYMENT_PARTIALLY_REFUNDED` / `PAYMENT_DELETED` | Revoga ou reavalia o acesso da cobrança. |
+   | `PAYMENT_CREDIT_CARD_CAPTURE_REFUSED` | Cartão recusado na renovação: avisa que não vai renovar, mas mantém o período já pago. |
+   | `PAYMENT_CHARGEBACK_REQUESTED` / `PAYMENT_AWAITING_CHARGEBACK_REVERSAL` / `PAYMENT_CHARGEBACK_DISPUTE` | Contestação: encerra o acesso na hora, porque o dinheiro volta para o aluno. |
+   | `SUBSCRIPTION_INACTIVATED` | Assinatura inativada no provedor: preserva o período pago e não renova. |
+
+   Marque **todos** esses eventos. Deixar de marcar um que a plataforma trata quebra o fluxo em
+   silêncio: o cartão recusado, por exemplo, só apareceria como atraso na data do vencimento, e a
+   contestação não derrubaria o acesso de quem pediu o estorno.
 
 O token chega no cabeçalho `asaas-access-token`. Todos os eventos são registrados por ID antes de
 alterar a assinatura, então uma reentrega do Asaas não duplica acesso nem pagamento.

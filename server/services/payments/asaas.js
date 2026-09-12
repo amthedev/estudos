@@ -38,8 +38,19 @@ const HANDLED_EVENTS = new Set([
   'PAYMENT_RECEIVED',
   'PAYMENT_OVERDUE',
   'PAYMENT_REFUNDED',
+  'PAYMENT_PARTIALLY_REFUNDED',
   'PAYMENT_DELETED',
   'SUBSCRIPTION_DELETED',
+  'SUBSCRIPTION_INACTIVATED',
+  // Cartão recusado na renovação. Sem este evento, uma assinatura que parou de
+  // pagar continuava liberada até o vencimento do período, porque o
+  // PAYMENT_OVERDUE só chega na data do vencimento.
+  'PAYMENT_CREDIT_CARD_CAPTURE_REFUSED',
+  // Contestação de cobrança. O dinheiro volta para o aluno; manter o acesso
+  // seria dar o produto de graça a quem pediu o estorno.
+  'PAYMENT_CHARGEBACK_REQUESTED',
+  'PAYMENT_AWAITING_CHARGEBACK_REVERSAL',
+  'PAYMENT_CHARGEBACK_DISPUTE',
 ]);
 
 /** billingType do Asaas → forma de pagamento gravada em subscriptions.payment_method. */

@@ -108,7 +108,16 @@ function accessBlock() {
                 : ''}
             </p>
             ${subscription.cancel_at_period_end
-              ? html`<p class="text-2 m-0 mt-2">O cancelamento já está agendado: o acesso continua até o fim do período pago.</p>`
+              ? subscription.payment_method === 'pix'
+                ? html`<p class="text-2 m-0 mt-2">
+                    Pagamento único: o acesso vale até a data acima e não renova sozinho. Para continuar,
+                    faça um novo pagamento antes do fim.
+                  </p>`
+                : html`<p class="text-2 m-0 mt-2">
+                    Esta assinatura não vai renovar: o acesso continua até o fim do período já pago. Se não
+                    foi você quem cancelou, pode ter sido o cartão recusado — confira as faturas ou assine
+                    novamente abaixo.
+                  </p>`
               : ''}
           </div>
           <div class="sub-current-actions">

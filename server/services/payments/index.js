@@ -569,12 +569,58 @@ async function applyAsaasEvent(tx, event) {
       patch.status = 'past_due';
       break;
     }
-    case 'PAYMENT_REFUNDED': {
+    case 'PAYMENT_REFUNDED':
+    case 'PAYMENT_PARTIALLY_REFUNDED': {
       if (!current) return { skipped: 'assinatura desconhecida' };
       patch.status = 'canceled';
       patch.canceled_at = now;
       patch.current_period_end = now; // devolvido o dinheiro, encerra o acesso
       patch.cancel_at_period_end = false;
+      break;
+    }
+    case 'PAYMENT_CHARGEBACK_REQUESTED':
+    case 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL':
+    case 'PAYMENT_CHARGEBACK_DISPUTE': {
+      // Contestação: o dinheiro volta para o aluno. Manter o acesso seria
+      // entregar o produto de graça a quem pediu o estorno — e a contestação
+      // costuma ser justamente de quem já usou. Se a disputa for ganha, o
+      // pagamento seguinte reabre o acesso normalmente.
+      if (!current) return { skipped: 'assinatura desconhecida' };
+      patch.status = 'canceled';
+      patch.canceled_at = now;
+      patch.current_period_end = now;
+      patch.cancel_at_period_end = false;
+      break;
+    }
+    case 'PAYMENT_CREDIT_CARD_CAPTURE_REFUSED': {
+      // Cartão recusado na cobrança. Diferente do PAYMENT_OVERDUE, que só
+      // chega na data do vencimento: aqui a falha é imediata, e o aluno
+      // precisa saber para trocar o cartão antes de perder o acesso.
+      //
+      // O período já pago é respeitado — quem pagou seis meses e teve a
+      // renovação recusada no quinto continua até o fim. O que muda é o
+      // status, que a tela usa para avisar.
+      if (!current) return { skipped: 'assinatura desconhecida' };
+      if (stillPaid) {
+        patch.status = current.status;
+        patch.cancel_at_period_end = true;
+        break;
+      }
+      patch.status = 'past_due';
+      break;
+    }
+    case 'SUBSCRIPTION_INACTIVATED': {
+      // Inativada no provedor: não gera mais cobrança. É o fim mais comum de
+      // uma assinatura, e o período pago continua valendo.
+      if (!current) return { skipped: 'assinatura desconhecida' };
+      patch.canceled_at = now;
+      if (stillPaid) {
+        patch.status = current.status;
+        patch.cancel_at_period_end = true;
+      } else {
+        patch.status = 'canceled';
+        patch.cancel_at_period_end = false;
+      }
       break;
     }
     case 'PAYMENT_DELETED': {

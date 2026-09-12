@@ -948,6 +948,78 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.equal(row.status, 'active'); // o aluno já pagou: o acesso segue até o fim do período
     });
 
+    it('contestação de cobrança encerra o acesso na hora', async () => {
+      // Chargeback é o dinheiro voltando para o aluno. Manter o acesso seria
+      // entregar o produto de graça a quem pediu o estorno — e quem contesta
+      // costuma já ter usado.
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_cb', reference }));
+      const antes = await student.agent.get('/api/billing/status');
+      assert.equal(antes.body.access.allowed, true);
+
+      const res = await sendWebhook(paymentEvent('PAYMENT_CHARGEBACK_REQUESTED', { id: 'evt_cb', reference }));
+      assert.equal(res.status, 200);
+
+      const row = await ctx.db.one('SELECT status, current_period_end FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'canceled');
+
+      const depois = await student.agent.get('/api/billing/status');
+      assert.equal(depois.body.access.allowed, false, 'o acesso cai junto com a contestação');
+    });
+
+    it('cartão recusado na renovação preserva o período já pago', async () => {
+      // O aluno pagou seis meses e a renovação falhou no quinto: ele continua
+      // até o fim do que comprou. O que muda é o aviso de que não vai renovar.
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_cc', reference }));
+
+      const res = await sendWebhook(
+        paymentEvent('PAYMENT_CREDIT_CARD_CAPTURE_REFUSED', { id: 'evt_recusado', reference })
+      );
+      assert.equal(res.status, 200);
+
+      const row = await ctx.db.one(
+        'SELECT status, cancel_at_period_end FROM subscriptions WHERE user_id = $1',
+        [student.user.id]
+      );
+      assert.equal(row.cancel_at_period_end, true, 'avisa que não renova');
+
+      const depois = await student.agent.get('/api/billing/status');
+      assert.equal(depois.body.access.allowed, true, 'o que já foi pago continua valendo');
+    });
+
+    it('cartão recusado sem período pago bloqueia o acesso', async () => {
+      // Sem nada pago, não há o que preservar: a recusa vale como atraso.
+      await ctx.db.query(
+        `INSERT INTO subscriptions (user_id, plan_id, provider, provider_subscription_id, status, current_period_end)
+         VALUES ($1, $2, 'asaas', 'sub_000001', 'active', now() - interval '1 day')`,
+        [student.user.id, plans.yearly]
+      );
+
+      await sendWebhook(paymentEvent('PAYMENT_CREDIT_CARD_CAPTURE_REFUSED', { id: 'evt_recusado_2', reference }));
+
+      const row = await ctx.db.one('SELECT status FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'past_due');
+
+      const depois = await student.agent.get('/api/billing/status');
+      assert.equal(depois.body.access.allowed, false);
+    });
+
+    it('assinatura inativada mantém o período pago e não renova', async () => {
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_inat', reference }));
+
+      const res = await sendWebhook(subscriptionEvent('SUBSCRIPTION_INACTIVATED', { id: 'evt_inativada' }));
+      assert.equal(res.status, 200);
+
+      const row = await ctx.db.one(
+        'SELECT cancel_at_period_end, canceled_at FROM subscriptions WHERE user_id = $1',
+        [student.user.id]
+      );
+      assert.equal(row.cancel_at_period_end, true);
+      assert.ok(row.canceled_at, 'registra quando foi encerrada');
+
+      const depois = await student.agent.get('/api/billing/status');
+      assert.equal(depois.body.access.allowed, true, 'o período pago continua');
+    });
+
     it('estorno encerra o acesso na hora', async () => {
       await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_5', reference }));
       await sendWebhook(paymentEvent('PAYMENT_REFUNDED', { id: 'evt_estorno_5', reference, overrides: { status: 'REFUNDED' } }));
