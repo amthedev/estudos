@@ -362,7 +362,7 @@ async function applyAsaasCheckoutEvent(tx, event) {
     `UPDATE payment_checkouts
         SET status = $2, updated_at = now()
       WHERE provider = 'asaas' AND provider_checkout_id = $1
-      RETURNING id, provider_checkout_id, status, user_id`,
+      RETURNING id, provider_checkout_id, status, user_id, plan_id, payment_method, provider_subscription_id`,
     [info.checkout_id, nextStatus]
   );
   if (!row) return { skipped: 'checkout desconhecido' };
@@ -376,6 +376,46 @@ async function applyAsaasCheckoutEvent(tx, event) {
       info.customer_id,
       row.user_id,
     ]);
+  }
+
+  // Pix é cobrança avulsa: não nasce assinatura no Asaas, e o evento de
+  // pagamento pode chegar sem o externalReference do checkout — o Asaas não
+  // promete copiar esse campo para a cobrança. Quando isso acontece, o
+  // CHECKOUT_PAID é a única notícia confiável de que o aluno pagou, e é dele
+  // que o acesso precisa sair. Foi exatamente o que falhou em produção: o Pix
+  // foi pago e o plano não liberou.
+  // Só o Pix: no cartão o checkout também chega aqui sem assinatura ainda,
+  // porque ela nasce no SUBSCRIPTION_CREATED que vem depois — e é lá que o
+  // teste de 24h e a recorrência são decididos.
+  if (event.type === 'CHECKOUT_PAID' && row.payment_method === 'pix') {
+    const plano = await tx.one('SELECT * FROM plans WHERE id = $1', [row.plan_id]);
+    if (plano) {
+      const agora = new Date();
+      const meses = asaas.accessMonths(plano, { first: true });
+      const assinatura = await applySubscription(tx, {
+        id: (
+          await tx.one(
+            `SELECT id FROM subscriptions
+              WHERE provider = 'asaas' AND user_id = $1 AND provider_subscription_id IS NULL
+              ORDER BY created_at DESC LIMIT 1`,
+            [row.user_id]
+          )
+        )?.id || null,
+        user_id: row.user_id,
+        plan_id: plano.id,
+        provider: 'asaas',
+        provider_customer_id: info.customer_id || null,
+        provider_subscription_id: null,
+        status: 'active',
+        current_period_start: agora,
+        current_period_end: asaas.addMonths(agora, meses),
+        last_payment_at: agora,
+        last_payment_id: `checkout:${row.provider_checkout_id}`,
+        payment_method: row.payment_method,
+        cancel_at_period_end: true, // pagamento único: não renova sozinho
+      });
+      return { ...row, subscription_id: assinatura.id, current_period_end: assinatura.current_period_end };
+    }
   }
   return row;
 }
@@ -393,8 +433,21 @@ async function applyAsaasEvent(tx, event) {
   // em si, conciliado pelo externalReference que o checkout gravou. Sem isso,
   // quem pagasse por Pix nunca receberia acesso.
   const avulso = !info.subscription_id;
-  if (avulso && !(info.payment && reference.user_id)) {
+  if (avulso && !info.payment) {
     return { skipped: 'evento sem assinatura vinculada' };
+  }
+
+  // O externalReference do checkout nem sempre acompanha a cobrança, então o
+  // aluno do Pix avulso também é procurado pelo cliente do Asaas — que o
+  // CHECKOUT_PAID já gravou no usuário.
+  const alunoAvulso = avulso
+    ? reference.user_id ||
+      (info.customer_id
+        ? (await tx.one('SELECT id FROM users WHERE provider_customer_id = $1', [info.customer_id]))?.id
+        : null)
+    : null;
+  if (avulso && !alunoAvulso) {
+    return { skipped: 'pagamento avulso sem aluno identificado' };
   }
 
   const current = avulso
@@ -403,7 +456,7 @@ async function applyAsaasEvent(tx, event) {
           WHERE provider = 'asaas' AND user_id = $1 AND provider_subscription_id IS NULL
           ORDER BY created_at DESC
           LIMIT 1`,
-        [reference.user_id]
+        [alunoAvulso]
       )
     : await tx.one(
         `SELECT * FROM subscriptions WHERE provider = 'asaas' AND provider_subscription_id = $1`,

@@ -161,7 +161,7 @@ function paymentEvent(type, { id, reference, subscription = 'sub_000001', custom
   };
 }
 
-function checkoutEvent(type, { id, checkout = 'checkout_000001', customer = 'cus_000001', reference = null }) {
+function checkoutEvent(type, { id, checkout = 'checkout_000001', customer = 'cus_000001', reference = null, pix = false }) {
   return {
     id,
     event: type,
@@ -171,8 +171,8 @@ function checkoutEvent(type, { id, checkout = 'checkout_000001', customer = 'cus
       customer,
       externalReference: reference,
       status: type === 'CHECKOUT_PAID' ? 'PAID' : type.replace('CHECKOUT_', ''),
-      billingTypes: ['CREDIT_CARD'],
-      chargeTypes: ['RECURRENT'],
+      billingTypes: [pix ? 'PIX' : 'CREDIT_CARD'],
+      chargeTypes: [pix ? 'DETACHED' : 'RECURRENT'],
     },
   };
 }
@@ -773,6 +773,47 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
 
       const depois = await student.agent.get('/api/billing/status');
       assert.equal(depois.body.access.allowed, true);
+    });
+
+    it('Pix pago libera o acesso pelo CHECKOUT_PAID, sem depender da cobrança', async () => {
+      // O caso real de produção: o aluno pagou no Pix e o plano não liberou.
+      // O acesso dependia do externalReference chegar NA COBRANÇA, e o Asaas
+      // não promete copiar esse campo do checkout para o pagamento. O
+      // CHECKOUT_PAID é a notícia confiável de que o Pix foi pago.
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, payment_method: 'pix' });
+
+      const antes = await student.agent.get('/api/billing/status');
+      assert.equal(antes.body.access.allowed, false);
+
+      const pago = await sendWebhook(checkoutEvent('CHECKOUT_PAID', { id: 'evt_pix_checkout', pix: true }));
+      assert.equal(pago.status, 200);
+
+      const row = await ctx.db.one('SELECT * FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.ok(row, 'o pagamento precisa gerar acesso');
+      assert.equal(row.status, 'active');
+      assert.equal(row.payment_method, 'pix');
+      assert.equal(row.provider_subscription_id, null);
+      assert.equal(row.cancel_at_period_end, true, 'pagamento único não renova');
+
+      const depois = await student.agent.get('/api/billing/status');
+      assert.equal(depois.body.access.allowed, true);
+    });
+
+    it('a cobrança do mesmo Pix, chegando depois, não soma outro período', async () => {
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, payment_method: 'pix' });
+      await sendWebhook(checkoutEvent('CHECKOUT_PAID', { id: 'evt_pix_c2', pix: true }));
+      const primeiro = await ctx.db.one('SELECT current_period_end FROM subscriptions WHERE user_id = $1', [student.user.id]);
+
+      // agora chega o PAYMENT_CONFIRMED da mesma compra
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pix_pay', reference, subscription: null }));
+
+      const total = await ctx.db.one('SELECT count(*)::int AS total FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(total.total, 1, 'não pode nascer uma segunda assinatura');
+      const depois = await ctx.db.one('SELECT current_period_end FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.ok(
+        new Date(depois.current_period_end).getTime() >= new Date(primeiro.current_period_end).getTime(),
+        'o acesso não pode encolher'
+      );
     });
 
     it('evento de criação atrasado não rebaixa uma assinatura já paga', async () => {
