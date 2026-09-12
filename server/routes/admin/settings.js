@@ -138,9 +138,9 @@ router.post(
         error: {
           code: 'validation_error',
           message:
-            'Nenhum provedor de e-mail configurado. Cadastre RESEND_API_KEY e SMTP_FROM nas variáveis ' +
-            'de ambiente da hospedagem e reinicie a aplicação. O endereço do SMTP_FROM precisa ser de ' +
-            'um domínio verificado no Resend.',
+            'Nenhum provedor de e-mail configurado. Cadastre as variáveis de SMTP (SMTP_HOST, ' +
+            'SMTP_PORT, SMTP_USER, SMTP_PASS e SMTP_FROM) ou, se já tiver domínio próprio verificado, ' +
+            'RESEND_API_KEY e SMTP_FROM — e reinicie a aplicação.',
         },
       });
       return;

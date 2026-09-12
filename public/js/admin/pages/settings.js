@@ -207,9 +207,8 @@ function smtpSection() {
           title: 'Sem provedor de e-mail',
           text:
             'Os e-mails de recuperação de senha e de aulas particulares não são enviados — quem esquecer a senha ' +
-            'não consegue voltar sozinho. Cadastre RESEND_API_KEY e SMTP_FROM nas variáveis de ambiente da ' +
-            'hospedagem e reinicie a aplicação. O endereço do remetente precisa ser de um domínio verificado ' +
-            'no painel do Resend.',
+            'não consegue voltar sozinho. Cadastre as variáveis de SMTP na hospedagem e reinicie a aplicação. ' +
+            'Enquanto não houver domínio próprio, serviços como o Brevo aceitam um e-mail comum como remetente.',
         })}
     </div>`;
 }

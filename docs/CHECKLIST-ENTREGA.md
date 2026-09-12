@@ -45,7 +45,9 @@ que **já está pronto e entregue**.
 |------|---------|
 | O que é | Um servidor SMTP autenticado para a plataforma enviar mensagens. |
 | Por que | Recuperação de senha e avisos ao aluno. |
-| Opção escolhida | **Resend** ([resend.com](https://resend.com/)), plano gratuito: 3.000 e-mails por mês. Exige o domínio verificado no painel deles, então depende do DNS já apontado. O passo a passo está em `docs/DEPLOY.md`, seção 12. |
+| Para começar | **Brevo** ([brevo.com](https://www.brevo.com/)), plano gratuito: 300 e-mails por dia. Aceita um e-mail comum como remetente, então funciona antes do domínio existir. |
+| Depois do domínio | **Resend** ([resend.com](https://resend.com/)), 3.000 por mês, enviando como `no-reply@focoelite.com.br`. Exige o domínio verificado. A troca é só de variável, sem mexer no código. |
+| Passo a passo | `docs/DEPLOY.md`, seção 12. |
 | O que enviar | Servidor, porta, usuário e senha, e o endereço remetente (sugestão: `no-reply@focoelite.com.br`). |
 | Importante | Configurar SPF e DKIM no DNS. Sem isso, o e-mail de recuperação cai no spam. |
 | Se faltar | O aluno que esquecer a senha não consegue recuperá-la sozinho — só com intervenção pelo painel. |

@@ -52,8 +52,8 @@ describe('Teste de envio de e-mail pelo painel', () => {
     mailer.isConfigured = () => false;
     const res = await admin.agent.post('/api/admin/settings/smtp-test', {});
     assert.equal(res.status, 400);
-    assert.match(res.body.error.message, /RESEND_API_KEY/, 'nomeia a variável que falta');
-    assert.match(res.body.error.message, /domínio verificado/i, 'avisa da exigência do Resend');
+    assert.match(res.body.error.message, /SMTP_HOST/, 'nomeia as variáveis que faltam');
+    assert.match(res.body.error.message, /RESEND_API_KEY/, 'e a alternativa por API');
     assert.match(res.body.error.message, /reinicie/i, 'variável só vale depois do restart');
   });
 
