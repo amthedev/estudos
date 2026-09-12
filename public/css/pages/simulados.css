@@ -144,6 +144,15 @@
   min-width: 0;
 }
 
+/* O símbolo da marca tem 1254px de largura natural e nenhuma regra o segurava:
+   com `img { max-width: 100% }`, ele ocupava a tela inteira do simulado. Todos
+   os outros usos do símbolo declaram tamanho (ver layout.css). */
+.sim-run-id img {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
 .sim-run-title {
   font-family: var(--font-display);
   font-size: var(--fs-lg);
@@ -442,4 +451,61 @@
   .pex-notice-head { flex-direction: column; }
   .pex-notice-count { align-self: stretch; flex-direction: row; align-items: baseline; justify-content: space-between; }
   .pex-notice-facts strong { margin-left: var(--s-2); }
+}
+
+/* Aviso de simulado menor que o pedido (ver simulado-run.js). */
+.sim-run-shortfall {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--warning);
+}
+.sim-run-shortfall .icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------------
+   Formato do simulado da prova: completo, mini ou personalizado.
+   Escolher um preenche quantidade e tempo; mexer nos campos volta para
+   "Do meu jeito".
+   --------------------------------------------------------------------- */
+.sim-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s-2);
+}
+.sim-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--s-3);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.sim-mode:hover {
+  border-color: var(--border-2);
+  background: var(--card-3);
+}
+.sim-mode.is-active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.sim-mode-label {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.sim-mode-text {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.4;
 }

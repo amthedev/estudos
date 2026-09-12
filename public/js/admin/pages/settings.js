@@ -273,11 +273,21 @@ function mountForms() {
     { key: 'openrouter_model', label: 'Modelo do tutor', type: 'text', required: true, maxLength: 120, placeholder: 'qwen/qwen3.8-flash', hint: 'Use o identificador completo do catálogo do OpenRouter: provedor/modelo.' },
     { key: 'openrouter_essay_model', label: 'Modelo da correção de redação', type: 'text', required: true, maxLength: 120, placeholder: 'qwen/qwen3.8-flash' },
     { key: 'openrouter_monthly_token_limit', label: 'Limite mensal de tokens', type: 'number', min: 0, integer: true, hint: 'Use 0 para não limitar. Ao atingir o limite, as funções de IA pausam até o mês seguinte.' },
+    {
+      key: 'simulado_ai_questions_max',
+      label: 'Questões por IA em um simulado',
+      type: 'number',
+      min: 0,
+      max: 90,
+      integer: true,
+      hint: 'Quando o banco não tem questões suficientes, a IA completa até esta quantidade — e elas ficam guardadas para os próximos simulados. Use 0 para só usar o que está no banco.',
+    },
   ], {
     values: {
       openrouter_model: s.openrouter_model || '',
       openrouter_essay_model: s.openrouter_essay_model || '',
       openrouter_monthly_token_limit: Number(s.openrouter_monthly_token_limit) || 0,
+      simulado_ai_questions_max: Number(s.simulado_ai_questions_max) || 0,
     },
     submitLabel: 'Salvar OpenRouter',
     onSubmit: async (values) => {
@@ -285,6 +295,7 @@ function mountForms() {
         openrouter_model: values.openrouter_model,
         openrouter_essay_model: values.openrouter_essay_model,
         openrouter_monthly_token_limit: Number(values.openrouter_monthly_token_limit) || 0,
+        simulado_ai_questions_max: Number(values.simulado_ai_questions_max) || 0,
       }, 'Configurações do OpenRouter salvas.');
       await refreshIntegrations();
     },

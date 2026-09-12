@@ -88,8 +88,8 @@ function formFields() {
     { key: 'exam_id', label: 'Prova', type: 'select', width: 'half', options: state.exams.map((exam) => ({ value: exam.id, label: exam.name })) },
     { key: 'subject_id', label: 'Matéria', type: 'select', width: 'half', options: state.subjects.map((subject) => ({ value: subject.id, label: subject.name })) },
     { key: 'topic_id', label: 'Assunto', type: 'select', width: 'half', options: [] },
-    { key: 'duration_min', label: 'Duração (minutos)', type: 'number', width: 'half', min: 5, max: 600, step: 5, default: 60 },
-    { key: 'question_count', label: 'Número de questões', type: 'number', width: 'half', min: 1, max: 180, step: 1, default: 20 },
+    { key: 'duration_min', label: 'Duração (minutos)', type: 'number', width: 'half', min: 5, max: state.max.duration_min, step: 5, default: 60 },
+    { key: 'question_count', label: 'Número de questões', type: 'number', width: 'half', min: 1, max: state.max.question_count, step: 1, default: 20 },
     { key: 'active', label: 'Disponível para os alunos', type: 'switch', default: true },
   ];
 }
@@ -210,16 +210,20 @@ async function renderSimuladosPage(ctx) {
   render(ctx.el, skeleton('page'));
 
   const token = Symbol('admin-simulados');
-  state = { ctx, token, table: null, exams: [], subjects: [], off: [] };
+  // Os tetos vêm da API: o formulário não pode declarar um limite que o
+  // servidor recusa. Os valores abaixo só valem se a resposta não trouxer.
+  state = { ctx, token, table: null, exams: [], subjects: [], off: [], max: { question_count: 90, duration_min: 330 } };
 
   try {
-    const [exams, subjects] = await Promise.all([
+    const [exams, subjects, simulados] = await Promise.all([
       api.get('/api/admin/exams').then((data) => (Array.isArray(data) ? data : data.items || [])),
       api.get('/api/admin/content/subjects'),
+      api.get('/api/admin/simulados', { query: { limit: 1 } }).catch(() => null),
     ]);
     if (!state || state.token !== token) return;
     state.exams = exams;
     state.subjects = subjects;
+    if (simulados && simulados.max) state.max = { ...state.max, ...simulados.max };
   } catch (err) {
     if (!state || state.token !== token) return;
     render(

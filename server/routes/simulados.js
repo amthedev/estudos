@@ -230,9 +230,16 @@ router.get(
       ),
     ]);
 
+    // Quantas questões a IA pode acrescentar a um simulado. Zero significa que
+    // o que está no banco é tudo o que existe.
+    const aiFill = await simulados.aiFillLimit();
+
     const templates = [];
     for (const template of templatesRaw) {
       const available = await templateAvailability(template);
+      const pedido = template.question_ids && template.question_ids.length
+        ? template.question_ids.length
+        : Number(template.question_count) || 0;
       templates.push({
         id: template.id,
         name: template.name,
@@ -250,7 +257,12 @@ router.get(
         duration_min: template.duration_min,
         question_count: template.question_ids && template.question_ids.length ? template.question_ids.length : template.question_count,
         available_count: available,
-        can_start: available > 0,
+        // "Pode começar" não é "tem tudo": faltando questão, a IA completa até
+        // o teto. Dizer "sem questões suficientes" com uma questão no banco era
+        // mentira nos dois sentidos — barrava quem podia começar e escondia o
+        // quanto faltava de quem começava.
+        missing: Math.max(0, pedido - available),
+        can_start: available > 0 || aiFill > 0,
       });
     }
 
@@ -261,6 +273,7 @@ router.get(
       custom: simulados.getDefaults('custom'),
       max: { question_count: simulados.MAX_QUESTIONS, duration_min: simulados.MAX_DURATION },
       modes: Object.entries(simulados.EXAM_MODES).map(([key, preset]) => ({ key, ...preset })),
+      ai_fill: { max: aiFill },
     };
 
     const examAvailable = exam ? await simulados.countAvailable({ examId: exam.id }) : 0;

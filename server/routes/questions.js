@@ -9,6 +9,8 @@
  *   GET  /api/questions/:id        → questão com alternativas (sem gabarito)
  *   POST /api/questions/:id/answer { option_id, context, context_id?, time_spent_sec? }
  *                                  → { is_correct, correct_option_id, resolution, explanation, attempt_id }
+ *   POST /api/questions/:id/report { reason, comment? } → 201
+ *                                  avisa que a questão tem problema (gabarito, enunciado, alternativas…)
  *
  * O gabarito (is_correct, resolution, explanation) só sai na resposta do POST /answer.
  * Toda leitura de dados do aluno (último resultado, tentativas) filtra por user_id = req.user.id.
@@ -46,6 +48,26 @@ const listQuerySchema = z.object({
 });
 
 const idParamsSchema = z.object({ id: uuid });
+
+/**
+ * Chamado do aluno sobre uma questão.
+ *
+ * Existe por causa de uma decisão tomada de olhos abertos: a questão elaborada
+ * pela IA entra ativa no banco, sem esperar conferência — esconder a questão
+ * faria o erro do aluno sumir do caderno dele. O preço é que um gabarito errado
+ * pode chegar antes de alguém olhar. Este é o canal de volta.
+ */
+const reportSchema = z
+  .object({
+    reason: z.enum(['gabarito', 'enunciado', 'alternativas', 'assunto', 'outro'], {
+      errorMap: () => ({ message: 'Escolha o que está errado na questão.' }),
+    }),
+    comment: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z.string().trim().max(1000).optional()
+    ),
+  })
+  .strict();
 
 const answerSchema = z.object({
   option_id: uuid,
@@ -212,6 +234,33 @@ router.post(
       timeSpentSec: timeSpentSec ?? null,
     });
     res.status(201).json(result);
+  })
+);
+
+router.post(
+  '/:id/report',
+  validate({ params: idParamsSchema, body: reportSchema }),
+  wrap(async (req, res) => {
+    const questionId = req.valid.params.id;
+    const existe = await db.one('SELECT id FROM questions WHERE id = $1 AND active', [questionId]);
+    if (!existe) throw new AppError(404, 'not_found', 'Questão não encontrada.');
+
+    const { reason, comment } = req.valid.body;
+    // Um aluno, um chamado por questão: reclamar de novo atualiza o que ele
+    // disse em vez de encher a fila do painel com a mesma questão.
+    const row = await db.one(
+      `INSERT INTO question_reports (question_id, user_id, reason, comment)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (question_id, user_id) WHERE user_id IS NOT NULL
+         DO UPDATE SET reason = EXCLUDED.reason,
+                       comment = EXCLUDED.comment,
+                       status = 'aberto',
+                       resolved_at = NULL,
+                       created_at = now()
+       RETURNING id, reason, created_at`,
+      [questionId, req.user.id, reason, comment ?? null]
+    );
+    res.status(201).json({ ...row, message: 'Obrigado. A equipe vai conferir esta questão.' });
   })
 );
 

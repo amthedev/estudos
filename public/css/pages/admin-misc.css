@@ -57,6 +57,15 @@
 }
 
 .al-class,
+/* Selos de conferência na lista de questões: origem, aviso de aluno e taxa de
+   acerto suspeita. Empilham em telas estreitas. */
+.qa-review {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
 .qa-class {
   display: flex;
   flex-direction: column;

@@ -750,6 +750,7 @@ module.exports = {
   MAX_QUESTIONS,
   MAX_DURATION,
   EXAM_MODES,
+  aiFillLimit,
   TYPE_LABELS,
   getDefaults,
   buildAttempt,

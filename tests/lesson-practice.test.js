@@ -204,6 +204,87 @@ describe('Pratique agora com questões da IA', () => {
     );
   });
 
+  it('a IA falhando não zera o que o banco já tinha', async () => {
+    // Havia um buraco: a chamada não estava protegida, e o 503 da IA descia
+    // inteiro — o aluno com duas questões no banco recebia zero.
+    const ai = require('../server/services/ai');
+    const subtopic = content.subtopics[0];
+    await seedQuestion(db, {
+      subject: content.subject,
+      topic: content.topic,
+      subtopicId: subtopic.id,
+      difficulty: 3,
+      statement: 'Única questão de nível difícil cadastrada pelo professor para este assunto.',
+    });
+
+    const aluno = await ctx.registerStudent({ name: 'Aluno com IA Fora do Ar' });
+    ai.setClientForTests({
+      chat: { completions: { async create() { throw Object.assign(new Error('503 upstream'), { status: 503 }); } } },
+    });
+    try {
+      const res = await aluno.agent.post(`/api/lessons/${content.lesson.id}/practice`, { difficulty: 3 });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.ok(res.body.questions.length >= 1, 'entrega o que o banco tinha');
+      assert.equal(res.body.generated, 0);
+    } finally {
+      ai.setClientForTests(null);
+    }
+  });
+
+  it('sem nada no banco e com a IA fora do ar, explica em vez de entregar tela vazia', async () => {
+    const ai = require('../server/services/ai');
+    const vazio = await db.one(
+      `INSERT INTO lessons (subject_id, topic_id, slug, title, duration_min)
+       VALUES ($1, $2, 'aula-sem-banco', 'Aula sem questões', 15) RETURNING id`,
+      [content.subject.id, content.topic.id]
+    );
+    // um assunto novo, sem questão nenhuma
+    const outroTopic = await db.one(
+      `INSERT INTO topics (subject_id, slug, name, sort_order) VALUES ($1, 'vazio', 'Assunto vazio', 9) RETURNING id`,
+      [content.subject.id]
+    );
+    await db.query('UPDATE lessons SET topic_id = $2 WHERE id = $1', [vazio.id, outroTopic.id]);
+
+    const aluno = await ctx.registerStudent({ name: 'Aluno sem Sorte' });
+    ai.setClientForTests({
+      chat: { completions: { async create() { throw Object.assign(new Error('503 upstream'), { status: 503 }); } } },
+    });
+    try {
+      const res = await aluno.agent.post(`/api/lessons/${vazio.id}/practice`, { difficulty: 2 });
+      assert.equal(res.status, 503);
+      assert.match(res.body.error.message, /instantes|montar/i);
+    } finally {
+      ai.setClientForTests(null);
+    }
+  });
+
+  it('o aluno tem teto diário de questões novas', async () => {
+    const questionAi = require('../server/services/question-ai');
+    const aluno = await ctx.registerStudent({ name: 'Aluno Insaciável' });
+    // Marca o consumo do dia como já estourado, sem precisar gerar de verdade.
+    for (let i = 0; i < questionAi.GERACOES_POR_DIA; i += 1) {
+      await db.query(
+        `INSERT INTO ai_usage (user_id, feature, status, total_tokens) VALUES ($1, 'questions', 'ok', 100)`,
+        [aluno.user.id]
+      );
+    }
+
+    // Assunto sem banco: só a IA poderia atender, e ela está barrada.
+    const topicVazio = await db.one(
+      `INSERT INTO topics (subject_id, slug, name, sort_order) VALUES ($1, 'teto', 'Assunto do teto', 20) RETURNING id`,
+      [content.subject.id]
+    );
+    const aula = await db.one(
+      `INSERT INTO lessons (subject_id, topic_id, slug, title, duration_min)
+       VALUES ($1, $2, 'aula-teto', 'Aula do teto', 15) RETURNING id`,
+      [content.subject.id, topicVazio.id]
+    );
+
+    const res = await aluno.agent.post(`/api/lessons/${aula.id}/practice`, { difficulty: 2 });
+    assert.equal(res.status, 503, JSON.stringify(res.body));
+    assert.match(res.body.error.message, /hoje/i, 'diz que o limite é do dia, não que deu erro');
+  });
+
   it('aula que não existe responde 404', async () => {
     const res = await student.agent.post('/api/lessons/00000000-0000-0000-0000-000000000000/practice', {});
     assert.equal(res.status, 404);

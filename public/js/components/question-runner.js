@@ -34,10 +34,11 @@
  * Marcação: usa as classes canônicas de components.css (.question, .option, .question-feedback,
  * .qnav-btn, .question-timer, .question-progress) e complementos com prefixo .qr- (pages/misc.css).
  */
-import { html, raw, render, toast, confirm, emptyState } from '../core/ui.js';
+import { html, raw, render, toast, confirm, modal, emptyState } from '../core/ui.js';
 import { icon } from '../core/icons.js';
 import { difficultyLabel, fmtDuration } from '../core/format.js';
 import { md, mdInline } from '../core/markdown.js';
+import { api } from '../core/api.js';
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 const WARNING_SEC = 5 * 60;
@@ -93,6 +94,7 @@ export function mountQuestionRunner(el, opts = {}) {
     questionStartedAt: Date.now(),
     timerStartedAt: Date.now(),
     remainingSec: null,
+    reported: new Set(),       // questões cujo problema o aluno já avisou
   };
 
   // Respostas já registradas (retomada de simulado).
@@ -326,6 +328,63 @@ export function mountQuestionRunner(el, opts = {}) {
     if (q && typeof opts.onAskTutor === 'function') opts.onAskTutor(q, answerOf(q));
   }
 
+  /** Abre o diálogo de "Reportar problema" e envia o chamado. */
+  async function reportQuestion() {
+    const q = current();
+    if (!q || state.reported.has(q.id)) return;
+
+    state.dialogOpen = true;
+    const escolha = await new Promise((resolve) => {
+      const dialog = modal({
+        title: 'Reportar problema nesta questão',
+        subtitle: 'A equipe confere e corrige. Isso não muda a sua resposta nem o seu desempenho.',
+        body: html`
+          <div class="field">
+            <label class="label" for="qr-report-reason">O que está errado?</label>
+            <select class="select" id="qr-report-reason" name="reason">
+              <option value="gabarito">A resposta marcada como certa está errada</option>
+              <option value="enunciado">O enunciado está confuso ou incompleto</option>
+              <option value="alternativas">As alternativas têm problema</option>
+              <option value="assunto">A questão não é deste assunto</option>
+              <option value="outro">Outro</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="qr-report-comment">Quer explicar? (opcional)</label>
+            <textarea class="textarea" id="qr-report-comment" name="comment" rows="3" maxlength="1000"></textarea>
+          </div>`,
+        actions: [
+          { label: 'Cancelar', variant: 'ghost', onClick: () => resolve(null) },
+          {
+            label: 'Enviar',
+            variant: 'primary',
+            icon: 'send',
+            onClick: () => {
+              const root = dialog.body;
+              resolve({
+                reason: root.querySelector('[name="reason"]').value,
+                comment: root.querySelector('[name="comment"]').value.trim() || undefined,
+              });
+            },
+          },
+        ],
+        onClose: () => resolve(null),
+      });
+    });
+    state.dialogOpen = false;
+    if (!escolha) return;
+
+    try {
+      if (typeof opts.report === 'function') await opts.report(q.id, escolha);
+      else await api.post(`/api/questions/${encodeURIComponent(q.id)}/report`, escolha);
+      state.reported.add(q.id);
+      toast('Obrigado. A equipe vai conferir esta questão.', { type: 'success' });
+      paint();
+    } catch (err) {
+      toast((err && err.message) || 'Não foi possível enviar o aviso.', { type: 'error' });
+    }
+  }
+
   function tutorHrefFor(q) {
     if (opts.tutorHref === false) return null;
     if (typeof opts.tutorHref === 'function') return opts.tutorHref(q) || null;
@@ -440,6 +499,19 @@ export function mountQuestionRunner(el, opts = {}) {
     return html`<a class="btn btn-secondary" href="${href}">${ic('bot')} Perguntar ao Tutor</a>`;
   }
 
+  /**
+   * "Reportar problema". Só aparece depois de a questão ser respondida, quando
+   * o aluno já viu o gabarito — é aí que ele percebe que a resposta certa está
+   * errada. É o canal que justifica a questão elaborada por IA entrar no banco
+   * sem conferência prévia.
+   */
+  function reportView(q) {
+    if (!q || state.reported.has(q.id)) {
+      return html`<span class="qr-note qr-reported">${ic('circle-check', 16)} Problema avisado à equipe.</span>`;
+    }
+    return html`<button type="button" class="btn btn-ghost btn-sm" data-action="report">${ic('flag', 16)} Reportar problema</button>`;
+  }
+
   function practiceFooter(q) {
     if (state.finished) {
       return html`
@@ -463,6 +535,7 @@ export function mountQuestionRunner(el, opts = {}) {
     return html`
       <footer class="question-footer qr-footer">
         ${tutorView(q)}
+        ${reportView(q)}
         <div class="right">
           <button type="button" class="btn btn-primary btn-lg" data-action="next">
             <span>${last ? 'Concluir' : 'Próxima'}</span>${ic(last ? 'flag' : 'arrow-right')}
@@ -621,6 +694,7 @@ export function mountQuestionRunner(el, opts = {}) {
       case 'goto': goTo(Number(target.dataset.index)); break;
       case 'finish': finishSimulado(); break;
       case 'tutor': askTutor(); break;
+      case 'report': reportQuestion(); break;
       case 'clear': {
         const q = current();
         const a = answerOf(q);

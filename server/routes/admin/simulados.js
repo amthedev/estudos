@@ -148,7 +148,9 @@ router.get(
       `${SELECT_SIMULADO} ${where} ORDER BY ${sort.sql}, sm.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
     );
-    res.json(paginate(items, totalRow.total, { page, limit }));
+    // Os tetos viajam junto: o formulário do painel declarava um máximo maior
+    // que o da API, e salvar um valor entre os dois dava 400 sem marcar o campo.
+    res.json({ ...paginate(items, totalRow.total, { page, limit }), max: { question_count: MAX_QUESTIONS, duration_min: MAX_DURATION } });
   })
 );
 

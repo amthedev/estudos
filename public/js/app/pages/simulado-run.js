@@ -93,6 +93,28 @@ function showError(err) {
   if (btn) btn.addEventListener('click', () => load());
 }
 
+/**
+ * Aviso quando o simulado saiu menor do que foi pedido.
+ *
+ * Antes o simulado saía curto em silêncio: o aluno pedia 80, o banco tinha 12,
+ * ele recebia 12 e achava que era assim mesmo. O número pedido fica gravado em
+ * config.requested_count desde sempre — faltava alguém comparar.
+ */
+function shortfallNotice() {
+  const config = attempt.config && typeof attempt.config === 'object' ? attempt.config : {};
+  const pedido = Number(config.requested_count) || 0;
+  const saiu = attempt.questions.length;
+  if (!pedido || saiu >= pedido) return '';
+  return html`
+    <p class="sim-run-shortfall" role="status">
+      ${icon('info', { size: 14 })}
+      <span>
+        Este simulado saiu com ${saiu} das ${pedido} questões pedidas — o banco de questões
+        deste recorte ainda está sendo preenchido.
+      </span>
+    </p>`;
+}
+
 function paint() {
   if (runner) {
     runner.destroy();
@@ -112,6 +134,7 @@ function paint() {
                 ${pluralize(attempt.questions.length, 'questão', 'questões')} · ${fmtMinutes(attempt.duration_min)}
                 ${attempt.exam_short_name ? html` · ${attempt.exam_short_name}` : ''}
               </p>
+              ${shortfallNotice()}
             </div>
           </div>
           <div class="sim-run-top-end">

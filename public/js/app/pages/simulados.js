@@ -144,9 +144,11 @@ function typeCardsBlock() {
       <div class="grid grid-4 sim-types">
         ${TYPE_CARDS.map((card) => {
           const isExam = card.type === 'exam';
-          const disabled = isExam && (!exam || !exam.available_count);
+          // Banco vazio não barra mais: a IA completa o que faltar. O que
+          // ainda barra é não ter prova escolhida no perfil.
+          const disabled = isExam && !exam;
           const hint = isExam && exam
-            ? `${exam.short_name} · ${pluralize(exam.available_count || 0, 'questão disponível', 'questões disponíveis')}`
+            ? `${exam.short_name} · ${pluralize(exam.available_count || 0, 'questão no banco', 'questões no banco')}`
             : '';
           return html`
             <button type="button" class="card card-hover sim-type" data-action="config" data-type="${card.type}" ${disabled ? 'disabled' : ''}>
@@ -155,6 +157,9 @@ function typeCardsBlock() {
               <span class="sim-type-text">${card.text}</span>
               ${hint ? html`<span class="sim-type-hint">${hint}</span>` : ''}
               ${disabled ? html`<span class="sim-type-hint">Escolha sua prova no perfil para liberar</span>` : ''}
+              ${isExam && exam && !exam.available_count
+                ? html`<span class="sim-type-hint">As questões serão elaboradas na hora</span>`
+                : ''}
             </button>`;
         })}
       </div>
@@ -185,8 +190,12 @@ function templatesBlock() {
                 </div>
                 <div class="sim-template-actions">
                   ${t.can_start
-                    ? html`<button type="button" class="btn btn-primary btn-sm" data-action="start-template" data-id="${t.id}">${icon('play')}<span>Iniciar</span></button>`
-                    : html`<span class="text-3 text-sm">Sem questões suficientes no banco</span>`}
+                    ? html`
+                      <button type="button" class="btn btn-primary btn-sm" data-action="start-template" data-id="${t.id}">${icon('play')}<span>Iniciar</span></button>
+                      ${t.missing
+                        ? html`<span class="text-3 text-sm">${pluralize(t.missing, 'questão será elaborada', 'questões serão elaboradas')} na hora</span>`
+                        : ''}`
+                    : html`<span class="text-3 text-sm">Ainda não há questões para este simulado</span>`}
                 </div>
               </div>
             </article>`

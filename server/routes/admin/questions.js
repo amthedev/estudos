@@ -104,6 +104,10 @@ const listQuery = z.object({
   year: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1950).max(2100).optional()),
   board: z.string().trim().max(80).optional(),
   status: z.preprocess(emptyToUndefined, z.enum(['active', 'inactive']).optional()),
+  // Fila de conferência: o que a IA escreveu, o que ninguém olhou ainda e o
+  // que aluno reclamou. É a contrapartida de a questão gerada entrar ativa.
+  origem: z.preprocess(emptyToUndefined, z.enum(['ia', 'humana']).optional()),
+  conferencia: z.preprocess(emptyToUndefined, z.enum(['pendente', 'feita', 'reclamada']).optional()),
   page: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   sort: z.string().max(40).optional(),
@@ -174,6 +178,12 @@ const SELECT_LIST = `
   SELECT ${COMMON_COLUMNS},
          (SELECT count(*)::int FROM question_options qo WHERE qo.question_id = q.id) AS options_count,
          (SELECT qo.letter FROM question_options qo WHERE qo.question_id = q.id AND qo.is_correct LIMIT 1) AS correct_letter,
+         q.generated_by_ai, q.reviewed_at, q.lesson_id,
+         (SELECT count(*)::int FROM question_reports r WHERE r.question_id = q.id AND r.status = 'aberto') AS open_reports,
+         -- Gabarito trocado tem assinatura estatística: muita gente respondendo
+         -- e quase ninguém acertando. Isso aparece sem depender de alguém reclamar.
+         (SELECT count(*)::int FROM question_attempts qa WHERE qa.question_id = q.id) AS attempts_count,
+         (SELECT count(*) FILTER (WHERE qa.is_correct)::int FROM question_attempts qa WHERE qa.question_id = q.id) AS correct_count,
          left(q.statement, 240) AS excerpt
   ${QUESTION_BASE} ${EXAMS_JOIN}`;
 
@@ -217,6 +227,12 @@ function buildFilters(query) {
     clauses.push(`EXISTS (SELECT 1 FROM question_exams qe2 WHERE qe2.question_id = q.id AND qe2.exam_id = ${push(query.exam_id)})`);
   }
   if (query.status) clauses.push(`q.active = ${push(query.status === 'active')}`);
+  if (query.origem) clauses.push(`q.generated_by_ai = ${push(query.origem === 'ia')}`);
+  if (query.conferencia === 'pendente') clauses.push('q.reviewed_at IS NULL');
+  if (query.conferencia === 'feita') clauses.push('q.reviewed_at IS NOT NULL');
+  if (query.conferencia === 'reclamada') {
+    clauses.push(`EXISTS (SELECT 1 FROM question_reports r WHERE r.question_id = q.id AND r.status = 'aberto')`);
+  }
 
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
@@ -890,6 +906,65 @@ router.delete(
     await db.query('DELETE FROM questions WHERE id = $1', [id]);
     await audit(req, 'question.delete', 'question', id, { excerpt: question.excerpt });
     res.json({ ok: true });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Conferência
+// ---------------------------------------------------------------------------
+const reviewBody = z
+  .object({
+    ids: z.array(uuid).min(1, 'Escolha ao menos uma questão.').max(200),
+    reviewed: z.boolean().optional(),
+    active: z.boolean().optional(),
+  })
+  .strict();
+
+/**
+ * Marca questões como conferidas — e, de quebra, fecha os chamados que os
+ * alunos abriram sobre elas. Sem isto, `questions.reviewed_at` e
+ * `question_reports` seriam colunas que ninguém escreve.
+ */
+router.patch(
+  '/revisao',
+  validate({ body: reviewBody }),
+  wrap(async (req, res) => {
+    const { ids, reviewed = true, active } = req.valid.body;
+    const atualizadas = await db.many(
+      `UPDATE questions
+          SET reviewed_at = CASE WHEN $2 THEN now() ELSE NULL END,
+              active = coalesce($3, active)
+        WHERE id = ANY($1::uuid[])
+        RETURNING id`,
+      [ids, reviewed, active === undefined ? null : active]
+    );
+    if (reviewed) {
+      await db.query(
+        `UPDATE question_reports SET status = 'resolvido', resolved_at = now()
+          WHERE question_id = ANY($1::uuid[]) AND status = 'aberto'`,
+        [ids]
+      );
+    }
+    await audit(req, 'question.review', 'question', null, { count: atualizadas.length, reviewed, active });
+    res.json({ updated: atualizadas.length, ids: atualizadas.map((row) => row.id) });
+  })
+);
+
+/** Os chamados abertos de uma questão, para o painel mostrar o que o aluno disse. */
+router.get(
+  '/:id/reports',
+  validate({ params: idParams }),
+  wrap(async (req, res) => {
+    const rows = await db.many(
+      `SELECT r.id, r.reason, r.comment, r.status, r.created_at, u.name AS user_name
+         FROM question_reports r
+         LEFT JOIN users u ON u.id = r.user_id
+        WHERE r.question_id = $1
+        ORDER BY r.created_at DESC
+        LIMIT 50`,
+      [req.valid.params.id]
+    );
+    res.json({ items: rows, total: rows.length });
   })
 );
 

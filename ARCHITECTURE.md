@@ -55,6 +55,9 @@ server/
     errors.js              AppError, notFound, errorHandler (loga em error_logs)
     rateLimit.js           limitadores: auth (login), ai (tutor/redação), api geral
     audit.js               audit(req, action, entity, entityId, data)
+  services/
+    question-ai.js         elabora questão com IA a partir da aula ou do assunto; grava em questions
+    exam-import.js         recorta a prova em lotes por número de questão e transcreve cada lote
   routes/
     <modulo>.js            exporta { basePath: '/api/<modulo>', router }
     admin/<modulo>.js      exporta { basePath: '/api/admin/<modulo>', router } (já protegidas por requireAdmin)
@@ -192,13 +195,17 @@ Prefixo `/api`. Aluno autenticado salvo indicação. `[pub]` = público, `[adm]`
 * `GET /lessons` `?subject_id&topic_id&status=done|pending&q&page` → paginado
 * `GET /lessons/:id` → aula + `exams[]` (onde cai) + `progress` + `note` + `favorited` + `next_lesson`
 * `POST /lessons/:id/complete` → marca concluída, registra study_log, agenda revisões, marca item do cronograma; devolve `{ progress, reviews_created }`
-* `GET /lessons/:id/practice` → 5 questões do assunto (prioriza subassunto, evita já respondidas recentemente)
+* `POST /lessons/:id/practice` `{ difficulty: 1|2|3 }` → 3 questões, uma por assunto da aula (subassuntos do
+  topic, com o da própria aula na frente). Banco primeiro; o que faltar é elaborado por IA e gravado
+  (`services/question-ai`). Responde `{ questions, difficulty, from_bank, generated, subjects, notice }`
 * `GET /lessons/continue` → últimas aulas em andamento
 
 ### questões
 * `GET /questions` filtros `exam_id, subject_id, topic_id, subtopic_id, difficulty, year, board, q, page, limit` → paginado (sem `is_correct` nas alternativas)
 * `GET /questions/:id` → questão com alternativas (sem gabarito)
 * `POST /questions/:id/answer` `{ option_id, context: 'practice'|'bank'|'review'|'errors_redo', context_id?, time_spent_sec? }`
+* `POST /questions/:id/report` `{ reason: 'gabarito'|'enunciado'|'alternativas'|'assunto'|'outro', comment? }` →
+  aviso do aluno sobre a questão (um por aluno; reenviar atualiza)
   → `{ is_correct, correct_option_id, resolution, explanation, attempt_id }`. Erros entram no caderno automaticamente.
 * `GET /questions/filters` → anos, bancas, dificuldades disponíveis
 * `GET /errors` (caderno) `?subject_id&topic_id&resolved&page` ; `GET /errors/summary`; `POST /errors/redo` `{ids?|subject_id?, limit}` → questões para refazer; `DELETE /errors/:id`
@@ -247,6 +254,11 @@ Prefixo `/api`. Aluno autenticado salvo indicação. `[pub]` = público, `[adm]`
 * `content/areas`, `content/subjects`, `content/topics`, `content/subtopics` CRUD + `PATCH .../reorder {ids[]}` + `GET content/tree`
 * `lessons` CRUD (com `exam_ids[]`) + `POST lessons/parse-video {url}` → provider/thumbnail/duração quando disponível
 * `questions` CRUD (com `options[]`, `exam_ids[]`) + `POST questions/import` (JSON/CSV) + `GET questions/export`
+  + filtros `origem=ia|humana` e `conferencia=pendente|feita|reclamada` + `PATCH questions/revisao {ids[], reviewed, active?}`
+  + `GET questions/:id/reports` (o que os alunos avisaram)
+* `exam-imports` — prova em PDF vira questão: `POST /` (cria) ; `POST /:id/text {chunk, done}` (o texto do PDF,
+  lido no navegador, sobe em pedaços) ; `POST /:id/sweep` (varre UM lote e devolve o progresso) ; `GET /:id` ;
+  `PATCH /:id/items/:itemId` ; `POST /:id/import {item_ids[]}` ; `DELETE /:id`
 * `past-exams` CRUD
 * `exams` (vestibulares) CRUD + `PUT exams/:id/subjects {[{subject_id, weight}]}` + `PUT exams/:id/topics {[{topic_id, weight}]}`
 * `simulados` CRUD (modelos)
@@ -325,6 +337,12 @@ Sequência de dias (`streak`): dias consecutivos com pelo menos um `study_log` (
   Modo `immediateFeedback=true` (prática, revisão, caderno de erros, banco): ao responder mostra **ACERTOU** / **ERROU**, alternativa correta, resolução, explicação, botões "Perguntar ao Tutor" e "Próxima".
   Modo `immediateFeedback=false` (simulado): navegação livre entre questões, marca respondidas, cronômetro, "Finalizar".
   `summary = { total, correct, wrong, blank, answers: [{question_id, option_id, is_correct}] }`.
+  No modo com feedback imediato há também **Reportar problema** (`POST /questions/:id/report`), que é a
+  contrapartida de a questão elaborada por IA entrar ativa no banco sem conferência prévia.
+* `components/pdf-text.js` — `extractPdfText(file|url, onProgress)` lê o texto de um PDF com o pdf.js
+  copiado para `/vendor`. O PDF nunca é enviado à IA: em base64 ele seria contado como consumo de tokens
+  (`services/ai.js` estima pelo tamanho do conteúdo) e derrubaria o teto mensal do Tutor e da redação.
+  PDF digitalizado não tem camada de texto e a função lança `PdfSemTexto` em vez de devolver lixo.
 * `components/video-player.js` — `renderVideo(el, { video_url, video_provider, thumbnail_url, title })` (YouTube/Vimeo iframe, externo `<video>`/link, `none` → placeholder "Vídeo em breve").
 * `components/notes-editor.js` — `mountNotesEditor(el, { value, onSave(content) → Promise, delay: 1200 })` autosave com indicador "Salvo".
 * `components/calendar.js` — visão semanal e mensal do cronograma; `mountCalendar(el, { view, date, days, onItemClick, onDayClick, onViewChange })`.
@@ -338,7 +356,7 @@ Sequência de dias (`streak`): dias consecutivos com pelo menos um `study_log` (
 | `/app/onboarding` | onboarding.js | sequência de perguntas em etapas (prova → disponibilidade → nível → dificuldade → específicas da prova) |
 | `/app/cronograma` | schedule.js | hoje / semana / mês; concluir, reagendar, alterar horário, não realizada, "Não consegui estudar hoje", item manual, recalcular |
 | `/app/materias`, `/app/materias/:subjectId`, `/app/materias/:subjectId/assuntos/:topicId` | subjects.js, subject.js, topic.js | cards com progresso → assuntos → subassuntos e aulas |
-| `/app/aulas`, `/app/aulas/:id`, `/app/aulas/:id/praticar` | lessons.js, lesson.js, practice.js | lista/continuar; player + resumo + anotações + provas onde cai + concluir; Pratique agora (5 questões) |
+| `/app/aulas`, `/app/aulas/:id`, `/app/aulas/:id/praticar` | lessons.js, lesson.js, practice.js | lista/continuar; player + resumo + anotações + provas onde cai + concluir; Pratique agora (escolhe o nível → 3 questões, uma por assunto) |
 | `/app/questoes` | questions.js | banco com filtros, resolver com feedback |
 | `/app/simulados`, `/app/simulados/:id`, `/app/simulados/:id/resultado` | simulados.js, simulado-run.js, simulado-result.js | tipos, iniciar, executar, resultado com gráficos |
 | `/app/redacao`, `/app/redacao/nova`, `/app/redacao/:id` | essays.js, essay-new.js, essay.js | Minhas Redações + evolução; escolher/gerar tema, escrever, enviar; correção detalhada |
@@ -359,7 +377,7 @@ Redação IA, Tutor IA, Provas Anteriores, Revisões, Caderno de Erros, Meu Dese
 Favoritos, Aulas Particulares, Perfil. Menu inferior (mobile): Início, Cronograma, Estudar, Tutor IA, Perfil.
 
 ### 6.5 Páginas do admin (`js/admin/pages/`)
-`/admin` dashboard.js · `/admin/alunos` students.js · `/admin/alunos/:id` student.js · `/admin/conteudo` content.js (árvore área→matéria→assunto→subassunto, reordenar, criar/editar inline) · `/admin/aulas` lessons.js · `/admin/aulas/nova|:id` lesson-form.js · `/admin/questoes` questions.js · `/admin/questoes/nova|:id` question-form.js · `/admin/questoes/importar` questions-import.js · `/admin/provas-anteriores` past-exams.js · `/admin/vestibulares` exams.js · `/admin/vestibulares/:id` exam-form.js (dados, matérias+pesos, assuntos, redação/critérios) · `/admin/simulados` simulados.js · `/admin/redacao` essays.js (temas, critérios por prova, redações corrigidas) · `/admin/professores` teachers.js · `/admin/agendamentos` bookings.js · `/admin/planos` plans.js · `/admin/configuracoes` settings.js (marca, acesso, OpenRouter, Asaas, e-mail) · `/admin/plataforma` platform.js (saúde, uso de IA, erros, auditoria).
+`/admin` dashboard.js · `/admin/alunos` students.js · `/admin/alunos/:id` student.js · `/admin/conteudo` content.js (árvore área→matéria→assunto→subassunto, reordenar, criar/editar inline) · `/admin/aulas` lessons.js · `/admin/aulas/nova|:id` lesson-form.js · `/admin/questoes` questions.js · `/admin/questoes/nova|:id` question-form.js · `/admin/questoes/importar` questions-import.js · `/admin/ler-prova` exam-import.js (prova em PDF → banco: lê o texto no navegador com pdf.js, varre em lotes, confere e importa) · `/admin/provas-anteriores` past-exams.js · `/admin/vestibulares` exams.js · `/admin/vestibulares/:id` exam-form.js (dados, matérias+pesos, assuntos, redação/critérios) · `/admin/simulados` simulados.js · `/admin/redacao` essays.js (temas, critérios por prova, redações corrigidas) · `/admin/professores` teachers.js · `/admin/agendamentos` bookings.js · `/admin/planos` plans.js · `/admin/configuracoes` settings.js (marca, acesso, OpenRouter, Asaas, e-mail) · `/admin/plataforma` platform.js (saúde, uso de IA, erros, auditoria).
 
 ---
 

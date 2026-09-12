@@ -74,6 +74,41 @@ async function toggleActive(row, table) {
   }
 }
 
+async function markReviewed(row, table) {
+  try {
+    await api.patch('/api/admin/questions/revisao', { ids: [row.id], reviewed: true });
+    toast('Questão marcada como conferida.', { type: 'success' });
+    table.reload();
+  } catch (err) {
+    toast((err && err.message) || 'Não foi possível marcar a conferência.', { type: 'error' });
+  }
+}
+
+/**
+ * Situação + sinais de conferência.
+ *
+ * A questão que a IA escreveu entra ativa no banco sem ninguém olhar — foi uma
+ * decisão consciente, porque escondê-la faria o erro do aluno sumir do caderno
+ * dele. Estes selos são a contrapartida: dizem o que veio da IA, o que ninguém
+ * conferiu, o que aluno reclamou e o que quase ninguém acerta (gabarito trocado
+ * tem assinatura estatística).
+ */
+function reviewCell(row) {
+  const tentativas = Number(row.attempts_count) || 0;
+  const acertos = Number(row.correct_count) || 0;
+  const suspeita = tentativas >= 5 && acertos / tentativas <= 0.2;
+  return html`
+    <div class="qa-review">
+      ${row.active ? badge('Ativa', 'green') : badge('Inativa', 'gray')}
+      ${row.generated_by_ai ? badge('IA', 'blue', { icon: 'sparkles' }) : ''}
+      ${row.open_reports ? badge(`${row.open_reports} aviso${row.open_reports > 1 ? 's' : ''}`, 'red', { icon: 'flag' }) : ''}
+      ${suspeita ? badge(`${Math.round((acertos / tentativas) * 100)}% de acerto`, 'orange', { icon: 'triangle-alert' }) : ''}
+      ${row.generated_by_ai && !row.reviewed_at && !row.open_reports && !suspeita
+        ? badge('Sem conferência', 'gray')
+        : ''}
+    </div>`;
+}
+
 async function removeQuestion(row, table) {
   const ok = await confirm({
     title: 'Excluir questão',
@@ -178,7 +213,7 @@ async function renderQuestionsPage(ctx) {
       { key: 'difficulty', label: 'Dificuldade', sortable: true, nowrap: true, render: (row) => badge(difficultyLabel(row.difficulty), difficultyTone(row.difficulty)) },
       { key: 'year', label: 'Origem', sortable: true, nowrap: true, render: originCell },
       { key: 'exams', label: 'Provas', render: examsCell },
-      { key: 'active', label: 'Situação', nowrap: true, render: (row) => (row.active ? badge('Ativa', 'green') : badge('Inativa', 'gray')) },
+      { key: 'active', label: 'Situação', nowrap: true, render: reviewCell },
     ],
     fetch: (page, tableQuery) => api.get('/api/admin/questions', { query: tableQuery }),
     pageSize: 20,
@@ -196,11 +231,22 @@ async function renderQuestionsPage(ctx) {
       { key: 'year', label: 'Ano', options: (filters.years || []).map((y) => ({ value: String(y), label: String(y) })) },
       { key: 'board', label: 'Banca', options: (filters.boards || []).map((b) => ({ value: b, label: b })) },
       { key: 'status', label: 'Situação', options: [{ value: 'active', label: 'Ativas' }, { value: 'inactive', label: 'Inativas' }] },
+      { key: 'origem', label: 'Origem', options: [{ value: 'ia', label: 'Elaboradas pela IA' }, { value: 'humana', label: 'De prova ou cadastradas' }] },
+      {
+        key: 'conferencia',
+        label: 'Conferência',
+        options: [
+          { value: 'pendente', label: 'Ainda não conferidas' },
+          { value: 'reclamada', label: 'Com aviso de aluno' },
+          { value: 'feita', label: 'Já conferidas' },
+        ],
+      },
     ],
     onRowClick: (row) => ctx.navigate(`/admin/questoes/${row.id}`),
     rowActions: [
       { label: 'Editar questão', icon: 'square-pen', onClick: (row) => ctx.navigate(`/admin/questoes/${row.id}`) },
       { label: 'Ativar ou desativar', icon: 'toggle-right', onClick: (row, table) => toggleActive(row, table) },
+      { label: 'Marcar como conferida', icon: 'check-check', onClick: (row, table) => markReviewed(row, table) },
       { label: 'Excluir questão', icon: 'trash-2', danger: true, onClick: (row, table) => removeQuestion(row, table) },
     ],
   });

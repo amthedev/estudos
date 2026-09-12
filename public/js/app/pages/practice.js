@@ -14,7 +14,7 @@
 // refazer do caderno de erros.
 // =====================================================================
 import { api } from '../../core/api.js';
-import { html, render, qs, on, setLoading, pageHeader, emptyState, errorState, skeleton, ring } from '../../core/ui.js';
+import { html, render, qs, on, toast, setLoading, pageHeader, emptyState, errorState, skeleton, ring } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { mountQuestionRunner } from '../../components/question-runner.js';
 
@@ -283,6 +283,9 @@ export default async function renderPage(ctx) {
       });
       state.questions = Array.isArray(result && result.questions) ? result.questions : [];
       state.step = 'running';
+      // O servidor avisa quando entregou menos do que queria — por exemplo,
+      // quando o aluno já pediu questões novas demais hoje.
+      if (result && result.notice) toast(result.notice, { type: 'warning' });
     } catch (err) {
       state.step = 'setup';
       state.error = (err && err.message) || 'Não foi possível preparar as questões desta aula.';

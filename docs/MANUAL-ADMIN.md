@@ -268,7 +268,53 @@ identificador de cada vestibular (aba Dados). O cabeçalho também aceita nomes 
 
 Limite: 2.000 linhas por importação e 4 MB por arquivo.
 
-### 4.3 Exportar
+### 4.3 Ler uma prova em PDF e virar questões
+
+Tela: **Ler prova em PDF** (`/admin/ler-prova`). É o caminho para transformar uma prova já aplicada —
+ENEM, ENEM PPL, Barro Branco — em questões do banco sem digitar uma a uma.
+
+1. **Nova leitura de prova.** Dê um nome (só para você se achar depois), escolha o **vestibular**, o
+   **ano** e a **banca**.
+2. **Cole o gabarito oficial.** Aceita qualquer formato: `1-A 2-B 3-C`, `1) A`, um por linha. **Faça
+   isso.** Sem o gabarito, a IA precisa *resolver* cada questão para marcar a resposta, e ela erra com
+   confiança. Com o gabarito, ela só transcreve — e a resposta vem da prova, não do palpite.
+3. **Criar leitura** e **escolher o PDF**. O texto é lido no seu próprio navegador; o arquivo não sai
+   do seu computador para a inteligência artificial. Uma prova inteira leva alguns segundos.
+4. **Varrer a prova.** Use **Varrer a prova inteira** e deixe rodando, ou **Começar a varrer** para
+   ir por partes. A barra mostra o quanto já foi lido. Pode fechar a aba: o botão vira **Continuar de
+   onde parou** e nada se perde.
+5. **Conferir.** Cada questão encontrada aparece com enunciado, alternativas e a resposta em verde.
+   Você pode trocar o gabarito na hora ou **descartar** a questão.
+6. **Mandar as marcadas para o banco.** O botão **Marcar as N com gabarito** seleciona de uma vez
+   tudo que veio do gabarito oficial. O resultado diz quantas entraram e, se alguma falhar, o motivo
+   fica na própria questão.
+
+**PDF digitalizado não funciona.** Se a prova for uma foto de cada página (sem texto selecionável), a
+tela avisa com todas as letras. Procure a versão original do arquivo, ou use a importação por
+planilha.
+
+### 4.4 Conferir as questões que a IA escreveu
+
+Quando um aluno termina uma aula e pede para praticar, a plataforma entrega três questões — uma de
+cada assunto da aula, no nível que ele escolher. Ela usa primeiro o que existe no banco; o que faltar,
+a inteligência artificial elabora na hora e **guarda no banco**, para o próximo aluno já encontrar
+pronto.
+
+Essas questões entram **ativas**, sem esperar você conferir. É proposital: se ficassem escondidas, o
+erro do aluno sumiria do caderno de erros dele. Em troca, a lista de questões tem duas formas de
+achar o que precisa de atenção:
+
+* Filtro **Origem › Elaboradas pela IA**.
+* Filtro **Conferência › Ainda não conferidas**, **Com aviso de aluno** ou **Já conferidas**.
+
+Na coluna de situação aparecem selos: **IA**, **Sem conferência**, **N avisos** (aluno reclamou) e a
+**taxa de acerto** quando ela está muito baixa — gabarito trocado quase sempre aparece como
+"5 tentativas, 0% de acerto". Use **Marcar como conferida** no menu da linha quando terminar de
+olhar; isso também fecha os avisos dos alunos.
+
+O aluno avisa pelo botão **Reportar problema**, que aparece depois que ele responde a questão.
+
+### 4.5 Exportar
 
 O botão **Exportar CSV** na lista de questões baixa exatamente o que está filtrado na tela, no mesmo
 formato da importação. Serve para revisar em planilha, corrigir em massa e reimportar.
@@ -420,6 +466,31 @@ sozinhos, sem depender do cadastro).
    por isso o mesmo modelo rende simulados diferentes a cada tentativa.
 
 Simulados excluídos não apagam as tentativas já feitas: o histórico do aluno continua no lugar.
+
+### 8.1 O que o aluno vê
+
+Na tela dele, ao escolher **Simulado da minha prova**, aparecem três formatos:
+
+* **Simulado completo** — 80 questões em 4 horas, para treinar fôlego.
+* **Mini simulado** — 20 questões em 1 hora, para caber numa sessão de estudo.
+* **Do meu jeito** — ele escolhe quantas questões e quanto tempo.
+
+Ele também escolhe qual prova quer simular (ENEM, Barro Branco ou outro vestibular), independente da
+prova do perfil dele.
+
+### 8.2 Quando o banco não fecha a conta
+
+Se o aluno pede 80 questões e o banco só tem 30 do recorte escolhido, a inteligência artificial
+elabora o que faltar — até um teto, e as questões ficam guardadas no banco para os próximos.
+
+O teto é **Configurações › Questões por IA em um simulado** (padrão: 20). Coloque `0` para desligar e
+só usar o que está no banco.
+
+Quando ainda assim faltar, o simulado avisa o aluno na abertura: *"este simulado saiu com 52 das 80
+questões pedidas"*. Antes ele saía menor em silêncio.
+
+A conta de sempre: quanto mais questões de prova de verdade você subir (seção 4.3), menos a IA
+precisa inventar.
 
 ---
 

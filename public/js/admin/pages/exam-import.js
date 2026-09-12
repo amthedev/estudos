@@ -518,7 +518,8 @@ async function importPicked(trigger) {
     if (res.failed) {
       toast(`${res.imported} no banco, ${res.failed} não entraram. Veja o motivo em cada questão.`, { type: 'warning' });
     } else {
-      toast(`${res.imported} ${pluralize(res.imported, 'questão foi', 'questões foram')} para o banco.`, { type: 'success' });
+      // pluralize já traz o número na frente.
+      toast(`${pluralize(res.imported, 'questão foi', 'questões foram')} para o banco.`, { type: 'success' });
     }
   } catch (err) {
     toast(err.message || 'Não foi possível gravar as questões.', { type: 'error' });
