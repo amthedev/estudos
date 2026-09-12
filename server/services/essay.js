@@ -459,11 +459,15 @@ async function correctEssay(essayId, { timeoutMs = CORRECTION_TIMEOUT_MS } = {})
 
   let result;
   try {
+    // Uma correção completa traz parecer, cinco competências comentadas com
+    // trechos, pontos fortes e fracos, erros gramaticais e cinco análises —
+    // cerca de 2.300 tokens no caso típico. Com 2500 não havia folga: uma
+    // redação longa, com mais erros a apontar, era cortada no meio do JSON.
     result = await ai.json({
       messages,
       model,
       temperature: 0.2,
-      maxTokens: 2500,
+      maxTokens: 4000,
       userId: essay.user_id,
       feature: 'essay',
       signal: controller.signal,
@@ -576,11 +580,15 @@ async function generateTheme(examId, { userId = null } = {}) {
   const { messages } = buildThemePrompt(exam, existing.map((row) => row.title));
   const model = (await getSetting('openrouter_model')) || undefined;
 
+  // O tema pede a proposta da banca MAIS três textos motivadores, e o próprio
+  // código aceita gravar até 12 mil caracteres (4 mil da proposta, 8 mil dos
+  // textos). Isso são cerca de 3.800 tokens de saída: com 1800 a resposta era
+  // cortada no meio do JSON e chegava ao parser como "formato inválido".
   const result = await ai.json({
     messages,
     model,
     temperature: 0.9,
-    maxTokens: 1800,
+    maxTokens: 4500,
     userId,
     feature: 'essay_theme',
   });

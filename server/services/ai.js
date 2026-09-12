@@ -32,6 +32,12 @@ const LIMIT_MESSAGE = 'Limite mensal de uso da IA atingido';
 
 let realClient = null;
 let mockClient = null;
+let clienteDeTeste = null;
+
+/** Injeta um cliente falso (só usado pelos testes). Passe null para restaurar. */
+function setClientForTests(client) {
+  clienteDeTeste = client;
+}
 
 // ---------------------------------------------------------------------------
 // Configuração / cliente
@@ -47,6 +53,7 @@ function isConfigured() {
 
 /** Cliente OpenRouter (ou o cliente de simulação). Lança 503 quando não há chave configurada. */
 function getClient() {
+  if (clienteDeTeste) return clienteDeTeste;
   if (isMock()) {
     if (!mockClient) mockClient = createMockClient();
     return mockClient;
@@ -222,6 +229,10 @@ async function chat({
   let content = '';
   let usage = null;
   let aborted = false;
+  // 'length' significa que o modelo bateu no max_tokens e a resposta foi
+  // cortada no meio. Sem isso, uma resposta truncada chega ao parser como
+  // "formato inválido", que manda investigar o lugar errado.
+  let finishReason = null;
   let usedModel = resolvedModel;
 
   try {
@@ -236,11 +247,14 @@ async function chat({
         }
         if (chunk && chunk.usage) usage = chunk.usage;
         if (chunk && chunk.model) usedModel = chunk.model;
+        const razao = chunk && chunk.choices && chunk.choices[0] && chunk.choices[0].finish_reason;
+        if (razao) finishReason = razao;
       }
     } else {
       const completion = await client.chat.completions.create(params, requestOptions);
       const choice = completion && completion.choices && completion.choices[0];
       content = (choice && choice.message && choice.message.content) || '';
+      finishReason = (choice && choice.finish_reason) || null;
       usage = (completion && completion.usage) || null;
       if (completion && completion.model) usedModel = completion.model;
     }
@@ -264,7 +278,14 @@ async function chat({
 
   const finalUsage = normalizeUsage(usage, messages, content);
   await recordUsage({ userId, feature, model: usedModel, usage: finalUsage, status: 'ok', latencyMs: Date.now() - started });
-  return { content, usage: finalUsage, model: usedModel, latency_ms: Date.now() - started, aborted };
+  return {
+    content,
+    usage: finalUsage,
+    model: usedModel,
+    latency_ms: Date.now() - started,
+    aborted,
+    truncated: finishReason === 'length',
+  };
 }
 
 /** Extrai um objeto JSON da resposta (tolera cercas ```json e texto ao redor). */
@@ -293,7 +314,23 @@ async function json(options = {}) {
   const result = await chat({ ...options, stream: false, responseFormat: { type: 'json_object' } });
   const data = parseJsonResponse(result.content);
   if (!data) {
-    console.error('[ai] resposta JSON inválida:', String(result.content || '').slice(0, 300));
+    const tamanho = String(result.content || '').length;
+    console.error(
+      `[ai] resposta JSON inválida (${tamanho} caracteres, truncada: ${result.truncated}):`,
+      String(result.content || '').slice(0, 300)
+    );
+    // Truncada e malformada são problemas diferentes e pedem ações diferentes:
+    // uma é limite de tamanho curto demais, a outra é o modelo não respeitando
+    // o formato. Tratar as duas com a mesma mensagem mandava procurar no lugar
+    // errado.
+    if (result.truncated) {
+      throw new AppError(
+        503,
+        'ai_unavailable',
+        'A resposta da IA foi cortada antes de terminar. Isso costuma ser limite de tamanho: ' +
+          'aumente o limite de tokens da geração ou tente de novo.'
+      );
+    }
     throw new AppError(503, 'ai_unavailable', 'A IA devolveu uma resposta em formato inválido. Tente novamente.');
   }
   return { ...result, data };
@@ -546,6 +583,7 @@ module.exports = {
   monthUsage,
   monthlyLimit,
   parseJsonResponse,
+  setClientForTests,
   UNAVAILABLE_MESSAGE,
   LIMIT_MESSAGE,
 };
