@@ -389,18 +389,23 @@ async function applyAsaasCheckoutEvent(tx, event) {
   // teste de 24h e a recorrência são decididos.
   if (event.type === 'CHECKOUT_PAID' && row.payment_method === 'pix') {
     const plano = await tx.one('SELECT * FROM plans WHERE id = $1', [row.plan_id]);
+    const credito = `checkout:${row.provider_checkout_id}`;
+    const existente = await tx.one(
+      `SELECT id, last_payment_id FROM subscriptions
+        WHERE provider = 'asaas' AND user_id = $1 AND provider_subscription_id IS NULL
+        ORDER BY created_at DESC LIMIT 1`,
+      [row.user_id]
+    );
+    // Este checkout já concedeu o período: recalcular a partir de now() faria
+    // o acesso crescer um pouco a cada reprocessamento.
+    if (existente && existente.last_payment_id === credito) {
+      return { ...row, subscription_id: existente.id, unchanged: 'cobrança já creditada' };
+    }
     if (plano) {
       const agora = new Date();
       const meses = asaas.accessMonths(plano, { first: true });
       const assinatura = await applySubscription(tx, {
-        id: (
-          await tx.one(
-            `SELECT id FROM subscriptions
-              WHERE provider = 'asaas' AND user_id = $1 AND provider_subscription_id IS NULL
-              ORDER BY created_at DESC LIMIT 1`,
-            [row.user_id]
-          )
-        )?.id || null,
+        id: existente ? existente.id : null,
         user_id: row.user_id,
         plan_id: plano.id,
         provider: 'asaas',
@@ -410,7 +415,7 @@ async function applyAsaasCheckoutEvent(tx, event) {
         current_period_start: agora,
         current_period_end: asaas.addMonths(agora, meses),
         last_payment_at: agora,
-        last_payment_id: `checkout:${row.provider_checkout_id}`,
+        last_payment_id: credito,
         payment_method: row.payment_method,
         cancel_at_period_end: true, // pagamento único: não renova sozinho
       });

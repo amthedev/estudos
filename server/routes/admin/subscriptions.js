@@ -3,14 +3,18 @@
 /**
  * Painel administrativo — assinaturas (somente leitura; a escrita vem dos webhooks do provedor).
  *
- *   GET /api/admin/subscriptions          lista paginada (q, status, plan_id, sort, dir)
- *   GET /api/admin/subscriptions/summary  { total, active, trialing, past_due, canceled, other, mrr_cents }
+ *   GET  /api/admin/subscriptions            lista paginada (q, status, plan_id, sort, dir)
+ *   GET  /api/admin/subscriptions/summary    { total, active, trialing, past_due, canceled, other, mrr_cents }
+ *   GET  /api/admin/subscriptions/pendentes  pagamentos recebidos que não viraram acesso
+ *   POST /api/admin/subscriptions/reprocessar reprocessa esses pagamentos
  */
 const router = require('express').Router();
 const db = require('../../db/pool');
 const { validate, z } = require('../../middleware/validate');
 const { wrap } = require('../../middleware/errors');
 const { parsePagination, paginate, parseSort } = require('../../utils/pagination');
+const { audit } = require('../../middleware/audit');
+const payments = require('../../services/payments');
 
 const STATUSES = ['trialing', 'active', 'past_due', 'canceled', 'incomplete', 'incomplete_expired', 'unpaid', 'paused'];
 
@@ -101,6 +105,130 @@ router.get(
       db.many(itemsSql, params),
     ]);
     res.json(paginate(items, countRow ? countRow.total : 0, { page, limit }));
+  })
+);
+
+/**
+ * Pagamentos que o provedor entregou e que não viraram acesso.
+ *
+ * O corpo de todo evento fica guardado em payment_events, inclusive os que o
+ * processamento descartou — foi o que salvou um Pix pago em produção que não
+ * liberou o plano. Reprocessar passa esses eventos pelo código atual.
+ *
+ * Fica no painel porque a hospedagem não dá terminal: sem isso, recuperar um
+ * pagamento perdido dependeria de acesso ao banco.
+ */
+const TIPOS_DE_PAGAMENTO = ['CHECKOUT_PAID', 'PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED'];
+
+async function pagamentosSemAcesso(dias = 30) {
+  return db.many(
+    `SELECT e.id, e.event_id, e.type, e.payload, e.processed_at
+       FROM payment_events e
+      WHERE e.provider = 'asaas'
+        AND e.type = ANY($1::text[])
+        AND e.processed_at > now() - ($2 || ' days')::interval
+      ORDER BY e.processed_at DESC`,
+    [TIPOS_DE_PAGAMENTO, String(dias)]
+  );
+}
+
+/** Alunos com assinatura valendo agora. */
+async function comAcesso() {
+  const linhas = await db.many(
+    `SELECT user_id FROM subscriptions
+      WHERE status IN ('active','trialing')
+        AND (current_period_end IS NULL OR current_period_end > now())`
+  );
+  return new Set(linhas.map((linha) => linha.user_id));
+}
+
+router.get(
+  '/pendentes',
+  validate({ query: z.object({ dias: z.coerce.number().int().min(1).max(365).optional() }) }),
+  wrap(async (req, res) => {
+    const dias = req.valid.query.dias || 30;
+    const eventos = await pagamentosSemAcesso(dias);
+    const liberados = await comAcesso();
+
+    // O aluno de cada evento vem do checkout, que guarda quem abriu.
+    const checkouts = await db.many(
+      `SELECT c.provider_checkout_id, c.user_id, c.payment_method, u.name, u.email
+         FROM payment_checkouts c JOIN users u ON u.id = c.user_id
+        WHERE c.provider = 'asaas'`
+    );
+    const porCheckout = new Map(checkouts.map((c) => [c.provider_checkout_id, c]));
+
+    const itens = eventos.map((evento) => {
+      const carga = evento.payload || {};
+      const checkoutId = carga.checkout && carga.checkout.id;
+      const dono = checkoutId ? porCheckout.get(checkoutId) : null;
+      return {
+        event_id: evento.event_id,
+        type: evento.type,
+        recebido_em: evento.processed_at,
+        aluno: dono ? { name: dono.name, email: dono.email } : null,
+        payment_method: dono ? dono.payment_method : null,
+        com_acesso: dono ? liberados.has(dono.user_id) : null,
+      };
+    });
+
+    res.json({
+      dias,
+      total: itens.length,
+      sem_acesso: itens.filter((item) => item.com_acesso === false).length,
+      items: itens,
+    });
+  })
+);
+
+router.post(
+  '/reprocessar',
+  validate({ body: z.object({ dias: z.coerce.number().int().min(1).max(365).optional() }) }),
+  wrap(async (req, res) => {
+    const dias = req.valid.body.dias || 30;
+    const eventos = await pagamentosSemAcesso(dias);
+    const antes = await comAcesso();
+
+    const erros = [];
+    let reprocessados = 0;
+    for (const evento of eventos) {
+      try {
+        // Reprocessar é seguro: o crédito de cada cobrança é travado por
+        // subscriptions.last_payment_id, então não soma período nem duplica.
+        await db.tx(async (tx) => {
+          const payload = { provider: 'asaas', event_id: evento.event_id, type: evento.type, payload: evento.payload };
+          if (evento.type.startsWith('CHECKOUT_')) await payments.applyAsaasCheckoutEvent(tx, payload);
+          else await payments.applyAsaasEvent(tx, payload);
+        });
+        reprocessados += 1;
+      } catch (err) {
+        erros.push({ event_id: evento.event_id, message: err.message });
+      }
+    }
+
+    const depois = await comAcesso();
+    const novos = [...depois].filter((id) => !antes.has(id));
+    const liberados = novos.length
+      ? await db.many('SELECT name, email FROM users WHERE id = ANY($1::uuid[])', [novos])
+      : [];
+
+    await audit(req, 'subscription.reprocess', 'subscription', null, {
+      dias,
+      eventos: eventos.length,
+      reprocessados,
+      liberados: liberados.length,
+    });
+
+    res.json({
+      ok: true,
+      eventos: eventos.length,
+      reprocessados,
+      erros,
+      liberados,
+      message: liberados.length
+        ? `${liberados.length} aluno(s) passaram a ter acesso.`
+        : 'Nenhum aluno novo liberado — os pagamentos já estavam em dia.',
+    });
   })
 );
 

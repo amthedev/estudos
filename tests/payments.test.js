@@ -816,6 +816,65 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       );
     });
 
+    it('o painel lista e reprocessa pagamento que não virou acesso', async () => {
+      // A hospedagem não dá terminal, então a recuperação precisa caber no
+      // painel. Este é o caminho que devolve o acesso de quem pagou e ficou
+      // sem — o caso real do Pix em produção.
+      const admin = await ctx.loginAdmin();
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, payment_method: 'pix' });
+
+      // o evento chega e é descartado porque o aluno não é identificável
+      await ctx.db.query(
+        `INSERT INTO payment_events (provider, event_id, type, payload)
+         VALUES ('asaas', 'evt_orfao', 'CHECKOUT_PAID', $1::jsonb)`,
+        [JSON.stringify({ id: 'evt_orfao', event: 'CHECKOUT_PAID', checkout: { id: 'checkout_000001', status: 'PAID' } })]
+      );
+
+      const antes = await student.agent.get('/api/billing/status');
+      assert.equal(antes.body.access.allowed, false, 'o aluno pagou e está sem acesso');
+
+      const lista = await admin.agent.get('/api/admin/subscriptions/pendentes');
+      assert.equal(lista.status, 200);
+      assert.ok(lista.body.total >= 1);
+      const item = lista.body.items.find((i) => i.event_id === 'evt_orfao');
+      assert.ok(item, 'o pagamento aparece na lista');
+      assert.equal(item.com_acesso, false, 'marcado como sem acesso');
+      assert.equal(item.aluno.email, student.user.email, 'nomeia quem pagou');
+
+      const res = await admin.agent.post('/api/admin/subscriptions/reprocessar', {});
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.liberados.length, 1);
+      assert.equal(res.body.liberados[0].email, student.user.email);
+
+      const depois = await student.agent.get('/api/billing/status');
+      assert.equal(depois.body.access.allowed, true, 'o acesso foi devolvido');
+    });
+
+    it('reprocessar de novo não concede período em dobro', async () => {
+      const admin = await ctx.loginAdmin();
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, payment_method: 'pix' });
+      await ctx.db.query(
+        `INSERT INTO payment_events (provider, event_id, type, payload)
+         VALUES ('asaas', 'evt_orfao_2', 'CHECKOUT_PAID', $1::jsonb)`,
+        [JSON.stringify({ id: 'evt_orfao_2', event: 'CHECKOUT_PAID', checkout: { id: 'checkout_000001', status: 'PAID' } })]
+      );
+
+      await admin.agent.post('/api/admin/subscriptions/reprocessar', {});
+      const primeiro = await ctx.db.one('SELECT current_period_end FROM subscriptions WHERE user_id = $1', [student.user.id]);
+
+      await admin.agent.post('/api/admin/subscriptions/reprocessar', {});
+      const segundo = await ctx.db.one(
+        'SELECT current_period_end, count(*) OVER ()::int AS total FROM subscriptions WHERE user_id = $1',
+        [student.user.id]
+      );
+      assert.equal(segundo.total, 1, 'uma assinatura só');
+      assert.equal(
+        new Date(segundo.current_period_end).getTime(),
+        new Date(primeiro.current_period_end).getTime(),
+        'o período não pode crescer ao repetir'
+      );
+    });
+
     it('evento de criação atrasado não rebaixa uma assinatura já paga', async () => {
       await student.agent.post('/api/billing/checkout', {
         plan_id: plans.yearly,

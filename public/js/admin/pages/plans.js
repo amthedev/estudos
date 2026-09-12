@@ -319,12 +319,97 @@ function mountSubscriptionsTable() {
 
 // ---------------------------------------------------------------------
 // Renderização
+/**
+ * Pagamentos que o provedor entregou e que não viraram acesso.
+ *
+ * Existe porque um Pix foi pago em produção e o plano não liberou: o evento
+ * chegou e foi descartado por um defeito já corrigido. Como a hospedagem não
+ * dá terminal, a recuperação precisa caber no painel.
+ */
+async function abrirPagamentosSemAcesso() {
+  let dados;
+  try {
+    dados = await api.get('/api/admin/subscriptions/pendentes');
+  } catch (err) {
+    toast(err.message || 'Não foi possível consultar os pagamentos.', { type: 'error' });
+    return;
+  }
+
+  const corpo = document.createElement('div');
+
+  const desenhar = () => {
+    if (!dados.total) {
+      render(
+        corpo,
+        html`<p class="text-2">Nenhum pagamento recebido nos últimos ${dados.dias} dias.</p>
+          <p class="hint">Se um aluno pagou e não recebeu, o evento não chegou até aqui — confira o webhook no painel do provedor e reenvie o evento por lá.</p>`
+      );
+      return;
+    }
+    render(
+      corpo,
+      html`
+        <p class="text-2">
+          ${dados.total} pagamento(s) recebido(s).
+          ${dados.sem_acesso
+            ? html`<strong>${dados.sem_acesso} de aluno(s) que continuam sem acesso.</strong>`
+            : 'Todos os alunos correspondentes estão com acesso.'}
+        </p>
+        <table class="table">
+          <thead><tr><th>Quando</th><th>Aluno</th><th>Evento</th><th>Acesso</th></tr></thead>
+          <tbody>
+            ${dados.items.map(
+              (item) => html`<tr>
+                <td class="text-xs">${fmtDateTime(item.recebido_em)}</td>
+                <td>${item.aluno ? html`${item.aluno.name}<br><span class="text-xs text-3">${item.aluno.email}</span>` : html`<span class="dt-muted">não identificado</span>`}</td>
+                <td class="text-xs">${item.type}</td>
+                <td>${item.com_acesso === null ? html`<span class="dt-muted">—</span>` : item.com_acesso ? badge('liberado', 'green') : badge('sem acesso', 'orange')}</td>
+              </tr>`
+            )}
+          </tbody>
+        </table>
+        <p class="hint mt-3">
+          Reprocessar passa esses pagamentos pelo código atual. É seguro repetir:
+          cada cobrança só concede período uma vez.
+        </p>`
+    );
+  };
+  desenhar();
+
+  modal({
+    title: 'Pagamentos sem acesso',
+    subtitle: `Cobranças que o provedor confirmou nos últimos ${dados.dias} dias.`,
+    size: 'lg',
+    body: corpo,
+    actions: [
+      { label: 'Fechar', variant: 'ghost', close: true },
+      {
+        label: 'Reprocessar',
+        variant: 'primary',
+        icon: 'refresh-cw',
+        async onClick() {
+          const res = await api.post('/api/admin/subscriptions/reprocessar', {});
+          toast(res.message, { type: res.liberados.length ? 'success' : 'info' });
+          if (res.erros && res.erros.length) {
+            toast(`${res.erros.length} evento(s) com erro. Veja o registro em Plataforma.`, { type: 'warning' });
+          }
+          dados = await api.get('/api/admin/subscriptions/pendentes');
+          desenhar();
+          await load();
+          return false;
+        },
+      },
+    ],
+  });
+}
+
 // ---------------------------------------------------------------------
 function header() {
   return pageHeader({
     title: 'Planos e assinaturas',
     subtitle: 'Preços, período de teste e acompanhamento das assinaturas dos alunos.',
     actions: html`
+      <button type="button" class="btn btn-ghost" data-action="pendentes">${icon('receipt')}<span>Pagamentos sem acesso</span></button>
       <button type="button" class="btn btn-secondary" data-action="reload">${icon('refresh-cw')}<span>Atualizar</span></button>
       <button type="button" class="btn btn-primary" data-action="new-plan">${icon('plus')}<span>Novo plano</span></button>`,
   });
@@ -409,6 +494,7 @@ export default async function renderPlans(ctx) {
   on(ctx.el, 'click', '[data-action]', (event, target) => {
     const action = target.dataset.action;
     if (action === 'new-plan') openPlanForm(null);
+    else if (action === 'pendentes') abrirPagamentosSemAcesso();
     else if (action === 'reload' || action === 'retry') load();
   });
   await load();
