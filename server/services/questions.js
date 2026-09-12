@@ -159,6 +159,25 @@ async function pickQuestions({
   return shuffle(rows.map(publicQuestion));
 }
 
+/**
+ * Questões públicas (sem gabarito) pelos ids informados, NA ORDEM em que vieram.
+ * Quem monta um conjunto — a prática depois da aula, por exemplo — decide a
+ * ordem antes; o banco devolveria em qualquer ordem.
+ * @returns {Promise<object[]>}
+ */
+async function getQuestionsByIds(ids) {
+  const lista = Array.from(new Set((ids || []).filter(Boolean)));
+  if (!lista.length) return [];
+  const rows = await db.many(
+    `SELECT ${QUESTION_COLUMNS}, ${NAME_COLUMNS}, ${OPTIONS_SQL}
+       FROM questions q ${BASE_JOINS}
+      WHERE q.id = ANY($1::uuid[]) AND q.active`,
+    [lista]
+  );
+  const byId = new Map(rows.map((row) => [row.id, publicQuestion(row)]));
+  return lista.map((id) => byId.get(id)).filter(Boolean);
+}
+
 /** Minutos de estudo registrados por uma resposta (1 a 10, a partir do tempo gasto). */
 function minutesFromTime(timeSpentSec) {
   const seconds = Number(timeSpentSec);
@@ -255,6 +274,7 @@ module.exports = {
   OPTIONS_SQL,
   BASE_JOINS,
   publicQuestion,
+  getQuestionsByIds,
   pickQuestions,
   gradeAnswer,
   shuffle,

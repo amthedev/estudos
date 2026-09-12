@@ -58,6 +58,12 @@ const settingsBody = z
     tutor_system_prompt: z.string().trim().min(40, 'O prompt do tutor precisa ser mais detalhado.').max(8000).optional(),
     review_intervals: reviewIntervals.optional(),
     schedule_defaults: scheduleDefaults.optional(),
+    simulado_ai_questions_max: z.coerce
+      .number()
+      .int()
+      .min(0, 'Use 0 para não completar simulados com IA.')
+      .max(90, 'O simulado tem no máximo 90 questões.')
+      .optional(),
     private_lessons_enabled: z.boolean().optional(),
     daily_quotes: dailyQuotes.optional(),
     // provedor de pagamento ativo: as chaves ficam no ambiente, aqui só a escolha

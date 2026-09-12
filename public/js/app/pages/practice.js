@@ -1,20 +1,39 @@
 // =====================================================================
 // Foco Elite — /app/aulas/:id/praticar
-// "Pratique agora": 5 questões do assunto da aula com feedback imediato.
-// As respostas vão para POST /api/questions/:id/answer com context
-// 'practice' e context_id da aula; ao terminar, o cronograma é avisado
-// por POST /api/schedule/after-practice.
+// "Pratique agora": o aluno escolhe a dificuldade e recebe uma questão de
+// cada assunto da aula, com correção na hora. Quando o banco não tem
+// questão daquele assunto na dificuldade pedida, a IA elabora — por isso
+// há uma tela de espera entre a escolha e as questões.
+//
+// APIs: POST /api/lessons/:id/practice { difficulty } para montar o
+// conjunto, POST /api/questions/:id/answer com context 'practice' e
+// context_id da aula para responder, e POST /api/schedule/after-practice
+// ao terminar, para o cronograma se adaptar ao desempenho.
 //
 // Exporta `practiceSummary`, o cartão de resultado reutilizado pelo
 // refazer do caderno de erros.
 // =====================================================================
 import { api } from '../../core/api.js';
-import { html, render, qs, on, pageHeader, emptyState, errorState, skeleton, ring } from '../../core/ui.js';
+import { html, render, qs, on, setLoading, pageHeader, emptyState, errorState, skeleton, ring } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { mountQuestionRunner } from '../../components/question-runner.js';
 
 let cleanup = [];
 let runner = null;
+let waitingTimer = null;
+
+const DIFFICULTIES = [
+  { value: 1, label: 'Fácil', text: 'Aplicação direta do conceito, em uma etapa.' },
+  { value: 2, label: 'Média', text: 'Duas ou três etapas, ou interpretação antes de aplicar.' },
+  { value: 3, label: 'Difícil', text: 'Mais de um conceito, com pegadinha nas alternativas.' },
+];
+
+const WAITING_MESSAGES = [
+  'Separando os assuntos da aula…',
+  'Escolhendo o que cobrar de cada um…',
+  'Escrevendo os enunciados e as alternativas…',
+  'Conferindo o gabarito e a resolução…',
+];
 
 /**
  * Cartão de resultado de uma sessão de questões.
@@ -58,10 +77,23 @@ function destroyRunner() {
   runner = null;
 }
 
+function stopWaitingMessages() {
+  if (waitingTimer) clearInterval(waitingTimer);
+  waitingTimer = null;
+}
+
 export default async function renderPage(ctx) {
   const { el, params } = ctx;
   const lessonId = params.id;
-  const state = { lesson: null, questions: [], loading: true, error: null };
+  const state = {
+    lesson: null,
+    questions: [],
+    difficulty: 2,
+    step: 'setup', // setup → generating → running
+    loading: true,
+    error: null,
+    generating: null,
+  };
 
   render(el, html`<div class="prc-page" data-body></div>`);
   const body = qs('[data-body]', el);
@@ -72,8 +104,8 @@ export default async function renderPage(ctx) {
     return pageHeader({
       title: topic ? `Pratique agora — ${topic}` : 'Pratique agora',
       subtitle: lesson
-        ? `Questões do assunto da aula “${lesson.title}”. Você recebe o resultado a cada resposta.`
-        : 'Questões do assunto desta aula, com correção na hora.',
+        ? `Uma questão de cada assunto da aula “${lesson.title}”, com o resultado a cada resposta.`
+        : 'Questões dos assuntos desta aula, com correção na hora.',
       breadcrumb: lesson
         ? [
             { label: 'Aulas', href: '/app/aulas' },
@@ -83,6 +115,58 @@ export default async function renderPage(ctx) {
         : null,
       actions: html`<a class="btn btn-ghost" href="/app/aulas/${lessonId}">${icon('arrow-left')}<span>Voltar à aula</span></a>`,
     });
+  }
+
+  function setupView() {
+    return html`
+      <section class="card prc-setup">
+        <div class="card-body">
+          <h2 class="prc-setup-title">Qual o nível das questões?</h2>
+          <p class="prc-setup-text">
+            Você recebe três questões, uma de cada assunto da aula. Escolha o quanto quer ser cobrado.
+          </p>
+          <div class="prc-levels" role="radiogroup" aria-label="Dificuldade das questões">
+            ${DIFFICULTIES.map(
+              (level) => html`
+                <button type="button" class="prc-level${level.value === state.difficulty ? ' is-active' : ''}"
+                        role="radio" aria-checked="${level.value === state.difficulty ? 'true' : 'false'}"
+                        data-action="level" data-value="${level.value}">
+                  <span class="prc-level-label">${level.label}</span>
+                  <span class="prc-level-text">${level.text}</span>
+                </button>`
+            )}
+          </div>
+          <div class="prc-setup-actions">
+            <button type="button" class="btn btn-primary btn-lg" data-action="start">
+              ${icon('target')}<span>Começar a praticar</span>
+            </button>
+          </div>
+          <p class="hint prc-setup-hint">
+            ${icon('info', { size: 14 })}
+            <span>As questões vêm do banco da plataforma. Quando não há questão do assunto neste nível, a IA elabora uma na hora.</span>
+          </p>
+        </div>
+      </section>`;
+  }
+
+  function generatingView() {
+    return html`
+      <section class="card prc-waiting" role="status" aria-live="polite">
+        <span class="spinner spinner-lg" aria-hidden="true"></span>
+        <h2 class="prc-waiting-title">Preparando suas questões…</h2>
+        <p class="prc-waiting-text" data-waiting-text>${WAITING_MESSAGES[0]}</p>
+        <p class="hint">Pode levar até um minuto quando as questões são elaboradas na hora. Mantenha esta tela aberta.</p>
+      </section>`;
+  }
+
+  function startWaitingMessages() {
+    stopWaitingMessages();
+    let index = 0;
+    waitingTimer = setInterval(() => {
+      index = (index + 1) % WAITING_MESSAGES.length;
+      const node = qs('[data-waiting-text]', body);
+      if (node) node.textContent = WAITING_MESSAGES[index];
+    }, 7000);
   }
 
   async function reportPractice(summary) {
@@ -105,7 +189,7 @@ export default async function renderPage(ctx) {
     const next = lesson.next_lesson;
     const actions = html`
       <a class="btn btn-secondary" href="/app/caderno-de-erros">${icon('circle-x')}<span>Ver caderno de erros</span></a>
-      <button type="button" class="btn btn-secondary" data-action="redo">${icon('refresh-cw')}<span>Refazer</span></button>
+      <button type="button" class="btn btn-secondary" data-action="redo">${icon('refresh-cw')}<span>Praticar de novo</span></button>
       <a class="btn btn-ghost" href="/app/aulas/${lessonId}">${icon('arrow-left')}<span>Voltar à aula</span></a>
       <a class="btn btn-primary" href="${next ? `/app/aulas/${next.id}` : '/app/cronograma'}">
         ${icon('arrow-right')}<span>${next ? 'Ir para próxima atividade' : 'Ver meu cronograma'}</span>
@@ -149,12 +233,23 @@ export default async function renderPage(ctx) {
   }
 
   function paint() {
+    stopWaitingMessages();
+
     if (state.loading) {
-      render(body, html`${skeleton('header')}${skeleton('question')}`);
+      render(body, html`${skeleton('header')}${skeleton('card')}`);
       return;
     }
     if (state.error) {
       render(body, html`${headerView()}${errorState({ message: state.error })}`);
+      return;
+    }
+    if (state.step === 'generating') {
+      render(body, html`${headerView()}${generatingView()}`);
+      startWaitingMessages();
+      return;
+    }
+    if (state.step === 'setup') {
+      render(body, html`${headerView()}${setupView()}`);
       return;
     }
     if (!state.questions.length) {
@@ -165,8 +260,8 @@ export default async function renderPage(ctx) {
           ${emptyState({
             icon: 'file-text',
             title: 'Nenhuma questão disponível para este assunto',
-            text: 'Assim que novas questões forem publicadas, elas aparecem aqui. Enquanto isso, siga para a próxima aula.',
-            action: { label: 'Voltar à aula', href: `/app/aulas/${lessonId}`, icon: 'arrow-left', variant: 'secondary' },
+            text: 'Não foi possível montar a prática agora. Tente de novo em instantes.',
+            action: { label: 'Escolher outro nível', dataAction: 'redo', icon: 'refresh-cw', variant: 'secondary' },
           })}`
       );
       return;
@@ -175,31 +270,64 @@ export default async function renderPage(ctx) {
     mountRunner();
   }
 
+  /** Monta o conjunto de questões na dificuldade escolhida. */
+  async function start(trigger) {
+    if (state.generating) return;
+    state.generating = true;
+    if (trigger) setLoading(trigger, true);
+    state.step = 'generating';
+    paint();
+    try {
+      const result = await api.post(`/api/lessons/${encodeURIComponent(lessonId)}/practice`, {
+        difficulty: state.difficulty,
+      });
+      state.questions = Array.isArray(result && result.questions) ? result.questions : [];
+      state.step = 'running';
+    } catch (err) {
+      state.step = 'setup';
+      state.error = (err && err.message) || 'Não foi possível preparar as questões desta aula.';
+    } finally {
+      state.generating = false;
+      paint();
+    }
+  }
+
   async function load() {
     state.loading = true;
     state.error = null;
     destroyRunner();
     paint();
     try {
-      const [lesson, questions] = await Promise.all([
-        api.get(`/api/lessons/${encodeURIComponent(lessonId)}`),
-        api.get(`/api/lessons/${encodeURIComponent(lessonId)}/practice`),
-      ]);
-      state.lesson = lesson;
-      state.questions = Array.isArray(questions) ? questions : [];
+      state.lesson = await api.get(`/api/lessons/${encodeURIComponent(lessonId)}`);
       state.loading = false;
-      if (lesson && lesson.topic_name) ctx.setTitle(`Pratique agora — ${lesson.topic_name}`);
+      if (state.lesson && state.lesson.topic_name) ctx.setTitle(`Pratique agora — ${state.lesson.topic_name}`);
     } catch (err) {
       state.loading = false;
-      state.error = (err && err.message) || 'Não foi possível carregar as questões desta aula.';
+      state.error = (err && err.message) || 'Não foi possível carregar esta aula.';
     }
     paint();
   }
 
   cleanup.push(
-    on(el, 'click', '[data-action="retry"]', () => load()),
-    on(el, 'click', '[data-action="redo"]', () => load()),
-    () => destroyRunner()
+    on(el, 'click', '[data-action="level"]', (event, trigger) => {
+      state.difficulty = Number(trigger.dataset.value) || 2;
+      paint();
+    }),
+    on(el, 'click', '[data-action="start"]', (event, trigger) => start(trigger)),
+    on(el, 'click', '[data-action="redo"]', () => {
+      state.questions = [];
+      state.step = 'setup';
+      state.error = null;
+      destroyRunner();
+      paint();
+    }),
+    on(el, 'click', '[data-action="retry"]', () => {
+      state.error = null;
+      state.step = 'setup';
+      paint();
+    }),
+    () => destroyRunner(),
+    () => stopWaitingMessages()
   );
 
   await load();
@@ -215,4 +343,5 @@ export async function unmount() {
   }
   cleanup = [];
   destroyRunner();
+  stopWaitingMessages();
 }

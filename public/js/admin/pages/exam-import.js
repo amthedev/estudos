@@ -1,0 +1,601 @@
+// =====================================================================
+// Foco Elite — Admin › Ler prova em PDF (ARCHITECTURE §6.5)
+//
+// Transforma o PDF de uma prova já aplicada em questões do banco, sem
+// digitar uma a uma. Quatro passos na mesma tela:
+//
+//   1. Identificar a prova (nome, vestibular, ano) e colar o gabarito.
+//   2. Escolher o PDF. O texto é lido AQUI, no navegador — o arquivo não
+//      é enviado para a IA.
+//   3. Varrer: a prova é percorrida em lotes, com barra de progresso. Dá
+//      para parar e continuar depois de onde parou.
+//   4. Conferir as questões encontradas e mandar para o banco.
+//
+// APIs: /api/admin/exam-imports (criar, enviar texto, varrer, conferir,
+// importar) e /api/admin/uploads para guardar o PDF.
+// =====================================================================
+import { api } from '../../core/api.js';
+import {
+  html, render, qs, qsa, on, toast, confirm,
+  pageHeader, skeleton, setLoading, badge, alertBox, emptyState, progressBar,
+} from '../../core/ui.js';
+import { icon } from '../../core/icons.js';
+import { fmtDateTime, fmtNumber, truncate, pluralize } from '../../core/format.js';
+import { extractPdfText, splitForUpload, PdfSemTexto } from '../../components/pdf-text.js';
+import { uploadFile } from '../../components/file-input.js';
+
+let cleanup = [];
+let state = null;
+
+const STATUS_BADGE = {
+  lendo: ['Recebendo o texto', 'gray'],
+  pronta: ['Pronta para varrer', 'blue'],
+  extraindo: ['Varrendo', 'orange'],
+  concluida: ['Varredura concluída', 'green'],
+  falhou: ['Falhou', 'red'],
+};
+
+const ITEM_BADGE = {
+  pendente: ['Aguardando conferência', 'blue'],
+  importada: ['No banco de questões', 'green'],
+  recusada: ['Descartada', 'gray'],
+  falhou: ['Não entrou', 'red'],
+};
+
+// ---------------------------------------------------------------------
+// Passo 1 — identificar a prova
+// ---------------------------------------------------------------------
+function newImportForm() {
+  return html`
+    <section class="card xim-form">
+      <div class="card-header">
+        <h2 class="card-title">Nova leitura de prova</h2>
+        <p class="card-subtitle">Um PDF por vez. Para o ENEM, uma leitura por dia de prova.</p>
+      </div>
+      <div class="card-body">
+        <div class="grid grid-2">
+          <div class="field">
+            <label class="label" for="xim-title">Nome desta leitura</label>
+            <input class="input" id="xim-title" name="title" maxlength="200" placeholder="ENEM 2024 — segundo dia">
+            <span class="hint">É só para você se achar depois.</span>
+          </div>
+          <div class="field">
+            <label class="label" for="xim-exam">Vestibular</label>
+            <select class="select" id="xim-exam" name="exam_id">
+              <option value="">Nenhum (só para o banco)</option>
+              ${(state.exams || []).map((e) => html`<option value="${e.id}">${e.name}</option>`)}
+            </select>
+            <span class="hint">As questões passam a cair neste vestibular.</span>
+          </div>
+          <div class="field">
+            <label class="label" for="xim-year">Ano da prova</label>
+            <input class="input" id="xim-year" name="year" type="number" min="1950" max="2100" inputmode="numeric" placeholder="2024">
+          </div>
+          <div class="field">
+            <label class="label" for="xim-board">Banca</label>
+            <input class="input" id="xim-board" name="board" maxlength="80" placeholder="INEP">
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="xim-key">Gabarito oficial</label>
+          <textarea class="textarea" id="xim-key" name="answer_key" rows="4"
+                    placeholder="1-A 2-B 3-C 4-D 5-E…"></textarea>
+          <span class="hint">
+            ${icon('triangle-alert', { size: 14 })}
+            Cole o gabarito da prova. Sem ele, a IA tem que <strong>resolver</strong> cada questão para marcar a
+            resposta — e erra com confiança. Com o gabarito, ela só transcreve.
+          </span>
+        </div>
+        <div class="xim-form-actions">
+          <button type="button" class="btn btn-primary" data-action="create">
+            ${icon('plus')}<span>Criar leitura</span>
+          </button>
+        </div>
+      </div>
+    </section>`;
+}
+
+// ---------------------------------------------------------------------
+// Passo 2 e 3 — o PDF e a varredura
+// ---------------------------------------------------------------------
+function readStep() {
+  const job = state.current;
+  const lido = Number(job.chars_total) > 0;
+
+  if (!lido) {
+    return html`
+      <section class="card xim-step">
+        <div class="card-body">
+          <h2 class="xim-step-title">${icon('file-up')}<span>Escolha o PDF da prova</span></h2>
+          <p class="xim-step-text">
+            O texto é lido aqui no seu navegador e só o texto sobe para a plataforma.
+            Um PDF de prova inteira leva alguns segundos.
+          </p>
+          <input type="file" accept="application/pdf" id="xim-file" class="xim-file" ${state.busy ? 'disabled' : ''}>
+          ${state.readProgress
+            ? html`<div class="xim-progress">
+                ${progressBar(state.readProgress.percent, { label: `Lendo página ${state.readProgress.page} de ${state.readProgress.total}`, showValue: true })}
+              </div>`
+            : ''}
+          ${state.readError
+            ? alertBox({
+                type: 'danger',
+                title: 'Não deu para ler este PDF',
+                text: state.readError,
+              })
+            : ''}
+        </div>
+      </section>`;
+  }
+
+  const done = job.status === 'concluida';
+  return html`
+    <section class="card xim-step">
+      <div class="card-body">
+        <h2 class="xim-step-title">${icon('scan-text')}<span>Varredura da prova</span></h2>
+        <div class="xim-progress">
+          ${progressBar(job.percent || 0, { label: 'Texto varrido', showValue: true, color: done ? 'success' : '' })}
+        </div>
+        <dl class="xim-stats">
+          <div><dt>Texto</dt><dd>${fmtNumber(job.chars_total)} caracteres</dd></div>
+          <div><dt>Questões encontradas</dt><dd>${fmtNumber(job.found_count)}</dd></div>
+          <div><dt>Já no banco</dt><dd>${fmtNumber(job.imported_count)}</dd></div>
+          ${job.last_number ? html`<div><dt>Última questão lida</dt><dd>nº ${job.last_number}</dd></div>` : ''}
+        </dl>
+        ${job.error_message
+          ? alertBox({
+              type: 'warning',
+              title: 'A última varredura parou',
+              text: `${job.error_message} Nada se perdeu: continuar retoma do mesmo ponto.`,
+            })
+          : ''}
+        ${!job.answer_key_count
+          ? alertBox({
+              type: 'warning',
+              title: 'Esta leitura está sem gabarito oficial',
+              text: 'As respostas foram deduzidas pela IA. Confira uma a uma antes de mandar para o banco.',
+            })
+          : ''}
+        <div class="xim-step-actions">
+          ${done
+            ? html`<span class="xim-done">${icon('circle-check')}<span>Prova varrida por inteiro</span></span>`
+            : html`
+              <button type="button" class="btn btn-primary" data-action="sweep" ${state.busy ? 'disabled' : ''}>
+                ${icon('play')}<span>${job.chars_read > 0 ? 'Continuar de onde parou' : 'Começar a varrer'}</span>
+              </button>
+              <button type="button" class="btn btn-secondary" data-action="sweep-all" ${state.busy ? 'disabled' : ''}>
+                ${icon('fast-forward')}<span>Varrer a prova inteira</span>
+              </button>`}
+        </div>
+        ${state.busy
+          ? html`<p class="xim-busy" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <span>${state.busyText || 'Trabalhando…'}</span>
+            </p>`
+          : ''}
+      </div>
+    </section>`;
+}
+
+// ---------------------------------------------------------------------
+// Passo 4 — conferência
+// ---------------------------------------------------------------------
+function itemRow(item) {
+  const payload = item.payload || {};
+  const letras = ['A', 'B', 'C', 'D', 'E'].filter((letra) => payload[letra]);
+  const pendente = item.status === 'pendente';
+  const semGabarito = pendente && !payload.answer_from_key;
+  const [rotulo, tom] = ITEM_BADGE[item.status] || ITEM_BADGE.pendente;
+
+  return html`
+    <article class="xim-item${semGabarito ? ' is-unsure' : ''}" data-item="${item.id}">
+      <header class="xim-item-head">
+        <label class="check">
+          <input type="checkbox" data-pick="${item.id}" ${pendente ? '' : 'disabled'}>
+          <span>Questão ${item.number || '—'}</span>
+        </label>
+        <div class="xim-item-tags">
+          ${badge(rotulo, tom)}
+          ${payload.subject_slug ? badge(`${payload.subject_slug} › ${payload.topic_slug || '?'}`, 'gray') : badge('Sem classificação', 'red')}
+          ${semGabarito ? badge('Gabarito deduzido pela IA', 'orange', { icon: 'triangle-alert' }) : ''}
+        </div>
+      </header>
+      <p class="xim-item-statement">${truncate(payload.statement || '', 400)}</p>
+      <ol class="xim-item-options">
+        ${letras.map(
+          (letra) => html`
+            <li class="${payload.correct === letra ? 'is-correct' : ''}">
+              <strong>${letra}</strong><span>${truncate(payload[letra], 200)}</span>
+            </li>`
+        )}
+      </ol>
+      ${item.error_message ? html`<p class="xim-item-error">${icon('circle-x', { size: 14 })}<span>${item.error_message}</span></p>` : ''}
+      ${pendente
+        ? html`
+          <footer class="xim-item-actions">
+            <label class="xim-inline">
+              <span>Gabarito</span>
+              <select class="select select-sm" data-action="fix-correct" data-item="${item.id}">
+                ${letras.map((letra) => html`<option value="${letra}" ${payload.correct === letra ? 'selected' : ''}>${letra}</option>`)}
+              </select>
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="reject" data-item="${item.id}">
+              ${icon('trash-2')}<span>Descartar</span>
+            </button>
+          </footer>`
+        : ''}
+    </article>`;
+}
+
+function reviewStep() {
+  const items = state.current.items || [];
+  if (!items.length) {
+    return html`
+      <section class="card">
+        <div class="card-body">
+          ${emptyState({
+            icon: 'file-search',
+            title: 'Nenhuma questão encontrada ainda',
+            text: 'Varra a prova para as questões aparecerem aqui.',
+          })}
+        </div>
+      </section>`;
+  }
+
+  const counts = state.current.counts || {};
+  const pendentes = items.filter((item) => item.status === 'pendente');
+  const prontas = pendentes.filter((item) => item.payload && item.payload.answer_from_key);
+
+  return html`
+    <section class="card xim-review">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Conferência</h2>
+          <p class="card-subtitle">
+            ${pluralize(counts.pendentes || 0, 'questão aguardando', 'questões aguardando')} ·
+            ${fmtNumber(counts.importadas || 0)} já no banco
+          </p>
+        </div>
+        <div class="xim-review-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-action="pick-safe">
+            ${icon('check-check')}<span>Marcar as ${prontas.length} com gabarito</span>
+          </button>
+          <button type="button" class="btn btn-primary" data-action="import" ${state.busy ? 'disabled' : ''}>
+            ${icon('database')}<span>Mandar as marcadas para o banco</span>
+          </button>
+        </div>
+      </div>
+      <div class="card-body xim-items">
+        ${items.map(itemRow)}
+      </div>
+    </section>`;
+}
+
+// ---------------------------------------------------------------------
+// Lista
+// ---------------------------------------------------------------------
+function listView() {
+  const items = state.list || [];
+  return html`
+    <section class="card">
+      <div class="card-header"><h2 class="card-title">Leituras recentes</h2></div>
+      <div class="card-body">
+        ${!items.length
+          ? emptyState({ icon: 'file-search', title: 'Nenhuma prova lida ainda', text: 'Crie a primeira leitura acima.' })
+          : html`
+            <table class="table">
+              <thead>
+                <tr><th>Prova</th><th>Situação</th><th class="nowrap">Encontradas</th><th class="nowrap">No banco</th><th></th></tr>
+              </thead>
+              <tbody>
+                ${items.map((job) => {
+                  const [rotulo, tom] = STATUS_BADGE[job.status] || STATUS_BADGE.lendo;
+                  return html`
+                    <tr>
+                      <td>
+                        <strong>${job.title}</strong>
+                        <span class="xim-row-sub">${job.exam_short_name || '—'} · ${fmtDateTime(job.created_at)}</span>
+                      </td>
+                      <td>${badge(rotulo, tom)} <span class="xim-row-sub">${job.percent}%</span></td>
+                      <td class="nowrap">${fmtNumber(job.found_count)}</td>
+                      <td class="nowrap">${fmtNumber(job.imported_count)}</td>
+                      <td class="nowrap">
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="open" data-id="${job.id}">
+                          ${icon('arrow-right')}<span>Abrir</span>
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="delete" data-id="${job.id}">
+                          ${icon('trash-2')}<span class="sr-only">Excluir</span>
+                        </button>
+                      </td>
+                    </tr>`;
+                })}
+              </tbody>
+            </table>`}
+      </div>
+    </section>`;
+}
+
+// ---------------------------------------------------------------------
+// Pintura
+// ---------------------------------------------------------------------
+function paint() {
+  const el = state.ctx.el;
+  if (state.loading) {
+    render(el, html`${skeleton('header')}${skeleton('card')}`);
+    return;
+  }
+
+  const header = pageHeader({
+    title: 'Ler prova em PDF',
+    subtitle: 'Transforma a prova já aplicada em questões do banco, separadas por assunto.',
+    actions: state.current
+      ? html`<button type="button" class="btn btn-ghost" data-action="back">${icon('arrow-left')}<span>Todas as leituras</span></button>`
+      : '',
+  });
+
+  if (!state.current) {
+    render(el, html`${header}${newImportForm()}${listView()}`);
+    return;
+  }
+
+  render(
+    el,
+    html`
+      ${header}
+      <div class="xim-current">
+        <div class="xim-current-head">
+          <h2 class="xim-current-title">${state.current.title}</h2>
+          <span class="xim-row-sub">
+            ${state.current.exam_short_name || 'Sem vestibular'}${state.current.year ? ` · ${state.current.year}` : ''}
+            ${state.current.answer_key_count ? ` · gabarito com ${state.current.answer_key_count} respostas` : ' · sem gabarito'}
+          </span>
+        </div>
+        ${readStep()}
+        ${reviewStep()}
+      </div>`
+  );
+
+  const file = qs('#xim-file', el);
+  if (file) file.addEventListener('change', () => readPdf(file.files && file.files[0]));
+}
+
+// ---------------------------------------------------------------------
+// Ações
+// ---------------------------------------------------------------------
+async function loadList() {
+  try {
+    const [lista, exams] = await Promise.all([
+      api.get('/api/admin/exam-imports'),
+      state.exams ? Promise.resolve({ items: state.exams }) : api.get('/api/admin/exams', { query: { limit: 100 } }),
+    ]);
+    state.list = lista.items || [];
+    state.exams = Array.isArray(exams) ? exams : exams.items || [];
+  } catch (err) {
+    toast(err.message || 'Não foi possível carregar as leituras.', { type: 'error' });
+  }
+  state.loading = false;
+  paint();
+}
+
+async function openJob(id) {
+  state.loading = true;
+  paint();
+  try {
+    state.current = await api.get(`/api/admin/exam-imports/${encodeURIComponent(id)}`);
+  } catch (err) {
+    toast(err.message || 'Não foi possível abrir esta leitura.', { type: 'error' });
+    state.current = null;
+  }
+  state.loading = false;
+  paint();
+}
+
+async function createJob(trigger) {
+  const el = state.ctx.el;
+  const value = (name) => (qs(`[name="${name}"]`, el)?.value || '').trim();
+  const title = value('title');
+  if (title.length < 3) {
+    toast('Dê um nome para esta leitura.', { type: 'warning' });
+    return;
+  }
+  setLoading(trigger, true);
+  try {
+    const criada = await api.post('/api/admin/exam-imports', {
+      title,
+      exam_id: value('exam_id') || undefined,
+      year: value('year') || undefined,
+      board: value('board') || undefined,
+      answer_key: value('answer_key') || undefined,
+    });
+    state.current = { ...criada, items: [] };
+    await loadList();
+  } catch (err) {
+    toast(err.message || 'Não foi possível criar a leitura.', { type: 'error' });
+  } finally {
+    setLoading(trigger, false);
+    paint();
+  }
+}
+
+/** Lê o PDF no navegador, guarda o arquivo e sobe o texto em pedaços. */
+async function readPdf(file) {
+  if (!file || state.busy) return;
+  state.busy = true;
+  state.readError = null;
+  state.busyText = 'Lendo o PDF…';
+  paint();
+
+  try {
+    const { text, pages } = await extractPdfText(file, (page, total) => {
+      state.readProgress = { page, total, percent: Math.round((page / total) * 100) };
+      const bar = qs('.xim-progress', state.ctx.el);
+      if (bar) render(bar, progressBar(state.readProgress.percent, { label: `Lendo página ${page} de ${total}`, showValue: true }));
+    });
+
+    // O arquivo fica guardado para quem quiser conferir depois; a leitura não
+    // depende disso, então uma falha aqui não derruba o processo.
+    let url = null;
+    try {
+      const saved = await uploadFile(file, { folder: 'provas' });
+      url = saved && saved.url;
+    } catch (err) {
+      console.warn('[ler prova] o PDF não pôde ser guardado:', err.message);
+    }
+
+    state.busyText = `Enviando o texto (${pages} páginas)…`;
+    paint();
+
+    const partes = splitForUpload(text);
+    let atualizado = null;
+    for (const [index, chunk] of partes.entries()) {
+      atualizado = await api.post(`/api/admin/exam-imports/${state.current.id}/text`, {
+        chunk,
+        done: index === partes.length - 1,
+      });
+    }
+    if (url) {
+      // guarda a origem sem depender de uma rota nova
+      atualizado.source_url = url;
+    }
+    state.current = { ...state.current, ...atualizado };
+    state.readProgress = null;
+    toast(`Texto lido: ${fmtNumber(text.length)} caracteres em ${pages} páginas.`, { type: 'success' });
+  } catch (err) {
+    state.readProgress = null;
+    state.readError =
+      err instanceof PdfSemTexto
+        ? 'Este PDF não tem texto — é uma digitalização (foto de cada página). Procure a versão original do arquivo, ou cadastre as questões pela planilha.'
+        : err.message || 'Não foi possível ler este arquivo.';
+  } finally {
+    state.busy = false;
+    paint();
+  }
+}
+
+/** Uma passada. Devolve true quando ainda há texto pela frente. */
+async function sweepOnce() {
+  const resultado = await api.post(`/api/admin/exam-imports/${state.current.id}/sweep`, {});
+  state.current = { ...state.current, ...resultado };
+  return !resultado.done;
+}
+
+async function sweep({ all = false } = {}) {
+  if (state.busy) return;
+  state.busy = true;
+  state.busyText = 'Lendo as questões deste trecho…';
+  paint();
+  try {
+    let continua = true;
+    let voltas = 0;
+    do {
+      continua = await sweepOnce();
+      voltas += 1;
+      state.busyText = `Varrido ${state.current.percent}% da prova · ${state.current.found_count} questões encontradas`;
+      paint();
+    } while (all && continua && voltas < 60);
+    if (!continua) toast('Prova varrida por inteiro.', { type: 'success' });
+  } catch (err) {
+    toast(err.message || 'A varredura parou. Nada se perdeu: continue de onde parou.', { type: 'error' });
+    await openJob(state.current.id);
+  } finally {
+    state.busy = false;
+    paint();
+  }
+}
+
+async function importPicked(trigger) {
+  const ids = qsa('[data-pick]:checked', state.ctx.el).map((box) => box.dataset.pick);
+  if (!ids.length) {
+    toast('Marque as questões que devem ir para o banco.', { type: 'warning' });
+    return;
+  }
+  setLoading(trigger, true);
+  state.busy = true;
+  try {
+    const res = await api.post(`/api/admin/exam-imports/${state.current.id}/import`, { item_ids: ids });
+    state.current = { ...state.current, ...res };
+    await openJob(state.current.id);
+    if (res.failed) {
+      toast(`${res.imported} no banco, ${res.failed} não entraram. Veja o motivo em cada questão.`, { type: 'warning' });
+    } else {
+      toast(`${res.imported} ${pluralize(res.imported, 'questão foi', 'questões foram')} para o banco.`, { type: 'success' });
+    }
+  } catch (err) {
+    toast(err.message || 'Não foi possível gravar as questões.', { type: 'error' });
+  } finally {
+    setLoading(trigger, false);
+    state.busy = false;
+    paint();
+  }
+}
+
+async function patchItem(itemId, body) {
+  try {
+    const atualizado = await api.patch(`/api/admin/exam-imports/${state.current.id}/items/${itemId}`, body);
+    state.current.items = (state.current.items || []).map((item) => (item.id === itemId ? atualizado : item));
+    paint();
+  } catch (err) {
+    toast(err.message || 'Não foi possível alterar esta questão.', { type: 'error' });
+  }
+}
+
+// ---------------------------------------------------------------------
+export default async function renderPage(ctx) {
+  state = { ctx, loading: true, list: [], exams: null, current: null, busy: false, busyText: '', readProgress: null, readError: null };
+  paint();
+
+  cleanup.push(
+    on(ctx.el, 'click', '[data-action="create"]', (event, trigger) => createJob(trigger)),
+    on(ctx.el, 'click', '[data-action="open"]', (event, trigger) => openJob(trigger.dataset.id)),
+    on(ctx.el, 'click', '[data-action="back"]', () => {
+      state.current = null;
+      state.readError = null;
+      paint();
+    }),
+    on(ctx.el, 'click', '[data-action="sweep"]', () => sweep()),
+    on(ctx.el, 'click', '[data-action="sweep-all"]', () => sweep({ all: true })),
+    on(ctx.el, 'click', '[data-action="import"]', (event, trigger) => importPicked(trigger)),
+    on(ctx.el, 'click', '[data-action="pick-safe"]', () => {
+      for (const box of qsa('[data-pick]', ctx.el)) {
+        const item = (state.current.items || []).find((row) => row.id === box.dataset.pick);
+        box.checked = Boolean(item && item.status === 'pendente' && item.payload && item.payload.answer_from_key);
+      }
+    }),
+    on(ctx.el, 'click', '[data-action="reject"]', (event, trigger) =>
+      patchItem(trigger.dataset.item, { status: 'recusada' })
+    ),
+    on(ctx.el, 'change', '[data-action="fix-correct"]', (event, trigger) =>
+      patchItem(trigger.dataset.item, { correct: trigger.value })
+    ),
+    on(ctx.el, 'click', '[data-action="delete"]', async (event, trigger) => {
+      const ok = await confirm({
+        title: 'Excluir esta leitura?',
+        message: 'As questões que já foram para o banco continuam lá. O que ainda não foi conferido se perde.',
+        danger: true,
+        confirmText: 'Excluir',
+      });
+      if (!ok) return;
+      try {
+        await api.del(`/api/admin/exam-imports/${trigger.dataset.id}`);
+        if (state.current && state.current.id === trigger.dataset.id) state.current = null;
+        await loadList();
+      } catch (err) {
+        toast(err.message || 'Não foi possível excluir.', { type: 'error' });
+      }
+    })
+  );
+
+  await loadList();
+}
+
+export async function unmount() {
+  for (const fn of cleanup) {
+    try {
+      fn();
+    } catch {
+      /* limpeza best-effort */
+    }
+  }
+  cleanup = [];
+  state = null;
+}

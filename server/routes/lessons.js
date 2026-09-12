@@ -9,8 +9,9 @@
  *   POST /api/lessons/:id/start       marca como em andamento (não desfaz conclusão)
  *   POST /api/lessons/:id/complete    conclui: study_log, revisões (services/reviews), item do cronograma
  *                                     → { progress, reviews_created, ... }
- *   GET  /api/lessons/:id/practice    5 questões do assunto (prioriza o subassunto, evita respondidas
- *                                     nos últimos 3 dias, embaralha) — sem gabarito
+ *   POST /api/lessons/:id/practice    { difficulty } → 3 questões dos assuntos da aula, uma de cada,
+ *                                     na dificuldade escolhida. Usa o banco primeiro e pede à IA o
+ *                                     que faltar (services/question-ai) — sem gabarito
  *   PUT  /api/lessons/:id/note        { content } upsert da anotação da aula
  *
  * A listagem respeita o syllabus da prova do aluno (ver services/progress.js).
@@ -24,11 +25,12 @@ const { requireAccess } = require('../middleware/access');
 const { parsePagination, paginate } = require('../utils/pagination');
 const { todayISO } = require('../utils/dates');
 const progress = require('../services/progress');
+const questionAi = require('../services/question-ai');
+const { getQuestionsByIds } = require('../services/questions');
+const { aiLimiter } = require('../middleware/rateLimit');
 
 router.use(requireStudent, requireAccess);
 
-const PRACTICE_SIZE = 5;
-const RECENT_ATTEMPT_DAYS = 3;
 const CONTINUE_LIMIT = 6;
 
 const flag = z
@@ -37,6 +39,11 @@ const flag = z
   .transform((value) => value === '1' || value === 'true');
 
 const idParams = z.object({ id: z.string().uuid() });
+
+// A dificuldade é escolha do aluno: fácil, média ou difícil sobre o assunto da aula.
+const practiceBody = z
+  .object({ difficulty: z.coerce.number().int().min(1).max(3).optional() })
+  .strict();
 
 const listQuery = z
   .object({
@@ -77,7 +84,8 @@ const LESSON_ORDER = 'ORDER BY s.sort_order, s.name, t.sort_order, t.name, l.sor
 async function loadLesson(id) {
   const lesson = await db.one(
     `SELECT l.*, s.name AS subject_name, s.slug AS subject_slug, s.color AS subject_color, s.icon AS subject_icon,
-            t.name AS topic_name, t.slug AS topic_slug, st.name AS subtopic_name
+            t.name AS topic_name, t.slug AS topic_slug, t.description AS topic_description,
+            st.name AS subtopic_name
        FROM lessons l
        JOIN subjects s ON s.id = l.subject_id
        JOIN topics t ON t.id = l.topic_id
@@ -88,15 +96,6 @@ async function loadLesson(id) {
   if (!lesson) throw new AppError(404, 'not_found', 'Aula não encontrada.');
   delete lesson.search_vector;
   return lesson;
-}
-
-function shuffle(list) {
-  const out = list.slice();
-  for (let i = out.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
 }
 
 /** Normaliza o retorno de services/reviews.scheduleReviews (array, número ou objeto). */
@@ -341,68 +340,77 @@ router.post(
 // ---------------------------------------------------------------------------
 // Pratique agora
 // ---------------------------------------------------------------------------
-router.get(
+router.post(
   '/:id/practice',
-  validate({ params: idParams }),
+  aiLimiter,
+  validate({ params: idParams, body: practiceBody }),
   wrap(async (req, res) => {
     const userId = req.user.id;
     const lesson = await loadLesson(req.valid.params.id);
+    const difficulty = questionAi.difficultyOf(req.valid.body.difficulty);
 
-    // posições dos parâmetros de assunto e subassunto (o subassunto da aula pode ser nulo)
-    const selectSql = (topicParam, subtopicParam) => `
-      SELECT q.id, q.statement, q.image_url, q.difficulty, q.year, q.board, q.source,
-             q.subject_id, q.topic_id, q.subtopic_id,
-             (q.subtopic_id IS NOT NULL AND q.subtopic_id = $${subtopicParam}::uuid) AS same_subtopic
-        FROM questions q
-       WHERE q.active AND q.topic_id = $${topicParam}`;
+    // Uma questão por assunto da aula. O banco vem primeiro: questão de prova
+    // vale mais que questão elaborada na hora, e não gasta chamada de IA.
+    const targets = await questionAi.lessonTargets(lesson);
+    const candidates = await questionAi.bankCandidates({ topicId: lesson.topic_id, difficulty, userId });
+    const assigned = questionAi.assignCandidates(targets, candidates);
 
-    // 1) prioriza o subassunto da aula e evita questões respondidas recentemente
-    let questions = await db.many(
-      `${selectSql(2, 3)}
-         AND NOT EXISTS (SELECT 1 FROM question_attempts qa
-                          WHERE qa.user_id = $1 AND qa.question_id = q.id
-                            AND qa.answered_at > now() - ($5::int * interval '1 day'))
-       ORDER BY same_subtopic DESC, random()
-       LIMIT $4`,
-      [userId, lesson.topic_id, lesson.subtopic_id, PRACTICE_SIZE, RECENT_ATTEMPT_DAYS]
-    );
-
-    // 2) completa com questões já respondidas se ainda faltar
-    if (questions.length < PRACTICE_SIZE) {
-      const chosen = questions.map((row) => row.id);
-      const fill = await db.many(
-        `${selectSql(1, 2)} AND NOT (q.id = ANY($4::uuid[]))
-         ORDER BY same_subtopic DESC, random()
-         LIMIT $3`,
-        [lesson.topic_id, lesson.subtopic_id, PRACTICE_SIZE - questions.length, chosen]
+    const faltando = assigned.filter((item) => !item.question_id).map((item) => item.target);
+    let geradas = [];
+    let aviso = null;
+    if (faltando.length) {
+      const exam = await db.one(
+        `SELECT e.id, e.name, e.short_name, e.board
+           FROM student_profiles p JOIN exams e ON e.id = p.exam_id AND e.active
+          WHERE p.user_id = $1`,
+        [userId]
       );
-      questions = questions.concat(fill);
+      try {
+        geradas = await questionAi.generate({
+          subject: { id: lesson.subject_id, name: lesson.subject_name },
+          topic: { id: lesson.topic_id, name: lesson.topic_name, description: lesson.topic_description },
+          lesson,
+          exam,
+          difficulty,
+          targets: faltando,
+          userId,
+        });
+      } catch (err) {
+        // Prática com duas questões é melhor que prática nenhuma: a IA falhar
+        // não pode derrubar o que o banco já tinha.
+        console.error(`[lessons] não foi possível elaborar questões da aula ${lesson.id}: ${err.message}`);
+        aviso = err.code === 'ai_limit_reached' ? err.message : null;
+      }
     }
 
-    if (!questions.length) return res.json([]);
+    // As geradas tapam os buracos na ordem em que apareceram, para cada assunto
+    // continuar com a questão dele.
+    const fila = geradas.slice();
+    const ids = assigned.map((item) => item.question_id || fila.shift()).filter(Boolean);
+    const questions = await getQuestionsByIds(ids);
 
-    const options = await db.many(
-      `SELECT id, question_id, letter, text, sort_order
-         FROM question_options
-        WHERE question_id = ANY($1::uuid[])
-        ORDER BY question_id, sort_order, letter`,
-      [questions.map((row) => row.id)]
-    );
-    const byQuestion = new Map();
-    for (const option of options) {
-      if (!byQuestion.has(option.question_id)) byQuestion.set(option.question_id, []);
-      const { question_id, ...rest } = option;
-      byQuestion.get(question_id).push(rest);
+    if (!questions.length) {
+      throw new AppError(
+        503,
+        'ai_unavailable',
+        aviso || 'Não foi possível montar a prática deste assunto agora. Tente novamente em instantes.'
+      );
     }
 
-    const payload = shuffle(questions).map(({ same_subtopic, ...question }) => ({
-      ...question,
-      lesson_id: lesson.id,
-      subject_name: lesson.subject_name,
-      topic_name: lesson.topic_name,
-      options: byQuestion.get(question.id) || [],
-    }));
-    res.json(payload);
+    const doBanco = assigned.filter((item) => item.question_id).length;
+    res.json({
+      questions: questions.map((question) => ({
+        ...question,
+        lesson_id: lesson.id,
+        subject_name: lesson.subject_name,
+        topic_name: lesson.topic_name,
+      })),
+      difficulty,
+      from_bank: doBanco,
+      generated: questions.length - doBanco,
+      subjects: targets.map((alvo) => alvo.name),
+      notice: aviso,
+    });
   })
 );
 

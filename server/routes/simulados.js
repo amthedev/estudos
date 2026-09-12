@@ -20,6 +20,7 @@ const { validate, z } = require('../middleware/validate');
 const { AppError, wrap } = require('../middleware/errors');
 const { requireStudent } = require('../middleware/auth');
 const { requireAccess } = require('../middleware/access');
+const { aiLimiter } = require('../middleware/rateLimit');
 const simulados = require('../services/simulados');
 
 router.use(requireStudent, requireAccess);
@@ -44,6 +45,8 @@ const filtersSchema = z
 const createSchema = z
   .object({
     type: z.enum(['exam', 'subject', 'topic', 'custom']).optional(),
+    // Formato do simulado da prova: completo (80) ou mini (20).
+    mode: z.enum(['completo', 'mini']).optional(),
     simulado_id: uuid.optional(),
     exam_id: uuid.optional(),
     subject_id: uuid.optional(),
@@ -257,6 +260,7 @@ router.get(
       topic: simulados.getDefaults('topic'),
       custom: simulados.getDefaults('custom'),
       max: { question_count: simulados.MAX_QUESTIONS, duration_min: simulados.MAX_DURATION },
+      modes: Object.entries(simulados.EXAM_MODES).map(([key, preset]) => ({ key, ...preset })),
     };
 
     const examAvailable = exam ? await simulados.countAvailable({ examId: exam.id }) : 0;
@@ -303,12 +307,15 @@ router.get(
 // ---------------------------------------------------------------------------
 router.post(
   '/attempts',
+  // Montar um simulado pode acionar a IA para completar o que falta no banco.
+  aiLimiter,
   validate({ body: createSchema }),
   wrap(async (req, res) => {
     const body = req.valid.body;
     const created = await simulados.buildAttempt({
       userId: req.user.id,
       type: body.type,
+      mode: body.mode || null,
       simuladoId: body.simulado_id || null,
       examId: body.exam_id || null,
       subjectId: body.subject_id || null,

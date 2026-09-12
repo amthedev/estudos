@@ -893,4 +893,8 @@ router.delete(
   })
 );
 
-module.exports = { basePath: '/api/admin/questions', router };
+// A leitura de prova em PDF (routes/admin/exam-imports.js) grava questão pelo
+// MESMO caminho da planilha: mesma validação de alternativa, mesma resolução de
+// matéria e assunto por slug, mesma mensagem de erro em português. Duplicar
+// isso lá seria duplicar as regras.
+module.exports = { basePath: '/api/admin/questions', router, buildImportRow, loadSlugMaps, insertQuestion, RowError };

@@ -45,15 +45,22 @@ function completeButton(lesson) {
 }
 
 function practiceButton(lesson) {
+  // A prática existe mesmo com o banco vazio: quando não há questão do assunto
+  // no nível escolhido, ela é elaborada na hora.
   const available = Number(lesson.questions_available) || 0;
-  if (!available) {
-    return html`<p class="lsn-side-hint">${icon('info', { size: 14 })}<span>Ainda não há questões cadastradas para este assunto.</span></p>`;
-  }
   const highlight = Boolean(lesson.completed);
   return html`
     <a class="btn ${highlight ? 'btn-primary' : 'btn-secondary'} btn-block" href="/app/aulas/${lesson.id}/praticar">
       ${icon('target')}<span>Pratique agora</span>
-    </a>`;
+    </a>
+    <p class="lsn-side-hint">
+      ${icon(available ? 'list-checks' : 'sparkles', { size: 14 })}
+      <span>
+        ${available
+          ? 'Três questões dos assuntos da aula, no nível que você escolher.'
+          : 'Três questões elaboradas na hora sobre os assuntos da aula, no nível que você escolher.'}
+      </span>
+    </p>`;
 }
 
 function sideCard(lesson) {

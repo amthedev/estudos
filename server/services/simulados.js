@@ -5,11 +5,14 @@
  *
  *   const { buildAttempt, finishAttempt, getDefaults, countAvailable } = require('../services/simulados');
  *
- *   buildAttempt({ userId, type, examId, subjectId, topicId, questionCount, durationMin, filters, simuladoId })
+ *   buildAttempt({ userId, type, mode, examId, subjectId, topicId, questionCount, durationMin, filters, simuladoId })
  *     → cria simulado_attempts com as questões sorteadas e devolve a tentativa.
  *       - type 'exam': distribui as questões pelos pesos de exam_subjects, respeitando a
  *         disponibilidade (questão vinculada à prova em question_exams ou assunto no syllabus
  *         exam_topics). Sobra de uma matéria é redistribuída às demais.
+ *       - mode 'completo' (80 questões) ou 'mini' (20), para o tipo 'exam'.
+ *       - quando o banco não tem o suficiente, a IA elabora o que falta (services/question-ai) e
+ *         as questões ficam no banco para os próximos simulados.
  *       - evita questões respondidas nos últimos 7 dias quando há questões inéditas suficientes.
  *       - embaralhamento determinístico: ordena por sha256(seed + question_id); a seed fica em
  *         config.seed para reproduzir o sorteio.
@@ -23,9 +26,14 @@ const crypto = require('node:crypto');
 const db = require('../db/pool');
 const { AppError } = require('../middleware/errors');
 const { todayISO } = require('../utils/dates');
+const questionAi = require('./question-ai');
+const { getSetting } = require('./settings');
 
 const MAX_QUESTIONS = 90;
-const MAX_DURATION = 180;
+// Um simulado completo de 80 questões no ritmo do ENEM passa de três horas.
+// Com o teto em 180 minutos, o tempo era cortado em silêncio e o aluno recebia
+// metade do prazo que a prova real dá.
+const MAX_DURATION = 330;
 const RECENT_DAYS = 7;
 
 /** Padrões de quantidade/duração por tipo (e por trilha da prova para o tipo 'exam'). */
@@ -42,13 +50,29 @@ const DEFAULTS = Object.freeze({
 
 const TYPE_LABELS = { exam: 'Simulado da prova', subject: 'Por matéria', topic: 'Por assunto', custom: 'Personalizado' };
 
+/**
+ * Formatos de simulado da prova, do jeito que o aluno escolhe na tela:
+ * o completo, para treinar fôlego, e o mini, para caber em uma sessão de
+ * estudo. Sem formato escolhido valem os padrões da trilha da prova.
+ */
+const EXAM_MODES = Object.freeze({
+  completo: Object.freeze({ label: 'Simulado completo', question_count: 80, duration_min: 240 }),
+  mini: Object.freeze({ label: 'Mini simulado', question_count: 20, duration_min: 60 }),
+});
+
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
-/** Padrões para um tipo (e trilha). */
-function getDefaults(type, track) {
-  if (type === 'exam') return { ...(DEFAULTS.exam[track] || DEFAULTS.exam.vestibular) };
+/** Padrões para um tipo (e trilha). O formato, quando informado, manda. */
+function getDefaults(type, track, mode) {
+  if (type === 'exam') {
+    if (mode && EXAM_MODES[mode]) {
+      const { question_count, duration_min } = EXAM_MODES[mode];
+      return { question_count, duration_min };
+    }
+    return { ...(DEFAULTS.exam[track] || DEFAULTS.exam.vestibular) };
+  }
   return { ...(DEFAULTS[type] || DEFAULTS.custom) };
 }
 
@@ -241,6 +265,105 @@ function summarizeDistribution(questions) {
 }
 
 // ---------------------------------------------------------------------------
+// Complemento por IA
+// ---------------------------------------------------------------------------
+
+/** Assuntos elegíveis para o recorte do simulado, dos mais cobrados para os menos. */
+async function fillableTopics({ examId, subjectId, topicId, filters = {} }) {
+  const params = [];
+  const add = (value) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  const where = ['t.active', 's.active'];
+  if (examId) where.push(`EXISTS (SELECT 1 FROM exam_topics et WHERE et.topic_id = t.id AND et.exam_id = ${add(examId)})`);
+  if (subjectId) where.push(`t.subject_id = ${add(subjectId)}`);
+  if (topicId) where.push(`t.id = ${add(topicId)}`);
+  if (Array.isArray(filters.subject_ids) && filters.subject_ids.length) {
+    where.push(`t.subject_id = ANY(${add(filters.subject_ids)}::uuid[])`);
+  }
+  if (Array.isArray(filters.topic_ids) && filters.topic_ids.length) {
+    where.push(`t.id = ANY(${add(filters.topic_ids)}::uuid[])`);
+  }
+
+  // O peso do assunto na prova mora em exam_topics; sem prova no recorte, a
+  // ordem do conteúdo programático é o melhor critério disponível.
+  const pesoJoin = examId
+    ? `LEFT JOIN exam_topics w ON w.topic_id = t.id AND w.exam_id = ${add(examId)}`
+    : '';
+  const ordem = examId ? 'w.weight DESC NULLS LAST, s.sort_order, t.sort_order, t.name' : 's.sort_order, t.sort_order, t.name';
+
+  return db.many(
+    `SELECT t.id, t.name, t.description, t.subject_id, s.name AS subject_name
+       FROM topics t
+       JOIN subjects s ON s.id = t.subject_id
+       ${pesoJoin}
+      WHERE ${where.join(' AND ')}
+      ORDER BY ${ordem}`,
+    params
+  );
+}
+
+/** Teto de questões que a IA pode elaborar para UM simulado (configurável no painel). */
+async function aiFillLimit() {
+  const value = Number(await getSetting('simulado_ai_questions_max'));
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return Math.min(MAX_QUESTIONS, Math.floor(value));
+}
+
+/**
+ * Elabora as questões que faltam para fechar o simulado e devolve as que
+ * entraram, no formato do pool (id, subject_id, topic_id).
+ *
+ * O aluno pede 80 e o banco tem 12: sem isto o simulado sai com 12 e ninguém
+ * avisa. O que a IA escreve fica no banco, então o próximo aluno já encontra
+ * pronto — o custo não se repete.
+ */
+async function fillWithAi({ missing, examId, subjectId, topicId, filters, difficulty, userId }) {
+  const teto = Math.min(missing, await aiFillLimit());
+  if (teto <= 0) return [];
+
+  const topics = await fillableTopics({ examId, subjectId, topicId, filters });
+  if (!topics.length) return [];
+
+  const criadas = [];
+  // Espalha pelos assuntos em vez de esgotar um: é assim que uma prova se
+  // parece com uma prova.
+  for (const topic of topics) {
+    if (criadas.length >= teto) break;
+    const querAgora = Math.min(questionAi.MAX_POR_CHAMADA, teto - criadas.length);
+    const subtopics = await db.many(
+      'SELECT id, name FROM subtopics WHERE topic_id = $1 AND active ORDER BY sort_order, name',
+      [topic.id]
+    );
+    const targets = Array.from({ length: querAgora }, (_, index) =>
+      subtopics.length
+        ? { subtopic_id: subtopics[index % subtopics.length].id, name: subtopics[index % subtopics.length].name }
+        : { subtopic_id: null, name: topic.name }
+    );
+
+    try {
+      const ids = await questionAi.generate({
+        subject: { id: topic.subject_id, name: topic.subject_name },
+        topic: { id: topic.id, name: topic.name, description: topic.description },
+        lesson: null,
+        exam: null,
+        difficulty,
+        targets,
+        userId,
+      });
+      for (const id of ids) criadas.push({ id, subject_id: topic.subject_id, topic_id: topic.id });
+    } catch (err) {
+      // Falta de questão não pode virar simulado inexistente: o aluno recebe o
+      // que deu para montar, e o motivo fica no log.
+      console.warn(`[simulados] não foi possível completar com IA o assunto ${topic.name}: ${err.message}`);
+      break;
+    }
+  }
+  return criadas;
+}
+
+// ---------------------------------------------------------------------------
 // Criação da tentativa
 // ---------------------------------------------------------------------------
 
@@ -266,6 +389,7 @@ async function loadProfileExam(userId) {
 async function buildAttempt({
   userId,
   type,
+  mode = null,
   examId = null,
   subjectId = null,
   topicId = null,
@@ -328,7 +452,7 @@ async function buildAttempt({
   }
 
   // quantidade e duração
-  const defaults = getDefaults(type, exam ? exam.track : null);
+  const defaults = getDefaults(type, exam ? exam.track : null, mode);
   if (template) {
     defaults.question_count = template.question_count || defaults.question_count;
     defaults.duration_min = template.duration_min || defaults.duration_min;
@@ -368,6 +492,26 @@ async function buildAttempt({
     ({ questions, distribution } = await selectFromPool({ poolOptions, questionCount: count, seed, recent }));
   }
 
+  // Banco curto: a IA completa. O modelo fixo do administrador é exceção — ele
+  // escolheu questão por questão, e acrescentar outra desfaria a escolha dele.
+  let generated = 0;
+  if (!curatedIds.length && questions.length < count) {
+    const novas = await fillWithAi({
+      missing: count - questions.length,
+      examId: exam ? exam.id : null,
+      subjectId: type === 'subject' ? subject.id : null,
+      topicId: type === 'topic' ? topic.id : null,
+      filters: type === 'custom' ? filters : {},
+      difficulty: Array.isArray(filters.difficulty) && filters.difficulty.length ? filters.difficulty[0] : 2,
+      userId,
+    });
+    if (novas.length) {
+      generated = novas.length;
+      questions = shuffleByHash(questions.concat(novas), seed);
+      distribution = summarizeDistribution(questions);
+    }
+  }
+
   if (!questions.length) {
     throw new AppError(409, 'conflict', 'Ainda não há questões disponíveis para este simulado. Tente outra configuração.');
   }
@@ -382,7 +526,12 @@ async function buildAttempt({
   const config = {
     seed,
     type_label: TYPE_LABELS[type],
+    mode: mode && EXAM_MODES[mode] ? mode : null,
     requested_count: count,
+    // O que saiu pode ser menos do que o pedido quando nem o banco nem a IA
+    // deram conta. Guardar os dois é o que permite explicar a diferença.
+    delivered_count: questions.length,
+    generated_count: generated,
     duration_min: duration,
     filters,
     distribution,
@@ -600,6 +749,7 @@ module.exports = {
   DEFAULTS,
   MAX_QUESTIONS,
   MAX_DURATION,
+  EXAM_MODES,
   TYPE_LABELS,
   getDefaults,
   buildAttempt,

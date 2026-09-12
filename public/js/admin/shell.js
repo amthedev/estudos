@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: '/admin/conteudo', label: 'Conteúdo', icon: 'list-tree' },
   { href: '/admin/aulas', label: 'Aulas', icon: 'play' },
   { href: '/admin/questoes', label: 'Questões', icon: 'file-text' },
+  { href: '/admin/ler-prova', label: 'Ler prova em PDF', icon: 'scan-text' },
   { href: '/admin/editais', label: 'Editais', icon: 'scroll-text' },
   { href: '/admin/provas-anteriores', label: 'Provas anteriores', icon: 'file' },
   { href: '/admin/planos-de-estudo', label: 'Planos de estudo', icon: 'calendar-days' },

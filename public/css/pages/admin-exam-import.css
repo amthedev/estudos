@@ -1,0 +1,190 @@
+/* =====================================================================
+   Admin › Ler prova em PDF (.xim-)
+   Quatro passos empilhados: identificar a prova, ler o arquivo, varrer e
+   conferir. A conferência é a parte que o administrador mais olha, então
+   é ela que ganha espaço.
+   ===================================================================== */
+
+.xim-form-actions {
+  margin-top: var(--s-5);
+}
+
+.xim-current-head {
+  margin-bottom: var(--s-4);
+}
+.xim-current-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  margin: 0;
+}
+.xim-row-sub {
+  display: block;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+.xim-step {
+  margin-bottom: var(--s-5);
+}
+.xim-step-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+.xim-step-text {
+  color: var(--text-2);
+  margin: 0 0 var(--s-4);
+}
+.xim-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+}
+.xim-file {
+  display: block;
+  width: 100%;
+  padding: var(--s-4);
+  background: var(--card-2);
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.xim-progress {
+  margin: var(--s-4) 0;
+}
+.xim-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: var(--s-4) 0 0;
+  color: var(--text-2);
+}
+.xim-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.xim-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s-3);
+  margin: 0 0 var(--s-4);
+}
+.xim-stats dt {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.xim-stats dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+}
+
+/* ---- conferência ---- */
+.xim-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.xim-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.xim-item {
+  padding: var(--s-4);
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-2);
+  border-radius: var(--radius);
+}
+/* Gabarito que a IA deduziu: o administrador precisa olhar esta. */
+.xim-item.is-unsure {
+  border-left-color: var(--warning);
+}
+.xim-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
+}
+.xim-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.xim-item-statement {
+  margin: 0 0 var(--s-3);
+  color: var(--text-1);
+  line-height: 1.55;
+}
+.xim-item-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.xim-item-options li {
+  display: flex;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.xim-item-options li strong {
+  flex-shrink: 0;
+  width: 1.2em;
+  color: var(--text-3);
+}
+.xim-item-options li.is-correct {
+  color: var(--success);
+  font-weight: 600;
+}
+.xim-item-options li.is-correct strong {
+  color: var(--success);
+}
+.xim-item-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--s-3) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+.xim-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--border);
+}
+.xim-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+@media (max-width: 700px) {
+  .xim-item-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

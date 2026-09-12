@@ -26,7 +26,7 @@ const { getSetting } = require('./settings');
 const { AppError } = require('../middleware/errors');
 const { TIMEZONE } = require('../utils/dates');
 
-const FEATURES = new Set(['tutor', 'essay', 'essay_theme', 'other']);
+const FEATURES = new Set(['tutor', 'essay', 'essay_theme', 'questions', 'exam_import', 'other']);
 const DEFAULT_TIMEOUT_MS = 90_000;
 const UNAVAILABLE_MESSAGE = 'O Tutor IA ainda não foi ativado pela equipe.';
 const LIMIT_MESSAGE = 'Limite mensal de uso da IA atingido';
@@ -194,7 +194,7 @@ function mapError(err) {
  * @param {number} [options.temperature]
  * @param {number} [options.maxTokens]
  * @param {string|null} [options.userId]
- * @param {'tutor'|'essay'|'essay_theme'|'other'} [options.feature]
+ * @param {'tutor'|'essay'|'essay_theme'|'questions'|'exam_import'|'other'} [options.feature]
  * @param {(text: string) => void} [options.onDelta]
  * @param {AbortSignal} [options.signal]   cancela a chamada (ex.: aluno fechou a conversa)
  * @param {object} [options.responseFormat]  ex.: { type: 'json_object' }
@@ -222,7 +222,11 @@ async function chat({
 
   const params = { model: resolvedModel, messages, temperature, max_tokens: maxTokens };
   if (resolvedModel === 'qwen/qwen3.8-flash') {
-    params.reasoning = { effort: feature === 'essay' ? 'low' : 'minimal', exclude: true };
+    // Distrator plausível e resolução passo a passo não saem com esforço
+    // mínimo — elaborar questão e transcrever prova pedem o mesmo que a
+    // correção de redação.
+    const pensaMais = feature === 'essay' || feature === 'questions' || feature === 'exam_import';
+    params.reasoning = { effort: pensaMais ? 'low' : 'minimal', exclude: true };
   }
   if (responseFormat) params.response_format = responseFormat;
   const requestOptions = { signal, timeout: timeoutMs };
@@ -499,6 +503,70 @@ function mockTheme(prompt) {
   };
 }
 
+/** Transcrição de simulação de um trecho de prova, no formato da importação. */
+function mockExamQuestions(prompt) {
+  const trecho = (prompt.split('Trecho da prova:')[1] || '').replace(/^\s*---\s*/, '');
+  const numeros = [];
+  for (const linha of trecho.split('\n')) {
+    const marca = linha.match(/^\s*(?:QUEST(?:ÃO|AO)\s*)?(\d{1,3})\s*[.)\-]?\s*$/i) || linha.match(/^\s*QUEST(?:ÃO|AO)\s*(\d{1,3})\b/i);
+    if (marca) numeros.push(Number.parseInt(marca[1], 10));
+  }
+  const par = (prompt.match(/^- ([a-z0-9-]+) \/ ([a-z0-9-]+) —/m) || []);
+  const subject = par[1] || 'matematica';
+  const topic = par[2] || 'porcentagem';
+  const gabarito = {};
+  const linhaGabarito = (prompt.match(/Gabarito oficial[\s\S]*?\n(.+)/) || [])[1] || '';
+  for (const item of linhaGabarito.matchAll(/(\d{1,3})=([A-E])/g)) gabarito[item[1]] = item[2];
+
+  const questions = numeros.slice(0, 10).map((number) => {
+    const letra = gabarito[String(number)] || 'C';
+    return {
+      number,
+      statement: `Enunciado transcrito da questão ${number} desta prova, com o contexto necessário para responder.`,
+      A: 'Primeira alternativa transcrita.',
+      B: 'Segunda alternativa transcrita.',
+      C: 'Terceira alternativa transcrita.',
+      D: 'Quarta alternativa transcrita.',
+      E: 'Quinta alternativa transcrita.',
+      correct: letra,
+      subject_slug: subject,
+      topic_slug: topic,
+      difficulty: 2,
+      answer_source: gabarito[String(number)] ? 'gabarito' : 'deduzida',
+    };
+  });
+  return { questions };
+}
+
+/** Questões de simulação, uma por assunto pedido, no formato que o serviço espera. */
+function mockQuestions(prompt) {
+  const pedido = Number.parseInt((prompt.match(/Elabore (\d+)/) || [])[1], 10);
+  const total = Number.isInteger(pedido) && pedido > 0 ? Math.min(pedido, 8) : 1;
+  const assuntos = [];
+  for (const linha of prompt.split('\n')) {
+    const item = linha.match(/^(\d+)\.\s+(.+)$/);
+    if (item) assuntos.push(item[2].trim());
+  }
+  const nivel = extractLine(prompt, 'Dificuldade') || 'média';
+
+  const questions = Array.from({ length: total }, (_, i) => {
+    const assunto = assuntos[i] || extractLine(prompt, 'Assunto') || 'o conteúdo da aula';
+    const correta = i % 5;
+    return {
+      target: i + 1,
+      statement: `Em uma situação que envolve ${assunto}, um estudante precisa determinar o valor pedido a partir dos dados do enunciado. Considerando o que foi apresentado, qual das alternativas apresenta o resultado correto?`,
+      options: ['A', 'B', 'C', 'D', 'E'].map((letter, index) => ({
+        letter,
+        text: `Alternativa ${letter} sobre ${assunto}.`,
+        is_correct: index === correta,
+      })),
+      resolution: `Identifique os dados do enunciado, relacione-os com o conceito de ${assunto} e aplique a relação correspondente até chegar ao valor pedido.`,
+      explanation: `As demais alternativas correspondem a erros comuns em questões de nível ${nivel} sobre ${assunto}.`,
+    };
+  });
+  return { questions };
+}
+
 function mockChatText(messages) {
   const system = lastMessage(messages, 'system');
   const question = lastMessage(messages, 'user').trim();
@@ -580,6 +648,8 @@ function createMockClient() {
           if (wantsJson) {
             if (/"grammar_errors"/.test(prompt)) content = JSON.stringify(mockCorrection(prompt));
             else if (/"support_texts"/.test(prompt)) content = JSON.stringify(mockTheme(prompt));
+            else if (/"answer_source"/.test(prompt)) content = JSON.stringify(mockExamQuestions(prompt));
+            else if (/"is_correct"/.test(prompt)) content = JSON.stringify(mockQuestions(prompt));
             else content = JSON.stringify({ answer: mockChatText(messages) });
           } else {
             content = mockChatText(messages);

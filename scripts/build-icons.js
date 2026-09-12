@@ -20,6 +20,7 @@ inbox archive package sliders-horizontal toggle-left toggle-right badge-check ci
 arrow-down arrow-up move columns-3 rows-3 table-2 indent outdent align-left bold italic quote hourglass repeat
 shuffle play-square film youtube captions git-branch route milestone party-popper thumbs-up thumbs-down smile frown meh
 gift receipt wallet banknote coins landmark trending-up-down stethoscope microscope telescope orbit sun-medium cloud
+scan-text file-up file-search fast-forward
 `.split(/\s+/).filter(Boolean);
 // nomes antigos → novos (o sprite expõe os dois ids)
 const aliases = {

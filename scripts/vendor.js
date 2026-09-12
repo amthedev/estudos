@@ -8,6 +8,11 @@ const files = [
   ['chart.js/dist/chart.umd.js', 'chart.umd.js'],
   ['marked/marked.min.js', 'marked.min.js'],
   ['dompurify/dist/purify.min.js', 'purify.min.js'],
+  // pdf.js: lê o texto da prova em PDF no navegador do administrador, antes de
+  // mandar para o servidor. O worker é carregado à parte pela própria
+  // biblioteca (ver public/js/components/pdf-text.js).
+  ['pdfjs-dist/build/pdf.min.mjs', 'pdf.min.mjs'],
+  ['pdfjs-dist/build/pdf.worker.min.mjs', 'pdf.worker.min.mjs'],
 ];
 for (const [src, dest] of files) {
   const from = path.join(root, 'node_modules', src);

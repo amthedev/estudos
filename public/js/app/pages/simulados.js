@@ -348,9 +348,41 @@ async function startAttempt(body, button) {
 // Modal de configuração
 // ---------------------------------------------------------------------
 function subjectOptions(selected = '') {
-  return (data.catalog.subjects || [])
-    .filter((s) => s.question_count > 0)
-    .map((s) => html`<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${s.name} (${s.question_count})</option>`);
+  // Matéria sem questão no banco continua na lista: o que faltar é elaborado
+  // na hora. Escondê-la deixaria o aluno sem opção enquanto o banco cresce.
+  return (data.catalog.subjects || []).map(
+    (s) => html`<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>
+        ${s.name}${s.question_count ? ` (${s.question_count})` : ''}
+      </option>`
+  );
+}
+
+/** Formatos do simulado da prova: completo, mini ou o que o aluno montar. */
+function modeField(defaults) {
+  const modes = (data.defaults && data.defaults.modes) || [];
+  if (!modes.length) return '';
+  return html`
+    <div class="field">
+      <span class="label">Formato</span>
+      <div class="sim-modes" role="radiogroup" aria-label="Formato do simulado">
+        ${modes.map(
+          (m) => html`
+            <button type="button" class="sim-mode" role="radio" aria-checked="false"
+                    data-action="mode" data-mode="${m.key}"
+                    data-count="${m.question_count}" data-duration="${m.duration_min}">
+              <span class="sim-mode-label">${m.label}</span>
+              <span class="sim-mode-text">${m.question_count} questões · ${fmtMinutes(m.duration_min)}</span>
+            </button>`
+        )}
+        <button type="button" class="sim-mode is-active" role="radio" aria-checked="true"
+                data-action="mode" data-mode=""
+                data-count="${defaults.question_count}" data-duration="${defaults.duration_min}">
+          <span class="sim-mode-label">Do meu jeito</span>
+          <span class="sim-mode-text">Você escolhe quantas e por quanto tempo</span>
+        </button>
+      </div>
+      <input type="hidden" name="mode" value="">
+    </div>`;
 }
 
 function countAndTimeFields(defaults, max) {
@@ -385,6 +417,7 @@ function openConfig(type) {
         </select>
         <span class="hint">As questões são distribuídas pelo peso de cada matéria na prova.</span>
       </div>
+      ${modeField(defaults)}
       ${countAndTimeFields(defaults, max)}`;
   } else if (type === 'subject') {
     body = html`
@@ -472,6 +505,40 @@ function openConfig(type) {
   });
 
   if (type === 'topic') bindTopicChain(dialog.body);
+  if (type === 'exam') bindModes(dialog.body);
+}
+
+/** Um formato escolhido preenche quantidade e tempo; mexer nos campos volta para "Do meu jeito". */
+function bindModes(root) {
+  const hidden = qs('[name="mode"]', root);
+  const count = qs('[name="question_count"]', root);
+  const duration = qs('[name="duration_min"]', root);
+  const buttons = qsa('[data-action="mode"]', root);
+  if (!hidden || !buttons.length) return;
+
+  const marcar = (chosen) => {
+    for (const button of buttons) {
+      const active = button === chosen;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-checked', active ? 'true' : 'false');
+    }
+  };
+
+  for (const button of buttons) {
+    button.addEventListener('click', () => {
+      hidden.value = button.dataset.mode || '';
+      if (count) count.value = button.dataset.count;
+      if (duration) duration.value = button.dataset.duration;
+      marcar(button);
+    });
+  }
+
+  const solta = () => {
+    hidden.value = '';
+    marcar(buttons[buttons.length - 1]);
+  };
+  if (count) count.addEventListener('input', solta);
+  if (duration) duration.addEventListener('input', solta);
 }
 
 async function bindTopicChain(root) {
@@ -531,6 +598,8 @@ function readConfig(type, root) {
       return null;
     }
     payload.exam_id = examId;
+    const mode = qs('[name="mode"]', root);
+    if (mode && mode.value) payload.mode = mode.value;
   }
 
   if (type === 'subject' || type === 'topic') {

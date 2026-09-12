@@ -550,3 +550,91 @@
     justify-content: center;
   }
 }
+
+/* ---------------------------------------------------------------------
+   Escolha de dificuldade e espera da prática
+   --------------------------------------------------------------------- */
+.prc-setup-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.prc-setup-text {
+  color: var(--text-2);
+  margin: 0 0 var(--s-5);
+}
+.prc-levels {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-3);
+}
+.prc-level {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--s-4);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.prc-level:hover {
+  border-color: var(--border-2);
+  background: var(--card-3);
+}
+.prc-level.is-active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.prc-level-label {
+  font-weight: 700;
+}
+.prc-level-text {
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  line-height: 1.45;
+}
+.prc-setup-actions {
+  margin-top: var(--s-5);
+}
+.prc-setup-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: var(--s-4);
+}
+.prc-setup-hint .icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.prc-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--s-3);
+  padding: var(--s-8) var(--s-6);
+}
+.prc-waiting-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  margin: 0;
+}
+.prc-waiting-text {
+  color: var(--text-2);
+  margin: 0;
+  min-height: 1.5em;
+}
+
+@media (max-width: 700px) {
+  .prc-levels {
+    grid-template-columns: 1fr;
+  }
+}

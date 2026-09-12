@@ -14,6 +14,7 @@ export const routes = [
   { path: '/admin/questoes/:id', title: 'Editar questão', page: () => import('./pages/question-form.js') },
   { path: '/admin/editais', title: 'Editais', page: () => import('./pages/exam-notices.js') },
   { path: '/admin/provas-anteriores', title: 'Provas anteriores', page: () => import('./pages/past-exams.js') },
+  { path: '/admin/ler-prova', title: 'Ler prova em PDF', page: () => import('./pages/exam-import.js') },
   { path: '/admin/planos-de-estudo', title: 'Planos de estudo', page: () => import('./pages/study-plans.js') },
   { path: '/admin/vestibulares', title: 'Vestibulares', page: () => import('./pages/exams.js') },
   { path: '/admin/vestibulares/:id', title: 'Vestibular', page: () => import('./pages/exam-form.js') },

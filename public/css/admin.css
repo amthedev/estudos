@@ -11,6 +11,7 @@
 @import './pages/admin-content.css';
 @import './pages/admin-forms.css';
 @import './pages/admin-settings.css';
+@import './pages/admin-exam-import.css';
 @import './pages/admin-misc.css';
 /* acabamento visual compartilhado entre todas as rotas */
 @import './refinement.css';
