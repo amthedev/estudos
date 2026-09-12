@@ -671,6 +671,12 @@ module.exports = {
   createCheckout,
   cancelSubscription,
   createPortal,
+
+  // Exportados para o reprocessamento de eventos já recebidos
+  // (scripts/reprocessar-pagamentos.js): um pagamento descartado por um defeito
+  // já corrigido precisa poder passar de novo pelo processamento atual.
+  applyAsaasEvent,
+  applyAsaasCheckoutEvent,
   syncPlan,
 
   applySubscription,

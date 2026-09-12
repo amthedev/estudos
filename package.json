@@ -21,6 +21,7 @@
     "vendor": "node scripts/vendor.js",
     "start:cloud": "node scripts/bootstrap.js && node server/index.js",
     "check": "node scripts/check-config.js",
+    "reprocessar-pagamentos": "node scripts/reprocessar-pagamentos.js",
     "bootstrap": "node scripts/bootstrap.js",
     "publish:curated-pdfs": "node scripts/publish-curated-pdfs.js"
   },
