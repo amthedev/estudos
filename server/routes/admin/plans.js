@@ -175,7 +175,17 @@ router.delete(
     if (Number(plan.subscriptions_total) > 0) {
       throw new AppError(409, 'conflict', 'Este plano tem assinaturas vinculadas. Desative-o em vez de excluir.');
     }
-    await db.query('DELETE FROM plans WHERE id = $1', [id]);
+
+    // Tentativas de checkout apontam para o plano com ON DELETE RESTRICT, então
+    // qualquer plano que alguém tenha aberto uma vez ficaria impossível de
+    // excluir para sempre — inclusive um criado por engano. Elas são registro
+    // de tentativa, não de cobrança: o que importa para auditoria financeira
+    // são as assinaturas, barradas acima, e os eventos do provedor, que ficam
+    // guardados por fora. Então saem junto, na mesma transação.
+    await db.tx(async (client) => {
+      await client.query('DELETE FROM payment_checkouts WHERE plan_id = $1', [id]);
+      await client.query('DELETE FROM plans WHERE id = $1', [id]);
+    });
     await audit(req, 'plan.delete', 'plan', id, { name: plan.name, slug: plan.slug });
     res.json({ ok: true, message: 'Plano excluído.' });
   })

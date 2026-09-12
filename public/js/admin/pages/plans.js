@@ -1,7 +1,12 @@
 // =====================================================================
 // Foco Elite — Painel administrativo: planos e assinaturas (/admin/planos)
 //
-// Planos: GET/POST/PUT/DELETE /api/admin/plans e POST /plans/:id/sync-provider.
+// Planos: GET/POST/PUT/DELETE /api/admin/plans.
+//
+// Não há ação de "sincronizar plano com o provedor": o Asaas não cadastra
+// planos, o valor e o ciclo vão em cada assinatura. O botão que existia aqui
+// só exibia uma frase explicando isso, e um botão que finge trabalhar é pior
+// que a ausência dele.
 // Assinaturas: GET /api/admin/subscriptions (paginado) e /subscriptions/summary.
 // O status do provedor vem de GET /api/admin/plans/provider-status.
 // =====================================================================
@@ -29,7 +34,6 @@ const SUBSCRIPTION_STATUS = {
 };
 
 const num = (value) => fmtNumber(value ?? 0, { digits: 0 });
-const providerReady = () => Boolean(state.providerStatus && state.providerStatus.configured);
 
 // ---------------------------------------------------------------------
 // Formulário de plano
@@ -137,20 +141,6 @@ function openPlanForm(plan) {
 // ---------------------------------------------------------------------
 // Ações de plano
 // ---------------------------------------------------------------------
-async function syncProvider(plan) {
-  if (!providerReady()) {
-    toast('Configure o Asaas no servidor para sincronizar planos.', { type: 'warning' });
-    return;
-  }
-  try {
-    const result = await api.post(`/api/admin/plans/${plan.id}/sync-provider`, {});
-    toast((result && result.message) || 'Plano sincronizado com o Asaas.', { type: 'success' });
-    if (state.plansTable) state.plansTable.reload();
-  } catch (err) {
-    toast(err && err.message ? err.message : 'Não foi possível sincronizar com o Asaas.', { type: 'error' });
-  }
-}
-
 async function togglePlan(plan) {
   const payload = { ...planPayload(planValues(plan)), active: !plan.active };
   try {
@@ -231,7 +221,6 @@ function mountPlansTable() {
     ],
     rowActions: [
       { label: 'Editar', icon: 'square-pen', onClick: (plan) => openPlanForm(plan) },
-      { label: 'Sincronizar com o Asaas', icon: 'refresh-cw', onClick: (plan) => syncProvider(plan), disabled: () => !providerReady() },
       { label: 'Ativar ou desativar', icon: 'toggle-left', onClick: (plan) => togglePlan(plan) },
       { label: 'Excluir', icon: 'trash-2', danger: true, onClick: (plan) => removePlan(plan) },
     ],
@@ -423,7 +412,7 @@ function providerNotice() {
       <div class="aplan-provider-ok">
         ${badge(`${provider.label || 'Asaas'} em ${mode}`, provider.environment === 'production' ? 'green' : 'blue', { icon: 'credit-card' })}
         ${provider.webhook_configured ? badge('Webhook configurado', 'green') : badge('Webhook não configurado', 'orange')}
-        <span class="text-xs text-3">Chave •••• ${provider.key_last4 || '----'}</span>
+        <span class="text-xs text-3">Chave ${provider.key_masked || 'não informada'}</span>
       </div>`;
   }
   return alertBox({

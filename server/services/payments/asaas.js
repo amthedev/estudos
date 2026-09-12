@@ -18,6 +18,7 @@
  * cenários com e sem configuração. O transporte HTTP é injetável (setHttpClient) para
  * que os testes nunca toquem a API real.
  */
+const crypto = require('node:crypto');
 const config = require('../../config');
 const db = require('../../db/pool');
 
@@ -623,14 +624,24 @@ async function syncPlan(plan) {
 // ---------------------------------------------------------------------------
 // Webhook
 // ---------------------------------------------------------------------------
-/** Compara o token do cabeçalho `asaas-access-token` com ASAAS_WEBHOOK_TOKEN. */
+/**
+ * Compara o token do cabeçalho `asaas-access-token` com ASAAS_WEBHOOK_TOKEN.
+ *
+ * A comparação é em tempo constante. O `!==` de string sai no primeiro
+ * caractere diferente, e a diferença de tempo entre uma recusa no primeiro e
+ * no décimo caractere é mensurável por quem tenta adivinhar o token — chuta um
+ * caractere por vez em vez do valor inteiro. O hash iguala os tamanhos antes
+ * da comparação, já que timingSafeEqual exige buffers do mesmo comprimento e
+ * comparar comprimentos diferentes já vazaria o tamanho do token.
+ */
 function verifyWebhookToken(headers = {}) {
   const { webhookToken } = credentials();
   if (!webhookToken) {
     throw providerError('payments_not_configured', 'Webhook do Asaas não configurado: defina ASAAS_WEBHOOK_TOKEN no servidor.');
   }
   const received = headers['asaas-access-token'] || headers['Asaas-Access-Token'] || null;
-  if (!received || String(received) !== webhookToken) {
+  const digest = (value) => crypto.createHash('sha256').update(String(value)).digest();
+  if (!received || !crypto.timingSafeEqual(digest(received), digest(webhookToken))) {
     throw providerError('webhook_invalid_token', 'Token do webhook inválido.');
   }
   return true;

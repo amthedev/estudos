@@ -1135,6 +1135,53 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.deepEqual(Object.keys(res.body.providers), ['asaas']);
     });
 
+    it('exclui plano que só teve tentativa de checkout', async () => {
+      // A tentativa de checkout aponta para o plano com ON DELETE RESTRICT.
+      // Sem limpar junto, um plano criado por engano que alguém abriu uma vez
+      // ficaria impossível de excluir para sempre.
+      const admin = await ctx.loginAdmin();
+      const novo = await admin.agent.post('/api/admin/plans', {
+        name: 'Plano de teste',
+        price_cents: 1000,
+        interval: 'month',
+        interval_count: 1,
+      });
+      assert.equal(novo.status, 201, JSON.stringify(novo.body));
+
+      const aluno = await ctx.registerStudent();
+      await ctx.db.query(
+        `INSERT INTO payment_checkouts (provider, provider_checkout_id, user_id, plan_id, payment_method, status)
+         VALUES ('asaas', 'chk_abandonado', $1, $2, 'pix', 'expired')`,
+        [aluno.user.id, novo.body.id]
+      );
+
+      const res = await admin.agent.del(`/api/admin/plans/${novo.body.id}`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+
+      const sumiu = await ctx.db.one('SELECT id FROM plans WHERE id = $1', [novo.body.id]);
+      assert.equal(sumiu, null);
+    });
+
+    it('não exclui plano com assinatura vinculada', async () => {
+      const admin = await ctx.loginAdmin();
+      const novo = await admin.agent.post('/api/admin/plans', {
+        name: 'Plano com assinante',
+        price_cents: 2000,
+        interval: 'month',
+        interval_count: 1,
+      });
+      const aluno = await ctx.registerStudent();
+      await ctx.db.query(
+        `INSERT INTO subscriptions (user_id, plan_id, provider, provider_subscription_id, status)
+         VALUES ($1, $2, 'asaas', 'sub_do_plano', 'active')`,
+        [aluno.user.id, novo.body.id]
+      );
+
+      const res = await admin.agent.del(`/api/admin/plans/${novo.body.id}`);
+      assert.equal(res.status, 409);
+      assert.match(res.body.error.message, /Desative/);
+    });
+
     it('grava duração, bônus, preço de comparação e selo do plano', async () => {
       const created = await admin.agent.post('/api/admin/plans', {
         name: '15 meses',

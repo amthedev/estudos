@@ -124,9 +124,25 @@ router.post(
       throw new AppError(400, 'validation_error', 'Não foi possível identificar o provedor de pagamento deste webhook.');
     }
 
-    const outcome = await callProvider(() =>
-      payments.handleWebhook({ provider, rawBody: req.body, headers: req.headers })
-    );
+    let outcome;
+    try {
+      outcome = await callProvider(() =>
+        payments.handleWebhook({ provider, rawBody: req.body, headers: req.headers })
+      );
+    } catch (err) {
+      // Webhook recusado não deixava rastro: vira 400, e o registro de erros só
+      // guarda a partir de 500. A rejeição também acontece antes de o evento
+      // ser gravado, então não sobrava nada em lugar nenhum — nem uma tentativa
+      // de forjar pagamento, nem um token que parou de bater depois de uma
+      // troca de chave. O corpo fica de fora de propósito: não é confiável e
+      // pode trazer dado de terceiro.
+      if (err && ['validation_error', 'webhook_invalid_token'].includes(err.code)) {
+        console.warn(
+          `[billing] webhook recusado (${provider}): ${err.message} — origem ${req.ip || 'desconhecida'}`
+        );
+      }
+      throw err;
+    }
 
     res.json({
       received: true,

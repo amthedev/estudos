@@ -304,14 +304,16 @@ function plansBlock() {
         <p>Compare os planos e escolha o que funciona para sua rotina.</p>
       </div>
       <div class="grid grid-3 sub-plans">${plans.map(planCard)}</div>
-      <footer class="sub-checkout-trust">
-        <span class="sub-trust-icon">${icon('shield-check')}</span>
-        <div>
-          <strong>Pagamento processado pelo ${status.payment_provider_label || 'Asaas'}</strong>
-          <span>Seu acesso é atualizado após a confirmação.</span>
-        </div>
-        ${status.support_email ? html`<a href="mailto:${status.support_email}">Precisa de ajuda?</a>` : ''}
-      </footer>
+      ${status.payments_configured && status.payment_provider !== 'none'
+        ? html`<footer class="sub-checkout-trust">
+            <span class="sub-trust-icon">${icon('shield-check')}</span>
+            <div>
+              <strong>Pagamento processado pelo ${status.payment_provider_label || 'Asaas'}</strong>
+              <span>Seu acesso é atualizado após a confirmação.</span>
+            </div>
+            ${status.support_email ? html`<a href="mailto:${status.support_email}">Precisa de ajuda?</a>` : ''}
+          </footer>`
+        : ''}
     </section>`;
 }
 
