@@ -460,11 +460,19 @@ async function applyAsaasEvent(tx, event) {
         `SELECT * FROM subscriptions
           WHERE provider = 'asaas' AND user_id = $1 AND provider_subscription_id IS NULL
           ORDER BY created_at DESC
-          LIMIT 1`,
+          LIMIT 1
+          FOR UPDATE`,
         [alunoAvulso]
       )
     : await tx.one(
-        `SELECT * FROM subscriptions WHERE provider = 'asaas' AND provider_subscription_id = $1`,
+        // FOR UPDATE porque todo o resto do handler decide a partir desta
+        // leitura. Sem a trava, dois eventos entregues ao mesmo tempo leem o
+        // mesmo estado antigo e o último sobrescreve a decisão do primeiro.
+        // O envio sequencial do provedor evita isso na prática, mas é
+        // configuração no painel dele, não garantia nossa.
+        `SELECT * FROM subscriptions
+          WHERE provider = 'asaas' AND provider_subscription_id = $1
+          FOR UPDATE`,
         [info.subscription_id]
       );
   const userId = await resolveUser(tx, { current, reference, customerId: info.customer_id });
@@ -566,6 +574,11 @@ async function applyAsaasEvent(tx, event) {
     }
     case 'PAYMENT_OVERDUE': {
       if (!current) return { skipped: 'assinatura desconhecida' };
+      // Uma cobrança pode vencer sem que o período esteja em aberto: tentativa
+      // antiga que ficou pendente, ou evento fora de ordem chegando depois do
+      // pagamento. Rebaixar sem olhar derrubava aluno que já tinha pago —
+      // PAYMENT_DELETED, logo abaixo, sempre respeitou isso.
+      if (stillPaid) return { subscription_id: current.id, unchanged: 'período pago em andamento' };
       patch.status = 'past_due';
       break;
     }

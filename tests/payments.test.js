@@ -531,6 +531,44 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.match(res.body.error.message, /não tem uma assinatura ativa/i);
     });
 
+    it('cancela no provedor a assinatura que o aluno abandonou antes de abrir outra', async () => {
+      // Cada tentativa de checkout que gera assinatura no Asaas deixa uma viva
+      // lá. Sem cancelar, o aluno que desiste e volta depois fica com duas — e
+      // as duas podem cobrar. O guarda da rota não pega isso: ele só barra
+      // quando a assinatura LOCAL está ativa, e a abandonada nunca chegou lá.
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, payment_method: 'credit_card' });
+      await ctx.db.query(
+        `UPDATE payment_checkouts SET provider_subscription_id = 'sub_000001' WHERE user_id = $1`,
+        [student.user.id]
+      );
+
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, payment_method: 'credit_card' });
+
+      assert.ok(
+        api.find('DELETE', /^\/subscriptions\/sub_000001$/),
+        'a assinatura abandonada precisa ser cancelada no provedor'
+      );
+    });
+
+    it('não cancela a assinatura ativa do aluno', async () => {
+      // A trava aqui é o oposto: uma assinatura viva não pode ser derrubada
+      // por alguém abrindo a tela de planos.
+      await student.agent.post('/api/billing/checkout', { plan_id: plans.yearly, payment_method: 'credit_card' });
+      await ctx.db.query(
+        `UPDATE payment_checkouts SET provider_subscription_id = 'sub_000001' WHERE user_id = $1`,
+        [student.user.id]
+      );
+      await ctx.db.query(
+        `INSERT INTO subscriptions (user_id, plan_id, provider, provider_subscription_id, status, current_period_end)
+         VALUES ($1, $2, 'asaas', 'sub_000001', 'active', now() + interval '30 days')`,
+        [student.user.id, plans.yearly]
+      );
+
+      const res = await student.agent.post('/api/billing/checkout', { plan_id: plans.monthly, payment_method: 'credit_card' });
+      assert.equal(res.status, 409, 'assinatura ativa barra o checkout novo');
+      assert.equal(api.find('DELETE', /^\/subscriptions\//), undefined, 'e nada é cancelado');
+    });
+
     it('recusa uma forma de pagamento diferente de cartão ou Pix', async () => {
       const res = await student.agent.post('/api/billing/checkout', {
         plan_id: plans.yearly,
@@ -918,8 +956,13 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       assert.equal(counts.events, 1);
     });
 
-    it('atraso marca a assinatura como em atraso e bloqueia o acesso', async () => {
-      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_3', reference }));
+    it('atraso bloqueia o acesso quando não há período pago em aberto', async () => {
+      await ctx.db.query(
+        `INSERT INTO subscriptions (user_id, plan_id, provider, provider_subscription_id, status, current_period_end)
+         VALUES ($1, $2, 'asaas', 'sub_000001', 'active', now() - interval '1 day')`,
+        [student.user.id, plans.yearly]
+      );
+
       const res = await sendWebhook(
         paymentEvent('PAYMENT_OVERDUE', { id: 'evt_atraso_3', reference, overrides: { status: 'OVERDUE' } })
       );
@@ -931,6 +974,24 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       const status = await student.agent.get('/api/billing/status');
       assert.equal(status.body.access.allowed, false);
       assert.equal(status.body.access.reason, 'past_due');
+    });
+
+    it('atraso de cobrança antiga não derruba quem já pagou', async () => {
+      // Uma cobrança pode vencer sem que o período esteja em aberto: tentativa
+      // anterior que ficou pendente, ou evento fora de ordem chegando depois
+      // do pagamento. O aluno pagou 15 meses e não pode perder o acesso.
+      await sendWebhook(paymentEvent('PAYMENT_CONFIRMED', { id: 'evt_pago_3', reference }));
+
+      const res = await sendWebhook(
+        paymentEvent('PAYMENT_OVERDUE', { id: 'evt_atraso_velho', reference, overrides: { status: 'OVERDUE' } })
+      );
+      assert.equal(res.status, 200);
+
+      const row = await ctx.db.one('SELECT status FROM subscriptions WHERE user_id = $1', [student.user.id]);
+      assert.equal(row.status, 'active', 'o período pago tem que sobreviver ao atraso');
+
+      const status = await student.agent.get('/api/billing/status');
+      assert.equal(status.body.access.allowed, true);
     });
 
     it('cancelamento da assinatura mantém o período pago e agenda o encerramento', async () => {

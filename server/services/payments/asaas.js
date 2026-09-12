@@ -435,10 +435,51 @@ function checkoutUrl(checkout) {
  * Cria o Checkout hospedado do Asaas. Assim o cartão nunca passa pelo nosso servidor:
  * o próprio Asaas coleta e valida os dados antes de criar a assinatura.
  */
+/**
+ * Cancela no provedor as assinaturas que o aluno deixou para trás.
+ *
+ * São as de checkouts anteriores que geraram assinatura no Asaas mas nunca
+ * viraram acesso aqui — tentativa abandonada, cartão recusado na hora. Elas
+ * continuam vivas do lado de lá e podem cobrar.
+ *
+ * Falhar aqui não impede o checkout novo: o objetivo é não deixar lixo
+ * cobrando, e uma indisponibilidade do provedor não pode travar quem quer
+ * pagar. O que não deu certo fica no log.
+ */
+async function cancelarAssinaturasPendentes(userId) {
+  const pendentes = await db.many(
+    `SELECT c.provider_subscription_id
+       FROM payment_checkouts c
+       LEFT JOIN subscriptions s
+         ON s.provider = 'asaas' AND s.provider_subscription_id = c.provider_subscription_id
+      WHERE c.provider = 'asaas'
+        AND c.user_id = $1
+        AND c.provider_subscription_id IS NOT NULL
+        AND (s.id IS NULL OR s.status NOT IN ('active', 'trialing'))`,
+    [userId]
+  );
+
+  for (const { provider_subscription_id: id } of pendentes) {
+    try {
+      await cancelSubscription(id);
+    } catch (err) {
+      console.warn(`[asaas] não foi possível cancelar a assinatura pendente ${id}: ${err.message}`);
+    }
+  }
+}
+
 async function createCheckout({ user, plan, paymentMethod = 'credit_card', successUrl, cancelUrl }) {
   if (!user || !plan) throw new Error('createCheckout exige usuário e plano.');
   const billingType = BILLING_TYPES[paymentMethod];
   if (!billingType) throw providerError('unsupported_payment_method', 'Escolha cartão de crédito ou Pix.');
+
+  // Assinatura anterior que ficou pendente no provedor é cancelada antes de
+  // abrir outra. Sem isso, cada tentativa de checkout deixava uma assinatura
+  // viva no Asaas: o aluno que desistisse e voltasse depois acabaria com duas,
+  // e as duas podiam cobrar. O guarda da rota não pega este caso, porque ele
+  // só barra quando a assinatura LOCAL está ativa — e uma tentativa abandonada
+  // nunca chega a ficar ativa aqui.
+  await cancelarAssinaturasPendentes(user.id);
 
   const now = new Date();
   const trialDays = await trialDaysFor(plan, paymentMethod, user);
