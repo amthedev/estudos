@@ -327,6 +327,14 @@ function buildCorrectionPrompt(criteriaSet, exam, theme, content) {
   );
   lines.push('- Liste no máximo 8 erros gramaticais, priorizando os que mais pesam na nota.');
   lines.push('- Não invente trechos: todo trecho citado deve existir no texto do aluno.');
+  // Mantém o parecer objetivo e evita JSON truncado em correções extensas.
+  lines.push('');
+  lines.push('Tamanho de cada campo (respeite, é o que garante a entrega da correção):');
+  lines.push('- "summary": até 5 frases.');
+  lines.push('- cada "comment" de critério: até 50 palavras.');
+  lines.push('- "argumentation", "repertoire", "structure", "cohesion" e "intervention_proposal": até 60 palavras cada.');
+  lines.push('- "strengths", "weaknesses" e "suggestions": até 4 itens cada, uma frase por item.');
+  lines.push('- cada "explanation" de erro gramatical: uma frase curta.');
 
   const user = lines.join('\n');
   return {
@@ -459,15 +467,13 @@ async function correctEssay(essayId, { timeoutMs = CORRECTION_TIMEOUT_MS } = {})
 
   let result;
   try {
-    // Uma correção completa traz parecer, cinco competências comentadas com
-    // trechos, pontos fortes e fracos, erros gramaticais e cinco análises —
-    // cerca de 2.300 tokens no caso típico. Com 2500 não havia folga: uma
-    // redação longa, com mais erros a apontar, era cortada no meio do JSON.
+    // O segundo teto só é usado se o provedor cortar o primeiro JSON.
     result = await ai.json({
       messages,
       model,
       temperature: 0.2,
       maxTokens: 4000,
+      retryMaxTokens: 8000,
       userId: essay.user_id,
       feature: 'essay',
       signal: controller.signal,

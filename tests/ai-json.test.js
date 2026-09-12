@@ -69,6 +69,38 @@ describe('Respostas JSON da IA', () => {
     );
   });
 
+  it('repete uma resposta cortada com um limite maior e entrega o JSON completo', async () => {
+    const limites = [];
+    let tentativa = 0;
+    ai.setClientForTests({
+      chat: {
+        completions: {
+          async create(params) {
+            limites.push(params.max_tokens);
+            tentativa += 1;
+            const cortada = tentativa === 1;
+            return {
+              model: 'teste/modelo',
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: cortada ? '{"title":"Tema' : '{"title":"Tema completo"}' },
+                  finish_reason: cortada ? 'length' : 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+            };
+          },
+        },
+      },
+    });
+
+    const res = await ai.json({ messages: pergunta, maxTokens: 4000, retryMaxTokens: 8000 });
+
+    assert.equal(res.data.title, 'Tema completo');
+    assert.deepEqual(limites, [4000, 8000]);
+  });
+
   it('diz que o FORMATO está inválido quando o modelo devolve outra coisa', async () => {
     ai.setClientForTests(clienteQueResponde('Desculpe, não posso ajudar com isso.', 'stop'));
 
@@ -80,6 +112,20 @@ describe('Respostas JSON da IA', () => {
         return true;
       }
     );
+  });
+
+  it('não repete uma resposta malformada que não foi cortada', async () => {
+    let chamadas = 0;
+    const cliente = clienteQueResponde('isto não é JSON', 'stop');
+    const create = cliente.chat.completions.create;
+    cliente.chat.completions.create = async (...args) => {
+      chamadas += 1;
+      return create(...args);
+    };
+    ai.setClientForTests(cliente);
+
+    await assert.rejects(() => ai.json({ messages: pergunta, maxTokens: 4000, retryMaxTokens: 8000 }));
+    assert.equal(chamadas, 1);
   });
 
   it('marca truncated no resultado, mesmo quando o JSON cortado ainda dá para ler', async () => {

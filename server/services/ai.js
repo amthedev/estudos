@@ -8,7 +8,8 @@
  *   await ai.assertAvailable()              → lança 503 ai_unavailable se não configurada ou limite mensal atingido
  *   await ai.chat({ messages, model, stream, temperature, maxTokens, userId, feature, onDelta, signal })
  *       → { content, usage: { prompt_tokens, completion_tokens, total_tokens }, model, latency_ms, aborted }
- *   await ai.json({ messages, ... })        → idem + `data` (resposta interpretada como JSON; response_format json_object)
+ *   await ai.json({ messages, retryMaxTokens, ... })
+ *       → idem + `data` (resposta interpretada como JSON; repete uma vez se vier cortada)
  *   await ai.status()                       → { configured, mock, model, essay_model, month_tokens, month_requests, limit, limit_reached, last_error }
  *
  * Toda chamada registra uma linha em ai_usage (tokens, modelo, latência, status) e respeita o limite mensal
@@ -309,20 +310,41 @@ function parseJsonResponse(text) {
   return null;
 }
 
-/** Chamada que exige JSON como resposta (response_format json_object). Devolve { data, ...resultado }. */
+/**
+ * Chamada que exige JSON como resposta (response_format json_object).
+ * Quando `retryMaxTokens` é maior que `maxTokens`, repete uma vez somente se
+ * o provedor cortar a primeira resposta e o JSON ficar incompleto.
+ */
 async function json(options = {}) {
-  const result = await chat({ ...options, stream: false, responseFormat: { type: 'json_object' } });
-  const data = parseJsonResponse(result.content);
-  if (!data) {
+  const { retryMaxTokens, ...chatOptions } = options;
+  const initialMaxTokens = Number(chatOptions.maxTokens);
+  const retryLimit = Number(retryMaxTokens);
+  const canRetry =
+    Number.isFinite(retryLimit) &&
+    retryLimit > 0 &&
+    (!Number.isFinite(initialMaxTokens) || retryLimit > initialMaxTokens);
+  const attempts = canRetry ? [chatOptions.maxTokens, Math.floor(retryLimit)] : [chatOptions.maxTokens];
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const maxTokens = attempts[index];
+    const request = maxTokens === undefined ? chatOptions : { ...chatOptions, maxTokens };
+    const result = await chat({ ...request, stream: false, responseFormat: { type: 'json_object' } });
+    const data = parseJsonResponse(result.content);
+    if (data) return { ...result, data };
+
+    const hasNextAttempt = result.truncated && index + 1 < attempts.length;
+    if (hasNextAttempt) {
+      console.warn(
+        `[ai] resposta JSON cortada com maxTokens=${maxTokens}; repetindo com maxTokens=${attempts[index + 1]}.`
+      );
+      continue;
+    }
+
     const tamanho = String(result.content || '').length;
     console.error(
       `[ai] resposta JSON inválida (${tamanho} caracteres, truncada: ${result.truncated}):`,
       String(result.content || '').slice(0, 300)
     );
-    // Truncada e malformada são problemas diferentes e pedem ações diferentes:
-    // uma é limite de tamanho curto demais, a outra é o modelo não respeitando
-    // o formato. Tratar as duas com a mesma mensagem mandava procurar no lugar
-    // errado.
     if (result.truncated) {
       throw new AppError(
         503,
@@ -333,7 +355,8 @@ async function json(options = {}) {
     }
     throw new AppError(503, 'ai_unavailable', 'A IA devolveu uma resposta em formato inválido. Tente novamente.');
   }
-  return { ...result, data };
+
+  throw new AppError(503, 'ai_unavailable', 'A IA não conseguiu concluir a resposta. Tente novamente.');
 }
 
 /** Situação da integração para o painel e para o front (sem expor segredos). */
