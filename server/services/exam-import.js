@@ -316,6 +316,39 @@ async function extract({ batch, exam, year, board, answerKey, userId }) {
 }
 
 /**
+ * Converte um link do Google Drive no endereço que devolve o arquivo.
+ *
+ * O cliente guarda as provas no Drive e cola o link de compartilhamento —
+ * que abre o visualizador, não o PDF. Sem esta conversão, a leitura recebia
+ * uma página HTML e dizia que o arquivo não tinha texto, o que manda
+ * investigar o lugar errado.
+ *
+ * Formatos aceitos:
+ *   https://drive.google.com/file/d/<ID>/view?usp=sharing
+ *   https://drive.google.com/open?id=<ID>
+ *   https://docs.google.com/document/d/<ID>/edit
+ *
+ * @returns {string} o endereço direto, ou o original quando não é do Drive
+ */
+function directDownloadUrl(value) {
+  const url = String(value || '').trim();
+  if (!/^https?:\/\/(drive|docs)\.google\.com\//i.test(url)) return url;
+
+  const porCaminho = url.match(/\/d\/([A-Za-z0-9_-]{10,})/);
+  const porParametro = url.match(/[?&]id=([A-Za-z0-9_-]{10,})/);
+  const id = (porCaminho && porCaminho[1]) || (porParametro && porParametro[1]);
+  if (!id) return url;
+
+  // `confirm=t` pula a tela de aviso que o Drive mostra em arquivo grande.
+  return `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
+}
+
+/** O endereço aponta para o Google Drive? (muda a mensagem de erro) */
+function isDriveUrl(value) {
+  return /^https?:\/\/(drive|docs)\.google\.com\//i.test(String(value || '').trim());
+}
+
+/**
  * Lê um gabarito colado pelo administrador.
  * Aceita "1-A 2-B", "1) C", "01 D", um por linha ou tudo na mesma linha.
  * @returns {{ key: object, count: number }}
@@ -345,4 +378,6 @@ module.exports = {
   normalizeExtracted,
   extract,
   parseAnswerKey,
+  directDownloadUrl,
+  isDriveUrl,
 };

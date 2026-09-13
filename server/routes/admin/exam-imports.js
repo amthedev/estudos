@@ -273,10 +273,27 @@ router.get(
       throw new AppError(409, 'conflict', 'O endereço do PDF desta prova não é um arquivo que a plataforma consiga abrir.');
     }
 
-    const resposta = await fetch(url, { redirect: 'follow' });
+    // Link do Google Drive abre o visualizador, não o arquivo. Sem converter,
+    // a leitura receberia uma página HTML e diria que o PDF não tem texto.
+    const destino = examImport.directDownloadUrl(url);
+    const resposta = await fetch(destino, { redirect: 'follow' });
     if (!resposta.ok || !resposta.body) {
       throw new AppError(502, 'bad_gateway', `Não foi possível baixar o PDF desta prova (HTTP ${resposta.status}).`);
     }
+
+    // O Drive devolve HTML quando o arquivo não é público — e um HTML servido
+    // como PDF vira "este arquivo não tem texto", que manda olhar o lugar errado.
+    const tipo = String(resposta.headers.get('content-type') || '');
+    if (/text\/html/i.test(tipo)) {
+      throw new AppError(
+        409,
+        'conflict',
+        examImport.isDriveUrl(url)
+          ? 'O Google Drive não entregou o arquivo. Abra o link no Drive, em Compartilhar, e deixe como "qualquer pessoa com o link".'
+          : 'O endereço cadastrado devolveu uma página, não um PDF. Confira o link da prova.'
+      );
+    }
+
     const tamanho = resposta.headers.get('content-length');
     if (tamanho) res.setHeader('Content-Length', tamanho);
     Readable.fromWeb(resposta.body).pipe(res);

@@ -590,7 +590,16 @@ Limite: 2.000 linhas por importação e 4 MB por arquivo.
 Tela: **Ler prova em PDF** (`/admin/ler-prova`). É o caminho para transformar uma prova já aplicada —
 ENEM, ENEM PPL, Barro Branco — em questões do banco sem digitar uma a uma.
 
-1. **Nova leitura de prova.** Nome, **vestibular**, **ano** e **banca**.
+**O caminho rápido, para encher o banco de uma vez:** na própria tela, o botão
+**Ler todas de uma vez** percorre todas as provas cadastradas que ainda não foram lidas — lê o
+gabarito oficial de cada uma, lê o PDF, varre até o fim e deixa tudo na fila de conferência. Dá para
+parar no meio; o que entrou fica, e a prova interrompida continua pronta para retomar.
+
+Para uma prova só, o caminho é este:
+
+1. **Nova leitura de prova.** Nome, **vestibular**, **ano** e **banca**. Se a prova já está em
+   **Provas anteriores**, escolha-a em *Aproveitar uma prova já cadastrada*: os campos se preenchem,
+   o arquivo não precisa ser enviado de novo e o gabarito é lido do PDF cadastrado.
 2. **Cole o gabarito oficial.** Aceita `1-A 2-B 3-C`, `1) A`, um por linha. **Faça isso.** Sem o
    gabarito, a inteligência artificial precisa *resolver* cada questão para marcar a resposta, e erra
    com confiança. Com o gabarito, ela só transcreve.
@@ -636,8 +645,13 @@ Tela: **Provas anteriores** (`/admin/provas-anteriores`).
 
 Cadastre **vestibular**, **ano**, **título** (como o aluno vê), **dia** (ENEM: 1 ou 2), **banca**, o
 **PDF da prova** e o **PDF do gabarito** — os dois são campos de envio de arquivo, com até 20 MB cada,
-e também aceitam um endereço já hospedado. Há ainda **link externo**, **observações** e o interruptor
+e também aceitam um endereço já hospedado, **inclusive um link do Google Drive** (o arquivo precisa
+estar como "qualquer pessoa com o link"). Há ainda **link externo**, **observações** e o interruptor
 **visível para o aluno**.
+
+> **Cadastre o PDF do gabarito sempre que tiver.** É ele que dispensa digitar as respostas na hora de
+> ler as questões (seção 23.3) — e sem gabarito a inteligência artificial precisa *resolver* cada
+> questão para marcar a correta, que é onde ela erra.
 
 ---
 

@@ -95,6 +95,35 @@ describe('Recorte da prova em lotes', () => {
   });
 });
 
+describe('Link do Google Drive', () => {
+  // O cliente guarda as provas no Drive — "fiz no drive" — e o link de
+  // compartilhamento abre o visualizador, não o arquivo.
+  it('converte o link de compartilhamento no endereço do arquivo', () => {
+    const casos = [
+      'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrS/view?usp=sharing',
+      'https://drive.google.com/open?id=1AbCdEfGhIjKlMnOpQrS',
+      'https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrS/edit',
+    ];
+    for (const link of casos) {
+      const direto = examImport.directDownloadUrl(link);
+      assert.match(direto, /^https:\/\/drive\.google\.com\/uc\?export=download/);
+      assert.match(direto, /id=1AbCdEfGhIjKlMnOpQrS/, `perdeu o identificador de ${link}`);
+    }
+  });
+
+  it('não mexe em endereço que não é do Drive', () => {
+    const blob = 'https://public-blob.squarecloud.dev/abc/provas/enem.pdf';
+    assert.equal(examImport.directDownloadUrl(blob), blob);
+    assert.equal(examImport.directDownloadUrl('/uploads/provas/x.pdf'), '/uploads/provas/x.pdf');
+    assert.equal(examImport.isDriveUrl(blob), false);
+  });
+
+  it('link do Drive sem identificador fica como está, em vez de virar lixo', () => {
+    const estranho = 'https://drive.google.com/drive/my-drive';
+    assert.equal(examImport.directDownloadUrl(estranho), estranho);
+  });
+});
+
 describe('Gabarito oficial colado pelo administrador', () => {
   it('lê os formatos que aparecem na folha de respostas', () => {
     const { key, count } = examImport.parseAnswerKey('1-A 2) B\n3. C\n04 D\n5 = E');
