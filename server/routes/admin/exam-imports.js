@@ -130,12 +130,15 @@ async function loadImport(id) {
 function serialize(row, { counts = null } = {}) {
   const { document_text, ...rest } = row;
   const chars = Number(row.chars_total) || 0;
+  // has_text pode vir pronto da lista (que não carrega o texto inteiro de
+  // propósito) ou ser derivado do texto quando ele acompanha a linha.
+  const temTexto = row.has_text !== undefined ? Boolean(row.has_text) : Boolean(document_text);
   return {
     ...rest,
     answer_key_count: row.answer_key ? Object.keys(row.answer_key).length : 0,
     answer_key: undefined,
     percent: chars > 0 ? Math.min(100, Math.round((Number(row.chars_read) / chars) * 100)) : 0,
-    has_text: Boolean(document_text),
+    has_text: temTexto,
     counts,
   };
 }
@@ -161,6 +164,7 @@ router.get(
       `SELECT i.id, i.title, i.source_url, i.exam_id, i.year, i.board, i.status,
               i.chars_total, i.chars_read, i.found_count, i.imported_count, i.last_number,
               i.error_message, i.created_at, i.updated_at,
+              (i.document_text IS NOT NULL AND i.document_text <> '') AS has_text,
               e.short_name AS exam_short_name
          FROM exam_imports i
          LEFT JOIN exams e ON e.id = i.exam_id
@@ -469,6 +473,20 @@ router.post(
     if (!row.document_text) {
       throw new AppError(409, 'conflict', 'Envie o texto da prova antes de varrer.');
     }
+
+    // "extraindo" órfão: a linha diz que está varrendo, mas ninguém está — este
+    // processo não a conhece (emAndamento é da memória e some no restart) e o
+    // último toque foi há mais de dois minutos. Sem isto, a única saída era
+    // esperar o próximo reinício destravar. Um lote real atualiza updated_at bem
+    // antes disso, então uma varredura de verdade em curso nunca é interrompida.
+    if (row.status === 'extraindo' && !emAndamento.has(row.id)) {
+      const parado = Date.now() - new Date(row.updated_at).getTime();
+      if (parado > 2 * 60 * 1000) {
+        await db.query(`UPDATE exam_imports SET status = 'pronta' WHERE id = $1`, [row.id]);
+        row.status = 'pronta';
+      }
+    }
+
     if (row.chars_read >= String(row.document_text).length) {
       const concluida = await db.one(`UPDATE exam_imports SET status = 'concluida' WHERE id = $1 RETURNING *`, [row.id]);
       return res.json({ ...serialize(concluida, { counts: await itemCounts(row.id) }), done: true, running: false });

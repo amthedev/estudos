@@ -653,6 +653,52 @@ describe('Leitura de prova pelo painel', () => {
     assert.equal(res.body.payload.topic_slug, '', 'assunto pertence a uma matéria; o antigo não vale na nova');
   });
 
+  it('leitura presa em "extraindo" por um reinicio pode ser retomada', async () => {
+    // O mapa emAndamento vive na memoria: quando o processo reinicia no meio de
+    // uma varredura, o banco fica "extraindo" e ninguem esta varrendo. A leitura
+    // precisa poder continuar sem esperar o proximo boot.
+    const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Presa', exam_id: exam.id });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: fakeExam(2), done: true });
+
+    // Simula o orfao: status "extraindo" e o ultimo toque ha mais de dois minutos.
+    await db.query(
+      `UPDATE exam_imports SET status = 'extraindo', updated_at = now() - interval '5 minutes' WHERE id = $1`,
+      [criada.body.id]
+    );
+
+    const retomada = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
+    assert.ok(
+      retomada.status === 200 || retomada.status === 202,
+      `a leitura orfa tinha que ser retomada, veio ${retomada.status}: ${JSON.stringify(retomada.body)}`
+    );
+
+    const final = await varrerAteOFim(admin, criada.body.id);
+    assert.equal(final.found_count, 2, 'depois de destravada, a varredura chega ao fim');
+  });
+
+  it('uma varredura de verdade em curso NAO e interrompida pela retomada', async () => {
+    // O reset so vale para o orfao parado. Uma leitura "extraindo" tocada agora
+    // (updated_at recente) e uma varredura real e nao pode ser derrubada.
+    const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Em curso', exam_id: exam.id });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: fakeExam(2), done: true });
+    await db.query(`UPDATE exam_imports SET status = 'extraindo', updated_at = now() WHERE id = $1`, [criada.body.id]);
+
+    const r = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
+    // Recente: nao reseta. Como emAndamento nao a conhece, ela segue "extraindo".
+    const estado = await db.one('SELECT status FROM exam_imports WHERE id = $1', [criada.body.id]);
+    assert.equal(estado.status, 'extraindo', 'varredura recente continua intocada');
+  });
+
+  it('a lista informa has_text sem carregar o texto inteiro', async () => {
+    const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Com texto', exam_id: exam.id });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: fakeExam(1), done: true });
+
+    const lista = await admin.agent.get('/api/admin/exam-imports');
+    const naLista = lista.body.items.find((i) => i.id === criada.body.id);
+    assert.ok(naLista, 'a leitura recem-criada tem que aparecer na lista');
+    assert.equal(naLista.has_text, true, 'a lista dizia "sem texto" numa leitura que tem texto');
+  });
+
   it('apagar a leitura leva os itens junto', async () => {
     const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Para apagar' });
     const res = await admin.agent.del(`/api/admin/exam-imports/${criada.body.id}`);
