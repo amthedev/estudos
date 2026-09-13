@@ -1070,13 +1070,24 @@ async function completeItem(userId, itemId) {
   const today = dates.todayISO();
   const studyDate = item.date <= today ? item.date : today;
   await db.tx(async (client) => {
-    await client.query(
-      `UPDATE schedule_items SET status = 'done', completed_at = now() WHERE user_id = $1 AND id = $2`,
+    const marcado = await client.one(
+      `UPDATE schedule_items SET status = 'done', completed_at = now()
+        WHERE user_id = $1 AND id = $2 AND status <> 'done'
+        RETURNING id`,
       [userId, itemId]
     );
+    if (!marcado) return;
+    // Concluir, reabrir e concluir de novo somava as horas outra vez: um bloco
+    // de vinte minutos virava quarenta, e com ele a meta da semana, o tempo do
+    // dia e a sequência de dias estudados. Reabrir um item não apaga o registro
+    // de estudo — o aluno estudou —, então a conclusão registra uma vez só.
     await client.query(
       `INSERT INTO study_logs (user_id, activity_type, ref_id, subject_id, minutes, study_date)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+       SELECT $1, $2, $3, $4, $5, $6
+        WHERE NOT EXISTS (
+          SELECT 1 FROM study_logs
+           WHERE user_id = $1 AND ref_id = $3 AND activity_type = $2
+        )`,
       [userId, ACTIVITY_BY_TYPE[item.type] || 'schedule', item.id, item.subject_id || null, item.duration_min, studyDate]
     );
   });

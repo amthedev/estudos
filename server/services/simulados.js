@@ -638,6 +638,21 @@ async function finishAttempt(userId, attemptId) {
   const perAnswerSec = answeredCount > 0 ? Math.round(timeSpentSec / answeredCount) : null;
 
   const updated = await db.tx(async (client) => {
+    // A leitura do status lá em cima acontece fora da transação. Duas abas com
+    // o cronômetro zerando junto — ou um clique repetido depois de a rede
+    // demorar — passavam as duas por ela e corrigiam o mesmo simulado duas
+    // vezes: cada resposta virava duas linhas em question_attempts, cada erro
+    // subia o contador do caderno de erros duas vezes e o tempo de estudo era
+    // creditado em dobro, sem como separar a duplicata depois. Tomar a
+    // tentativa é o primeiro passo da transação agora.
+    const tomada = await client.one(
+      `UPDATE simulado_attempts SET status = 'finished'
+        WHERE id = $1 AND user_id = $2 AND status = 'in_progress'
+        RETURNING id`,
+      [attempt.id, userId]
+    );
+    if (!tomada) throw new AppError(409, 'conflict', 'Este simulado já foi finalizado.');
+
     for (const g of graded) {
       if (g.blank) continue; // registra uma linha por resposta
       await client.query(
@@ -669,7 +684,7 @@ async function finishAttempt(userId, attemptId) {
 
     return client.one(
       `UPDATE simulado_attempts
-          SET status = 'finished', finished_at = now(), time_spent_sec = $3, score = $4,
+          SET finished_at = now(), time_spent_sec = $3, score = $4,
               correct_count = $5, wrong_count = $6, blank_count = $7, breakdown = $8::jsonb
         WHERE id = $1 AND user_id = $2
         RETURNING *`,

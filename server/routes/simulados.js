@@ -92,6 +92,21 @@ function remainingSec(attempt) {
   return Math.max(0, total - elapsed);
 }
 
+/**
+ * Quantos segundos passaram do prazo (negativo enquanto ainda há tempo).
+ *
+ * `remainingSec` nunca fica abaixo de zero, então a regra de "tempo esgotado"
+ * escrita em cima dela — `remainingSec(...) + GRACE_SEC <= 0` — nunca era
+ * verdadeira: um simulado cronometrado aceitava resposta dias depois do prazo,
+ * e o `{ expired: true }` prometido à tela nunca chegava.
+ */
+function overdueSec(attempt) {
+  const total = Number(attempt.duration_min) * 60;
+  if (!Number.isFinite(total) || total <= 0) return -Infinity;
+  const started = new Date(attempt.started_at).getTime();
+  return Math.floor((Date.now() - started) / 1000) - total;
+}
+
 function serializeAttempt(row) {
   const out = { ...row };
   delete out.user_id;
@@ -378,7 +393,7 @@ router.patch(
     const attempt = await db.one('SELECT * FROM simulado_attempts WHERE id = $1 AND user_id = $2', [req.valid.params.id, userId]);
     if (!attempt) throw new AppError(404, 'not_found', 'Simulado não encontrado.');
     if (attempt.status !== 'in_progress') throw new AppError(409, 'conflict', 'Este simulado já foi finalizado.');
-    if (remainingSec(attempt) + GRACE_SEC <= 0) {
+    if (overdueSec(attempt) > GRACE_SEC) {
       throw new AppError(409, 'conflict', 'O tempo do simulado terminou. Finalize para ver o resultado.', { expired: true });
     }
 
