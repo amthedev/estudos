@@ -28,9 +28,11 @@ Erros · 12. Redação IA · 13. Tutor IA · 14. Provas Anteriores · 15. Meu De
 Favoritos e Busca · 17. Aulas Particulares, Perfil e Assinatura
 
 **Parte II — O administrador**
-18. Como o painel se organiza · 19. Conteúdo · 20. Aulas · 21. Questões · 22. Provas anteriores ·
-23. Vestibulares · 24. Redação · 25. Simulados · 26. Professores e agendamentos · 27. Planos e
-assinaturas · 28. Configurações · 29. Rotina sugerida · 30. Perguntas frequentes
+18. Como o painel se organiza · 19. Visão geral · 20. Alunos · 21. Conteúdo · 22. Aulas ·
+23. Questões · 24. Provas anteriores · 25. Editais · 26. Vestibulares · 27. Planos de estudo ·
+28. Redação · 29. Simulados · 30. Professores e agendamentos · 31. Planos e assinaturas ·
+32. Página inicial · 33. Configurações · 34. Plataforma · 35. Rotina sugerida ·
+36. Perguntas frequentes · 37. O que a plataforma ainda não faz
 
 ---
 
@@ -162,7 +164,7 @@ de favoritar, as aulas agrupadas por subassunto e atalhos para as questões daqu
 Tutor IA.
 
 > Se um assunto não aparece para o aluno, é porque ele não está marcado no conteúdo programático da
-> prova dele (seção 23).
+> prova dele (seção 26).
 
 ---
 
@@ -254,7 +256,7 @@ revisão questão a questão com a resolução, e o botão para refazer só o qu
 realimenta o cronograma.
 
 > Quando o banco não tem questões suficientes para o recorte pedido, a IA completa até um teto
-> configurável (seção 28). Se ainda assim faltar, o simulado **avisa na abertura**: "este simulado
+> configurável (seção 33). Se ainda assim faltar, o simulado **avisa na abertura**: "este simulado
 > saiu com 52 das 80 questões pedidas".
 
 ---
@@ -363,7 +365,7 @@ matéria e por assunto, pontos fortes e pontos fracos, e os simulados e redaçõ
 É daqui que saem as "matérias difíceis" que aparecem no Início e a priorização do cronograma.
 
 > O número **"% do conteúdo da sua prova"** depende de você ter montado o conteúdo programático do
-> vestibular (seção 23). Sem ele, a conta passa a usar *todas* as aulas da plataforma como
+> vestibular (seção 26.4). Sem ele, a conta passa a usar *todas* as aulas da plataforma como
 > denominador, e o percentual fica menor do que deveria.
 
 ---
@@ -388,7 +390,7 @@ resumos.
 livres de cada um, agendamento e acompanhamento das aulas marcadas. A plataforma nunca oferece um
 horário já reservado.
 
-> Desligar o recurso em **Configurações** (seção 28) faz a tela responder "Aulas particulares
+> Desligar o recurso em **Configurações** (seção 33) faz a tela responder "Aulas particulares
 > indisponíveis", mas **o item continua no menu do aluno** — ele clica e encontra o aviso. Está na
 > lista de acertos pendentes.
 
@@ -403,7 +405,7 @@ situação da assinatura e sair da conta. Mudar a prova ou a disponibilidade aqu
 
 Enquanto a exigência de assinatura estiver ligada, o aluno sem assinatura ativa só acessa **Perfil** e
 **Assinatura**; o resto responde com um convite a assinar. Liberação manual feita pelo administrador
-(seção 18) vale como assinatura, até a data escolhida.
+(seção 20) vale como assinatura, até a data escolhida.
 
 > **Troca de plano e cancelamento não são automáticos.** O Asaas não tem portal do assinante: com uma
 > assinatura ativa, tentar assinar outro plano é recusado com a orientação de falar com o suporte, e
@@ -414,595 +416,525 @@ Enquanto a exigência de assinatura estiver ligada, o aluno sem assinatura ativa
 
 # PARTE II — O ADMINISTRADOR
 
+---
+
 ## 18. Como o painel se organiza
 
-O menu lateral segue a ordem do trabalho:
+O menu lateral segue a ordem do trabalho.
 
 | Seção | Onde fica | Para que serve |
-|-------|-----------|----------------|
-| Visão geral | `/admin` | Números do dia: alunos, estudo, questões, redações, assinaturas. |
-| Alunos | `/admin/alunos` | Cadastro, bloqueio, liberação manual de acesso e progresso de cada aluno. |
-| Professores e Agendamentos | `/admin/professores`, `/admin/agendamentos` | Aulas particulares. |
+|---|---|---|
+| Visão geral | `/admin` | Números do dia e consumo de IA do mês. |
+| Alunos | `/admin/alunos` | Ficha, progresso, bloqueio e liberação manual de acesso. |
+| Professores · Agendamentos | `/admin/professores`, `/admin/agendamentos` | Aulas particulares. |
 | Conteúdo | `/admin/conteudo` | Áreas, matérias, assuntos e subassuntos — a base de tudo. |
 | Aulas | `/admin/aulas` | Videoaulas. |
-| Questões | `/admin/questoes` | Banco de questões (manual e importação). |
+| Questões | `/admin/questoes` | Banco de questões. |
+| Ler prova em PDF | `/admin/ler-prova` | Transforma a prova aplicada em questões do banco. |
+| Editais | `/admin/editais` | Edital de cada certame, com as datas oficiais. |
 | Provas anteriores | `/admin/provas-anteriores` | PDFs de prova e gabarito. |
+| Planos de estudo | `/admin/planos-de-estudo` | **A sequência que comanda o cronograma do aluno.** |
 | Vestibulares | `/admin/vestibulares` | Provas atendidas, pesos, conteúdo programático e matriz de redação. |
 | Simulados | `/admin/simulados` | Modelos de simulado prontos. |
 | Redação | `/admin/redacao` | Temas, critérios e redações corrigidas. |
 | Planos | `/admin/planos` | Planos de assinatura e integração com o Asaas. |
+| Página inicial | `/admin/pagina-inicial` | Textos, depoimentos e perguntas do site público. |
 | Configurações | `/admin/configuracoes` | Marca, acesso, IA, e-mail e cronograma. |
 | Plataforma | `/admin/plataforma` | Saúde do sistema, uso de IA, erros e auditoria. |
 
-Toda alteração feita no painel fica registrada na auditoria (`/admin/plataforma`), com quem fez,
-o que mudou e quando.
+No rodapé da barra lateral ficam **Ver como aluno** (abre a área do aluno em outra aba, útil para
+conferir o que ele enxerga), **Recolher menu** (o estado fica guardado no navegador) e **Sair**.
+
+Toda alteração fica registrada na auditoria (`/admin/plataforma`), com quem fez, o que mudou e quando.
+
+> **Regra de ouro:** para tirar algo do ar preservando o histórico, use **desativar**. Excluir é
+> definitivo.
 
 ### Ordem recomendada em uma implantação nova
 
-1. Vestibular (dados básicos) →
-2. Conteúdo (áreas, matérias, assuntos) →
-3. Conteúdo programático e pesos do vestibular →
-4. Aulas →
-5. Questões →
-6. Critérios e temas de redação →
-7. Simulados e provas anteriores →
-8. Planos e configurações.
+1. Vestibular (dados básicos) → 2. Conteúdo (áreas, matérias, assuntos) → 3. Conteúdo programático e
+pesos do vestibular → 4. **Plano de estudos** do vestibular → 5. Aulas → 6. Questões →
+7. Critérios e temas de redação → 8. Simulados e provas anteriores → 9. Planos e configurações.
 
 ---
 
-## 19. Conteúdo: áreas, matérias, assuntos e subassuntos
+## 19. Visão geral
 
-Tela: **Conteúdo** (`/admin/conteudo`).
+Tela: `/admin`.
 
-A biblioteca tem quatro níveis, do mais geral para o mais específico:
+Nove cartões com os números do dia (alunos, estudo, questões respondidas, redações, assinaturas), o
+**consumo de IA do mês** com barra mostrando quanto do limite já foi usado, os gráficos
+**Cadastros por dia** e **Atividade por dia**, e as listas **Últimos alunos** e **Últimas redações**.
 
-```
-Área                    Matemática e suas Tecnologias
-└── Matéria             Matemática
-    └── Assunto         Porcentagem
-        └── Subassunto  Fator de aumento e de desconto
-```
-
-O que cada nível faz:
-
-* **Área** agrupa matérias nos relatórios e nas telas do aluno.
-* **Matéria** é a unidade de progresso, de peso no cronograma e de filtro nas questões. Tem ícone e
-  cor próprios.
-* **Assunto** é o que o cronograma agenda, o que as revisões repetem e o que o desempenho mede. É
-  também o nível marcado no conteúdo programático de cada prova.
-* **Subassunto** detalha o assunto e deixa a prática mais precisa (opcional).
-
-### 19.1 Criar uma área
-
-1. Clique em **Nova área** no topo da página.
-2. Escreva o nome (ex.: "Ciências da Natureza") e clique em **Salvar**.
-
-### 19.2 Criar uma matéria
-
-1. Clique no **+** da área desejada (ou em **Nova matéria**, no topo, para escolher a área no
-   formulário).
-2. Preencha:
-   * **Nome** — como o aluno vê (ex.: "Biologia").
-   * **Área** — a que grupo pertence.
-   * **Descrição** — uma linha sobre o que a matéria cobre (opcional).
-   * **Ícone** — escolha um dos ícones da lista; ele aparece nos cards do aluno.
-   * **Cor** — usada nas barras de progresso, nos gráficos e nos pontos coloridos das listas.
-   * **Ativo** — desmarque para esconder a matéria do aluno sem excluir nada.
-3. Clique em **Salvar**.
-
-### 19.3 Criar assuntos e subassuntos
-
-1. Expanda a matéria pela seta à esquerda.
-2. Clique no **+** da matéria para criar um **assunto**; no **+** do assunto para criar um
-   **subassunto**.
-3. Preencha nome e descrição e salve.
-
-### 19.4 Marcar em quais provas o assunto cai
-
-1. Clique no **nome do assunto**. O painel lateral direito abre com a lista de vestibulares.
-2. Marque as provas cujo edital cobra aquele assunto.
-3. Clique em **Salvar provas**.
-
-Isso alimenta o conteúdo programático (`/admin/vestibulares/:id`, aba Conteúdo programático) e o
-cronograma do aluno: só entram no plano de estudos os assuntos marcados na prova dele.
-
-### 19.5 Reordenar, desativar e excluir
-
-* **Setas para cima e para baixo** mudam a ordem em que o aluno vê os itens. A ordem é salva na hora.
-* **Botão de liga/desliga** ativa ou desativa. Item inativo some das telas do aluno, mas o histórico
-  e o progresso continuam intactos. **É a opção certa para conteúdo que saiu do edital.**
-* **Lixeira** exclui de vez. Se houver aulas, questões ou assuntos dependurados, o sistema recusa a
-  exclusão, explica o que está vinculado e oferece **desativar em vez de excluir**.
-
-### 19.6 Busca
-
-O campo de busca filtra a árvore inteira por matéria, assunto e subassunto, abrindo automaticamente
-os ramos com resultado. Os botões **Expandir** e **Recolher** abrem e fecham tudo.
+É a tela para abrir de manhã: se o consumo de IA está perto do teto, ou se as redações pararam de ser
+corrigidas, aparece aqui antes de o aluno reclamar.
 
 ---
 
-## 20. Aulas
+## 20. Alunos
 
-Telas: **Aulas** (`/admin/aulas`), **Nova aula** (`/admin/aulas/nova`), **Importar aulas** (`/admin/aulas/importar`).
+Telas: **Alunos** (`/admin/alunos`) e a ficha do aluno (`/admin/alunos/:id`).
 
-A lista mostra miniatura, título, matéria e assunto, provas em que a aula cai, duração e situação.
-Use a busca e os filtros de matéria, prova, dificuldade e situação para achar rápido.
+**Não existe cadastrar aluno pelo painel.** Quem cria a conta é a própria pessoa, pelo site.
 
-### 20.1 Cadastrar uma aula
+Na lista há quatro cartões de número e filtros por **Situação**, **Prova**, **Onboarding** e
+**Assinatura** — incluindo o estado "Acesso liberado à mão". Em cada linha: **Ver perfil**,
+**Liberar acesso** e **Bloquear / desbloquear**.
 
-1. Clique em **Nova aula**.
-2. **Coluna da esquerda — dados e vídeo:**
-   * **Título** — o nome que o aluno vê.
-   * **Descrição curta** — uma linha de apoio (opcional).
-   * **Professor** e **Duração (minutos)** — a duração é usada pelo cronograma para montar o dia
-     de estudo. Ao colar um link do Vimeo, ela costuma vir preenchida sozinha.
-   * **Link do vídeo** — cole o endereço e aguarde: a prévia aparece logo abaixo e o sistema
-     preenche título, miniatura e duração quando o serviço informa esses dados. O botão **Analisar**
-     refaz a leitura.
-   * **Miniatura** — opcional. Envie uma imagem para aparecer na lista de aulas; sem ela, o player mostra o primeiro quadro do vídeo.
-   * **Resumo da aula** — texto em Markdown com aba de **Prévia**. Aceita `**negrito**`, `_itálico_`,
-     listas, títulos e links. Aparece abaixo do player, na tela da aula.
-3. **Coluna da direita — classificação:**
-   * **Matéria → Assunto → Subassunto** (os campos se encadeiam: escolha a matéria e a lista de
-     assuntos carrega).
-   * **Dificuldade** — básico, intermediário ou avançado.
-   * **Ordem no assunto** — deixe em branco para entrar no fim da fila.
-   * **Provas em que cai** — marcar uma prova aqui também acrescenta o assunto ao conteúdo
-     programático dela.
-   * **Aula ativa** — desmarque para esconder do aluno.
-4. Clique em **Salvar** — ou em **Salvar e criar questões**, que grava a aula e já abre o formulário
-   de questão com a matéria e o assunto preenchidos.
+Na ficha do aluno:
 
-### 20.2 Que arquivos funcionam
-
-| Formato | Limite | O que acontece |
-|---------|--------|----------------|
-| MP4 | 1 GB | Melhor opção. Toca em qualquer navegador e celular. |
-| WEBM | 1 GB | Toca normalmente nos navegadores atuais. |
-| MOV | 1 GB | Aceito, mas prefira converter para MP4: alguns navegadores não reproduzem. |
-| Sem vídeo | — | O aluno vê "Vídeo em breve" e aproveita o resumo e as questões. |
-
-O arquivo é conferido pelo conteúdo, não pelo nome: renomear outro tipo de arquivo para `.mp4` não
-engana a plataforma. A duração é lida do próprio vídeo e preenche o campo de minutos, que é o número
-usado pelo cronograma para montar o dia de estudo do aluno.
-
-Os vídeos ficam no armazenamento da plataforma (Blob Storage da Square Cloud) e são servidos por CDN,
-com a barra de progresso funcionando normalmente.
-
-### 20.3 Editar e excluir
-
-Clique na linha da tabela para abrir a aula. Os botões de ação de cada linha permitem editar, ir
-para as questões do assunto, ativar/desativar e excluir. **Excluir a aula apaga também o progresso
-registrado pelos alunos nela** — quando a intenção é só tirar do ar, desative.
-
-### 20.4 Enviar várias aulas de uma vez
-
-Quando você já gravou uma sequência inteira, não cadastre uma por uma. Em **Aulas**, clique em
-**Enviar em massa**.
-
-1. **Escolha os arquivos** — arraste os vídeos para a área indicada ou clique para selecionar vários
-   de uma vez. Aceita MP4, WEBM e MOV, até 1 GB cada, no máximo 200 por envio.
-
-2. **Preencha o que vale para todas** na coluna da direita: matéria, assunto, subassunto opcional,
-   professor, dificuldade, duração padrão e as provas em que as aulas caem. Matéria e assunto são
-   obrigatórios: todas as aulas do lote entram no mesmo assunto.
-
-3. **Confira a lista.** Cada arquivo aparece com o tamanho, a duração lida do próprio vídeo e um
-   título sugerido a partir do nome do arquivo. Ajuste os títulos ali mesmo e tire da lista o que não
-   deve entrar.
-
-4. Clique em **Enviar e cadastrar**. Os vídeos sobem um por um, com a barra de progresso de cada um,
-   e as aulas são criadas ao final. O resultado mostra o que entrou e o motivo de cada arquivo que
-   ficou de fora.
-
-As aulas entram na ordem da lista, continuando a numeração de onde o assunto parou. Depois é só abrir
-cada uma para acrescentar o resumo, se for o caso. O mesmo vídeo não vira duas aulas.
-
-**Onde os vídeos ficam:** no armazenamento da plataforma (Blob Storage da Square Cloud). Você não
-precisa hospedar em nenhum outro lugar, e o aluno assiste direto na aula, com a barra de progresso
-funcionando normalmente.
+* Oito cartões: aulas concluídas, questões respondidas, acurácia, horas de estudo, sequência de dias,
+  simulados, redações e tamanho do caderno de erros.
+* Gráfico de atividade dos últimos 30 dias, progresso por matéria, últimas atividades e redações.
+* Formulário com os dados da conta **e as preferências de estudo**. Mudar prova, dias ou horas
+  **recalcula o cronograma do aluno** — a própria tela avisa.
+* **Redefinir senha** — é a saída quando o envio de e-mail ainda não está configurado e o aluno não
+  consegue recuperar a senha sozinho.
+* **Liberar acesso até** uma data: vale como assinatura, sem cobrança.
+* **Excluir aluno** — definitivo, leva o histórico junto.
 
 ---
 
-## 21. Questões
+## 21. Conteúdo: áreas, matérias, assuntos e subassuntos
 
-Telas: **Questões** (`/admin/questoes`), **Nova questão** (`/admin/questoes/nova`),
-**Importar** (`/admin/questoes/importar`).
+Tela: **Conteúdo** (`/admin/conteudo`). É uma árvore de quatro níveis:
 
-### 21.1 Cadastrar manualmente
+**Área** (Linguagens, Matemática, Natureza, Humanas) → **Matéria** (Língua Portuguesa, Física) →
+**Assunto** (Porcentagem) → **Subassunto** (Juros simples).
 
-1. Clique em **Nova questão**.
-2. **Enunciado** — em Markdown, com aba de **Prévia**. Textos de apoio, tabelas e citações entram aqui.
-3. **Imagem da questão** — endereço `https://` de uma imagem (opcional).
-4. **Alternativas** — escreva de duas a cinco (A a E) e marque o círculo da **correta**. Alternativas
-   em branco são ignoradas.
-5. **Resolução passo a passo** e **Explicação da resposta** — aparecem para o aluno depois que ele
-   responde. Vale muito a pena preencher: é o que transforma erro em aprendizado.
-6. **Classificação** — matéria, assunto, subassunto e dificuldade.
-7. **Origem** — prova de origem, ano, banca e referência livre. Questões autorais podem ficar sem
-   prova de origem.
-8. **Provas em que cai** — marque as provas para a questão entrar nos filtros e simulados delas.
-9. Confira o cartão **Como o aluno vê**, à direita, que reproduz a questão em tempo real, e clique em
-   **Salvar** (ou **Salvar e criar outra**, que mantém a classificação).
+Em cada nível há o botão **Adicionar**, e no topo **Expandir**, **Recolher** e **Atualizar**.
 
-### 21.2 Importar várias questões de uma vez
+* **Área** — só nome e ordem. Área não tem descrição nem interruptor de ativa.
+* **Matéria** — nome, área, descrição, ícone, cor (usada nos cartões, gráficos e no cronograma) e
+  ordem.
+* **Assunto e subassunto** — nome, descrição e ordem. No assunto você ainda marca **em quais provas
+  ele cai**, e é isso que faz o assunto aparecer para o aluno daquela prova.
 
-1. Vá em **Questões › Importar**.
-2. Clique em **Baixar modelo CSV** — o arquivo já vem com o cabeçalho certo e uma linha de exemplo
-   usando uma matéria e um assunto reais do seu banco.
-3. Preencha uma questão por linha e salve como CSV (UTF-8).
-4. Envie o arquivo (clique ou arraste) ou cole o conteúdo no campo de texto.
-5. Confira a **prévia das primeiras linhas** e o número de linhas detectadas.
-6. Clique em **Importar questões**.
-7. O resultado mostra quantas foram gravadas e lista **linha a linha** o que deu errado. As linhas
-   válidas são gravadas mesmo quando outras falham: corrija apenas as linhas com erro e reenvie
-   somente elas.
+Arrastar reordena. Desativar tira do aluno mantendo o histórico. Excluir só funciona quando não há
+nada pendurado — o aviso diz o que está preso.
 
-#### Formato do arquivo
+> **O identificador (slug) não aparece nesta tela e não muda quando você renomeia.** Ele é gerado uma
+> vez, a partir do nome original. Quando precisar dele — para preencher uma planilha de questões, por
+> exemplo — pegue no **Baixar modelo CSV** ou no **Exportar CSV** da tela de Questões.
 
-Separador **ponto e vírgula** (`;`) — vírgula e tabulação também são aceitas. A primeira linha é o
-cabeçalho. Textos com ponto e vírgula ou quebra de linha ficam entre aspas duplas (`"assim"`).
+---
 
-```
-statement;A;B;C;D;E;correct;resolution;explanation;subject_slug;topic_slug;subtopic_slug;difficulty;year;board;exams
-```
+## 22. Aulas
 
-| Coluna | Obrigatória | O que preencher |
-|--------|-------------|-----------------|
-| `statement` | Sim | Enunciado (mínimo de 10 caracteres). |
-| `A` a `E` | Sim | Texto das alternativas. Deixe em branco as que não usar (mínimo de duas). |
-| `correct` | Sim | Letra do gabarito: `A`, `B`, `C`, `D` ou `E`. |
-| `resolution` | Não | Resolução passo a passo. |
-| `explanation` | Não | Explicação da resposta. |
-| `subject_slug` | Sim | Identificador da matéria (ex.: `matematica`). |
-| `topic_slug` | Sim | Identificador do assunto dentro daquela matéria. |
-| `subtopic_slug` | Não | Identificador do subassunto. |
-| `difficulty` | Não | `1` básico, `2` intermediário, `3` avançado. Padrão: `2`. |
-| `year` | Não | Ano da prova de origem. |
-| `board` | Não | Banca (INEP, VUNESP, FUVEST…). |
-| `exams` | Não | Provas em que a questão cai, separadas por vírgula (ex.: `enem,barro-branco`). |
+Telas: **Aulas** (`/admin/aulas`), **Nova aula** (`/admin/aulas/nova`) e
+**Enviar aulas em massa** (`/admin/aulas/enviar`).
 
-Os identificadores (`slug`) de matéria e assunto são os mesmos que aparecem na tela **Conteúdo** e no
-identificador de cada vestibular (aba Dados). O cabeçalho também aceita nomes em português —
+### 22.1 Cadastrar uma aula
+
+1. **Arquivo da videoaula** — o vídeo é **enviado por você**, não é link de YouTube nem de Vimeo. O
+   campo é preenchido pelo envio do arquivo e não aceita digitação.
+2. **Duração** — lida do próprio arquivo durante o envio, quando o campo ainda está no padrão.
+3. **Título**, **descrição** e **resumo da aula** (aceita formatação).
+4. **Classificação**: matéria → assunto → subassunto.
+5. **Dificuldade**, **professor** e **miniatura**.
+6. **Provas em que cai** — marque todas; é o que leva a aula ao aluno de cada prova.
+7. **Aula ativa** — desmarque para preparar sem publicar.
+
+Além de **Salvar**, há **Salvar e criar outra**, que mantém matéria, assunto, subassunto, professor,
+provas e dificuldade — é o caminho rápido para cadastrar uma sequência. Na edição existe **Excluir**.
+
+> Aulas antigas gravadas com link de YouTube ou Vimeo continuam tocando, mas **não há mais como criar
+> uma assim** pelo formulário.
+
+### 22.2 Enviar várias aulas de uma vez
+
+Em **Aulas › Enviar aulas em massa** você solta vários arquivos, define de uma vez a classificação
+comum (matéria, assunto, subassunto, professor, dificuldade, provas e o interruptor **Aulas ativas**),
+ajusta o título de cada uma e envia. **Limpar lista** recomeça. O progresso de cada arquivo aparece
+na própria linha.
+
+---
+
+## 23. Questões
+
+Telas: **Questões** (`/admin/questoes`), **Nova questão**, **Importar** e
+**Ler prova em PDF** (`/admin/ler-prova`).
+
+A lista filtra por matéria, prova, dificuldade, **ano**, **banca**, **situação**, **origem** e
+**conferência**.
+
+### 23.1 Cadastrar manualmente
+
+1. **Enunciado** — com aba de prévia. Textos de apoio, tabelas e citações entram aqui.
+2. **Imagem da questão** (opcional).
+3. **Alternativas** — de duas a cinco (A–E), marcando a correta. As vazias são ignoradas.
+4. **Resolução passo a passo** e **Explicação da resposta** — aparecem depois que o aluno responde.
+   Vale muito a pena preencher: é o que transforma erro em aprendizado.
+5. **Classificação**, **dificuldade** e **origem** (prova, ano, banca).
+6. **Provas em que cai**.
+7. **Questão ativa** — questões inativas não são sorteadas.
+
+À direita, o cartão **Como o aluno vê** reproduz a questão em tempo real. **Salvar e criar outra**
+mantém apenas matéria, assunto e subassunto. Na edição há **Excluir**.
+
+### 23.2 Importar por planilha
+
+**Questões › Importar**: baixe o modelo CSV (já vem com o cabeçalho certo e uma linha de exemplo com
+matéria e assunto reais do seu banco), preencha uma questão por linha, envie o arquivo ou cole o
+texto, confira a prévia e importe.
+
+O resultado mostra quantas entraram e lista **linha a linha** o que deu errado. As linhas válidas são
+gravadas mesmo quando outras falham: corrija só as com erro e reenvie essas.
+
+Separador ponto e vírgula (vírgula e tabulação também servem). O cabeçalho aceita nomes em português:
 `enunciado`, `gabarito`, `materia`, `assunto`, `dificuldade`, `ano`, `banca`, `provas`.
-
 Limite: 2.000 linhas por importação e 4 MB por arquivo.
 
-### 21.3 Ler uma prova em PDF e virar questões
+### 23.3 Ler uma prova em PDF
 
 Tela: **Ler prova em PDF** (`/admin/ler-prova`). É o caminho para transformar uma prova já aplicada —
 ENEM, ENEM PPL, Barro Branco — em questões do banco sem digitar uma a uma.
 
-1. **Nova leitura de prova.** Dê um nome (só para você se achar depois), escolha o **vestibular**, o
-   **ano** e a **banca**.
-2. **Cole o gabarito oficial.** Aceita qualquer formato: `1-A 2-B 3-C`, `1) A`, um por linha. **Faça
-   isso.** Sem o gabarito, a IA precisa *resolver* cada questão para marcar a resposta, e ela erra com
-   confiança. Com o gabarito, ela só transcreve — e a resposta vem da prova, não do palpite.
-3. **Criar leitura** e **escolher o PDF**. O texto é lido no seu próprio navegador; o arquivo não sai
-   do seu computador para a inteligência artificial. Uma prova inteira leva alguns segundos.
-4. **Varrer a prova.** Use **Varrer a prova inteira** e deixe rodando, ou **Começar a varrer** para
-   ir por partes. A barra mostra o quanto já foi lido. Pode fechar a aba: o botão vira **Continuar de
-   onde parou** e nada se perde.
-5. **Conferir.** Cada questão encontrada aparece com enunciado, alternativas e a resposta em verde.
-   Você pode trocar o gabarito na hora ou **descartar** a questão.
-6. **Mandar as marcadas para o banco.** O botão **Marcar as N com gabarito** seleciona de uma vez
-   tudo que veio do gabarito oficial. O resultado diz quantas entraram e, se alguma falhar, o motivo
-   fica na própria questão.
+1. **Nova leitura de prova.** Nome, **vestibular**, **ano** e **banca**.
+2. **Cole o gabarito oficial.** Aceita `1-A 2-B 3-C`, `1) A`, um por linha. **Faça isso.** Sem o
+   gabarito, a inteligência artificial precisa *resolver* cada questão para marcar a resposta, e erra
+   com confiança. Com o gabarito, ela só transcreve.
+3. **Escolha o PDF.** O texto é lido no seu próprio navegador; o arquivo não vai para a IA.
+4. **Varrer a prova.** Use **Varrer a prova inteira** e deixe rodando, ou vá por partes. Pode fechar a
+   aba: o botão vira **Continuar de onde parou**.
+5. **Conferir.** Cada questão aparece com enunciado, alternativas e a resposta em verde. Dá para
+   trocar o gabarito na hora ou **descartar**.
+6. **Mandar as marcadas para o banco.** **Marcar as N com gabarito** seleciona de uma vez tudo que
+   veio do gabarito oficial.
 
-**PDF digitalizado não funciona.** Se a prova for uma foto de cada página (sem texto selecionável), a
-tela avisa com todas as letras. Procure a versão original do arquivo, ou use uma das alternativas
-abaixo.
+Também há **excluir a leitura** — as questões que já foram para o banco continuam lá.
 
-**Não tem PDF?** Na mesma tela, abaixo do arquivo, há o campo **Cole o texto da prova**. Serve para
-prova em Word, copiada de uma página da internet, ou digitalizada que você já passou por um leitor de
-texto. Cole tudo de uma vez, na ordem das questões, e clique em **Usar este texto** — daí em diante o
-caminho é o mesmo.
+**PDF digitalizado não funciona.** Se a prova for foto de cada página, a tela avisa. Use o campo
+**Cole o texto da prova**, logo abaixo do arquivo: serve para prova em Word, copiada de um site, ou
+digitalizada que você já passou por um leitor de texto.
 
-### 21.4 Conferir as questões que a IA escreveu
+### 23.4 Conferir as questões que a IA escreveu
 
-Quando um aluno termina uma aula e pede para praticar, a plataforma entrega três questões — uma de
-cada assunto da aula, no nível que ele escolher. Ela usa primeiro o que existe no banco; o que faltar,
-a inteligência artificial elabora na hora e **guarda no banco**, para o próximo aluno já encontrar
-pronto.
+Quando um aluno pede para praticar depois da aula, a plataforma usa primeiro o banco; o que faltar, a
+IA elabora na hora e **guarda**. Essas questões entram **ativas**, sem esperar conferência — se
+ficassem escondidas, o erro do aluno sumiria do caderno de erros dele.
 
-Essas questões entram **ativas**, sem esperar você conferir. É proposital: se ficassem escondidas, o
-erro do aluno sumiria do caderno de erros dele. Em troca, a lista de questões tem duas formas de
-achar o que precisa de atenção:
+Em troca, a lista de questões tem como achar o que precisa de atenção:
 
 * Filtro **Origem › Elaboradas pela IA**.
 * Filtro **Conferência › Ainda não conferidas**, **Com aviso de aluno** ou **Já conferidas**.
 
-Na coluna de situação aparecem selos: **IA**, **Sem conferência**, **N avisos** (aluno reclamou) e a
-**taxa de acerto** quando ela está muito baixa — gabarito trocado quase sempre aparece como
-"5 tentativas, 0% de acerto". Use **Marcar como conferida** no menu da linha quando terminar de
-olhar; isso também fecha os avisos dos alunos.
+Na coluna de situação aparecem os selos **IA**, **Sem conferência**, **N avisos** e a **taxa de
+acerto** quando está muito baixa — gabarito trocado quase sempre aparece como "5 tentativas, 0% de
+acerto". Use **Marcar como conferida** no menu da linha; isso também fecha os avisos dos alunos.
 
-O aluno avisa pelo botão **Reportar problema**, que aparece depois que ele responde a questão.
+### 23.5 Exportar
 
-### 21.5 Exportar
-
-O botão **Exportar CSV** na lista de questões baixa exatamente o que está filtrado na tela, no mesmo
-formato da importação. Serve para revisar em planilha, corrigir em massa e reimportar.
+**Exportar CSV** baixa exatamente o que está filtrado, no formato da importação. Serve para revisar em
+planilha, corrigir em massa e reimportar. Para em 5.000 linhas.
 
 ---
 
-## 22. Provas anteriores
+## 24. Provas anteriores
 
 Tela: **Provas anteriores** (`/admin/provas-anteriores`).
 
-1. Clique em **Nova prova anterior**.
-2. Preencha:
-   * **Vestibular** e **Ano** — obrigatórios.
-   * **Título** — como o aluno vê (ex.: "ENEM 2024 — 1º dia (caderno azul)").
-   * **Dia** — para provas aplicadas em mais de um dia (ENEM: 1 ou 2).
-   * **Banca**.
-   * **PDF da prova** e **PDF do gabarito** — endereços `https://` dos arquivos.
-   * **Link externo** — página oficial, quando não houver PDF direto.
-   * **Observações** — recados úteis ao aluno.
-   * **Prova visível para o aluno** — desmarque para preparar sem publicar.
-3. Salve. Use os filtros de vestibular, ano e situação para administrar o acervo.
-
-O aluno acessa tudo isso em **Provas Anteriores**, agrupado por prova e ano.
+Cadastre **vestibular**, **ano**, **título** (como o aluno vê), **dia** (ENEM: 1 ou 2), **banca**, o
+**PDF da prova** e o **PDF do gabarito** — os dois são campos de envio de arquivo, com até 20 MB cada,
+e também aceitam um endereço já hospedado. Há ainda **link externo**, **observações** e o interruptor
+**visível para o aluno**.
 
 ---
 
-## 23. Vestibulares
+## 25. Editais
 
-Telas: **Vestibulares** (`/admin/vestibulares`) e a página do vestibular (`/admin/vestibulares/:id`),
-com quatro abas.
+Tela: **Editais** (`/admin/editais`).
 
-### 23.1 Criar um vestibular
+Um edital por certame, com: vestibular, ano, título, banca organizadora, vagas, **PDF do edital**,
+página oficial, resumo para o aluno, início e fim das inscrições, **data da prova**, segundo dia,
+resultado, taxa de inscrição e anotações internas (essas ficam só para você).
 
-1. Clique em **Novo vestibular**.
-2. Preencha:
-   * **Nome** e **Sigla** (a sigla aparece em badges e filtros).
-   * **Trilha** — define a experiência do aluno: `ENEM`, `Barro Branco / PM` ou `Vestibular`.
-   * **Banca**, **Data da próxima prova** e **Nota máxima da prova objetiva**.
-   * **Descrição** — formato da prova, número de questões, o que o aluno precisa saber.
-   * **A prova tem redação** e **Escala máxima da redação** (ENEM: 1000).
-3. Ao salvar, o painel abre a página do vestibular para você continuar pelas abas.
+Três situações: **Rascunho**, **Publicado** e **Arquivado**.
 
-### 23.2 Aba Dados
-
-Todos os campos acima, mais o **Identificador** (o `slug` usado na importação de questões) e a
-**Ordem na lista**. Desmarcar **Vestibular disponível** tira a prova das opções de escolha do aluno
-sem apagar nada.
-
-### 23.3 Aba Matérias e pesos
-
-1. Escolha a matéria no seletor **Adicionar matéria** e clique em **Adicionar**.
-2. Ajuste o **peso** de cada matéria. O peso multiplica a prioridade da matéria no cronograma:
-   peso 3 recebe cerca de três vezes mais blocos de estudo que peso 1. Use os pesos do edital
-   (quantidade de questões ou peso oficial da prova).
-3. Clique em **Salvar matérias e pesos**.
-
-Remover uma matéria da prova também remove os assuntos dela do conteúdo programático daquela prova.
-
-### 23.4 Aba Conteúdo programático
-
-1. Escolha a matéria na lista da esquerda.
-2. Marque os assuntos cobrados no edital. **Marcar todos os assuntos desta matéria** resolve o caso
-   comum de "cai a matéria inteira".
-3. Clique em **Salvar conteúdo desta matéria**. Repita para cada matéria.
-
-O contador ao lado de cada matéria (`9/12`) mostra quantos assuntos já estão no edital. É esta
-marcação que o cronograma usa para escolher o que o aluno estuda.
-
-### 23.5 Aba Redação
-
-Ver a seção 24.1.
+> **Publicar um edital sobrescreve a data oficial do vestibular** — e a data da prova é o que o
+> cronograma usa para calcular quanto tempo resta. Publicar reorganiza o estudo de todos os alunos
+> daquela prova. É o que se quer, mas é bom saber antes de clicar.
 
 ---
 
-## 24. Redação
+## 26. Vestibulares
 
-Tela: **Redação** (`/admin/redacao`), com três abas.
+Telas: **Vestibulares** (`/admin/vestibulares`) e a página do vestibular.
 
-### 24.1 Critérios de correção
+A lista mostra, por prova, quantas matérias têm peso, quantos assuntos estão no conteúdo programático,
+quantas provas anteriores existem e quantos alunos escolheram aquela prova.
 
-A matriz de correção é o que a IA usa para corrigir e o que o aluno vê na devolutiva. Ela é editada
-na aba **Redação** de cada vestibular (`/admin/vestibulares/:id?aba=redacao`); a aba **Critérios**
-do menu Redação lista todas as provas e leva direto para a edição.
+### 26.1 Criar
 
-Como alterar:
+No modal de criação: nome, sigla, trilha (ENEM, Barro Branco ou vestibular), data da prova,
+**escala máxima da redação** e **ordem na lista**.
 
-1. Abra o vestibular e vá na aba **Redação**.
-2. Preencha o cabeçalho:
-   * **Nome da matriz** (ex.: "Competências do ENEM").
-   * **Escala máxima** — a nota total da redação (ENEM: 1000; Barro Branco: 100).
-   * **Gênero do texto** — ex.: "Texto dissertativo-argumentativo".
-   * **Mínimo e máximo de linhas** — usados no aviso ao aluno e na correção.
-   * **Orientações ao corretor** — regras da banca, o que zera a redação, tom da devolutiva.
-3. Em **Critérios**, para cada item informe:
-   * **Nome** (ex.: "Competência 1 — domínio da norma-padrão").
-   * **Pontuação máxima** do critério.
-   * **Descrição para o aluno** — o que o critério avalia.
-   * **Orientação ao corretor** — como pontuar cada faixa.
-4. Use as setas para reordenar, a lixeira para remover e **Adicionar critério** para incluir novos.
-5. **A soma dos máximos dos critérios precisa ser igual à escala máxima.** O painel mostra a soma em
-   tempo real: verde quando bate, laranja quando falta ou sobra. Só é possível salvar quando bate.
-6. Clique em **Salvar matriz de redação**. A escala do vestibular é atualizada junto.
+### 26.2 Aba Dados
 
-### 24.2 Temas
+Nome, sigla, banca, descrição, data da prova, se tem redação, **identificador** e situação.
 
-1. Na aba **Temas**, clique em **Novo tema**.
-2. Preencha:
-   * **Título** — o tema como ele aparece na proposta.
-   * **Prova** — deixe em branco para oferecer o tema a todos os alunos.
-   * **Ano** e **Fonte** — de onde o tema veio.
-   * **Proposta de redação** — o enunciado, como na prova.
-   * **Textos motivadores** — textos de apoio (aceitam Markdown).
-   * **Tema disponível** — desmarque para tirar da lista sem excluir.
-3. Salve. O aluno escolhe entre os temas ativos da prova dele ao escrever uma redação — e também
-   pode pedir um tema novo à IA, que entra nesta mesma lista marcado como "Gerado por IA".
+### 26.3 Aba Matérias e pesos
 
-Temas já usados em redações não podem ser excluídos; desative-os.
+Marque as matérias que caem e dê o peso de cada uma.
 
-### 24.3 Redações corrigidas
+> O peso rege a distribuição das questões nos **simulados da prova**. Para o **cronograma**, ele só
+> decide quando a prova **não tem plano de estudos** (seção 27) — e ENEM e Barro Branco já vêm com
+> plano ativo.
 
-A aba **Redações corrigidas** lista aluno, prova, tema, nota, data e situação, com filtros por prova,
-situação e período. Clique na linha para abrir a correção completa: nota por critério, comentários,
-pontos fortes, pontos a melhorar, correções de escrita e o texto do aluno.
+### 26.4 Aba Conteúdo programático
 
-Situações possíveis: **Aguardando correção** (enviada, IA processando), **Corrigida** e
-**Falha na correção** (a mensagem do erro aparece no topo do modal — normalmente falta de chave da
-OpenRouter ou limite mensal atingido; verifique em Configurações e Plataforma).
+Marque os assuntos cobrados. É o que define o que o aluno daquela prova enxerga em Matérias, e o
+denominador do "% do conteúdo da sua prova" no Meu Desempenho.
+
+### 26.5 Aba Redação
+
+**Escala máxima** e a matriz de critérios — ver seção 28.1.
 
 ---
 
-## 25. Simulados
+## 27. Planos de estudo
+
+Tela: **Planos de estudo** (`/admin/planos-de-estudo`).
+
+**É esta tela que comanda o cronograma do aluno.** Quando o vestibular tem um plano ativo, a sequência
+dos dias vem daqui — não dos pesos das matérias. ENEM e Barro Branco já nascem com plano ativo.
+
+No cabeçalho do plano: vestibular, nome, descrição, **aulas novas por semana**, **duração prevista em
+semanas**, **prova anterior a cada N semanas**, **dias de treino** e o **nome da atividade** de treino
+(é assim que o TAF do Barro Branco entra no cronograma). O interruptor **Plano ativo** vale a regra:
+só um plano ativo por vestibular guia o cronograma.
+
+Dentro do plano, uma sequência ordenada de passos, que você acrescenta e reordena. Cada passo é de um
+tipo: **Aula**, **Revisão**, **Redação**, **Simulado**, **Prova anterior** ou **Treino físico**.
+
+> Se você mexeu nos pesos e no conteúdo programático e o cronograma do aluno não mudou como esperava,
+> o motivo está aqui.
+
+---
+
+## 28. Redação
+
+Tela: **Redação** (`/admin/redacao`), com as abas Critérios, Temas e Redações.
+
+### 28.1 Critérios de correção
+
+A matriz de cada prova: um critério por linha, com nome, descrição, orientação de pontuação e nota
+máxima. **A soma das notas máximas tem que bater com a escala máxima da prova** — se não bater, o
+servidor recusa ao salvar e a tela mostra o erro.
+
+É esta matriz que a IA usa. As competências do ENEM não são aplicadas ao Barro Branco. Prova sem
+critérios cadastrados recebe um conjunto genérico, e a correção sai marcada como tal.
+
+### 28.2 Temas
+
+Cadastre o tema com proposta e textos motivadores, ou use **Gerar com IA**, que escreve um tema no
+estilo da banca, publica e já abre o formulário para você revisar. A lista filtra por **origem**
+(cadastrados ou gerados por IA) e mostra quantas redações cada tema recebeu.
+
+### 28.3 Redações
+
+Lista das redações dos alunos, com tema, prova, data, nota e situação — **Rascunho**,
+**Aguardando correção**, **Corrigida** e **Falha na correção**. O modal traz a nota por critério, os
+pareceres, as **sugestões** e o texto do aluno, e há a ação **Abrir o aluno**.
+
+Falha na correção costuma ser chave da IA ausente ou limite mensal atingido; a mensagem do erro
+aparece no topo do modal.
+
+---
+
+## 29. Simulados
 
 Tela: **Simulados** (`/admin/simulados`).
 
-Modelos de simulado aparecem para o aluno prontos para iniciar (ele também pode montar simulados
-sozinhos, sem depender do cadastro).
+Modelos prontos que aparecem para o aluno. Cadastre nome, descrição, **tipo** (prova completa, por
+matéria, por assunto ou personalizado), a referência correspondente, **duração** e **número de
+questões**, e o interruptor de disponível.
 
-1. Clique em **Novo simulado**.
-2. Preencha:
-   * **Nome** e **Descrição**.
-   * **Tipo**:
-     * *Prova completa* — sorteia questões de todas as matérias da prova escolhida (informe a prova).
-     * *Por matéria* — questões de uma matéria (informe a matéria).
-     * *Por assunto* — questões de um assunto (informe matéria e assunto).
-     * *Personalizado* — combina os filtros que você definir.
-   * **Duração (minutos)** e **Número de questões**.
-   * **Disponível para os alunos**.
-3. Salve. As questões são sorteadas na hora em que o aluno inicia, respeitando o tipo e os filtros —
-   por isso o mesmo modelo rende simulados diferentes a cada tentativa.
+As questões são sorteadas no momento em que o aluno inicia — o mesmo modelo rende simulados diferentes
+a cada tentativa. A lista mostra quantas **tentativas** cada modelo já teve e se as questões são
+**sorteadas** ou **fixas**.
 
-Simulados excluídos não apagam as tentativas já feitas: o histórico do aluno continua no lugar.
+Tetos: 90 questões e 330 minutos.
 
-### 25.1 O que o aluno vê
+### 29.1 O que o aluno vê
 
-Na tela dele, ao escolher **Simulado da minha prova**, aparecem três formatos:
+Ao escolher **Simulado da minha prova**, ele escolhe qual prova quer simular e o formato:
+**Simulado completo** (80 questões em 4 h), **Mini simulado** (20 em 1 h) ou **Do meu jeito**.
 
-* **Simulado completo** — 80 questões em 4 horas, para treinar fôlego.
-* **Mini simulado** — 20 questões em 1 hora, para caber numa sessão de estudo.
-* **Do meu jeito** — ele escolhe quantas questões e quanto tempo.
+### 29.2 Quando o banco não fecha a conta
 
-Ele também escolhe qual prova quer simular (ENEM, Barro Branco ou outro vestibular), independente da
-prova do perfil dele.
+A IA completa até o teto de **Configurações › Questões por IA em um simulado** (padrão 20; `0`
+desliga). As questões criadas ficam no banco para os próximos. Faltando ainda, o simulado avisa o
+aluno na abertura.
 
-### 25.2 Quando o banco não fecha a conta
-
-Se o aluno pede 80 questões e o banco só tem 30 do recorte escolhido, a inteligência artificial
-elabora o que faltar — até um teto, e as questões ficam guardadas no banco para os próximos.
-
-O teto é **Configurações › Questões por IA em um simulado** (padrão: 20). Coloque `0` para desligar e
-só usar o que está no banco.
-
-Quando ainda assim faltar, o simulado avisa o aluno na abertura: *"este simulado saiu com 52 das 80
-questões pedidas"*. Antes ele saía menor em silêncio.
-
-A conta de sempre: quanto mais questões de prova de verdade você subir (seção 21.3), menos a IA
-precisa inventar.
+Quanto mais questão de prova de verdade você subir (seção 23.3), menos a IA precisa inventar.
 
 ---
 
-## 26. Professores e agendamentos
+## 30. Professores e agendamentos
 
-Tela: **Professores** (`/admin/professores`), **Agendamentos** (`/admin/agendamentos`).
+Telas: **Professores** (`/admin/professores`) e **Agendamentos** (`/admin/agendamentos`).
 
-1. Em **Professores**, cadastre nome, e-mail, telefone, foto, biografia, **preço por hora**,
-   **duração do horário** (padrão de 60 minutos) e o **link da sala** (Meet, Zoom) enviado ao aluno
-   na confirmação.
-2. Marque as **matérias** que o professor atende — é por elas que o aluno filtra.
-3. Defina a **disponibilidade** por dia da semana e faixa de horário. A plataforma monta os horários
-   livres a partir daí e nunca oferece um horário já reservado.
-4. Em **Agendamentos**, confirme, cancele ou anote observações. O aluno acompanha tudo em
-   Aulas Particulares.
+No professor: nome, e-mail, telefone, foto, **Apresentação**, **preço por hora**,
+**Duração da aula (minutos)** (padrão 60) e o **Link padrão da reunião**, enviado ao aluno na
+confirmação. Marque as **matérias** que ele atende — é por elas que o aluno filtra.
 
-Para desligar o recurso inteiro, use **Configurações › Aulas particulares habilitadas**.
+A **disponibilidade** é editada num modal semanal, com **Adicionar janela** e **Salvar horários**. A
+plataforma monta os horários livres a partir daí e nunca oferece um já reservado. A lista alerta quem
+está **sem disponibilidade**.
+
+Em Agendamentos: **confirmar**, **cancelar**, **marcar como realizada** e **ver detalhes** (recado do
+aluno, observações internas e motivo do cancelamento).
+
+Para desligar o recurso, use **Configurações › Oferecer aulas particulares aos alunos**.
 
 ---
 
-## 27. Planos e assinaturas
+## 31. Planos e assinaturas
 
 Tela: **Planos** (`/admin/planos`).
 
-1. Cadastre cada plano com **nome**, **descrição**, **preço**, **intervalo** (mensal ou anual),
-   **24h de teste no cartão** (somente para 6 ou 12 meses), **lista de vantagens** e **destaque** (o plano que aparece
-   marcado como recomendado).
-2. Confira o status do **Asaas** no topo da tela. Sem `ASAAS_API_KEY`, os planos ficam visíveis,
-   mas cartão e Pix permanecem indisponíveis.
-3. A lista de assinaturas mostra quem está ativo, em teste, inadimplente ou cancelado.
+Cada plano tem nome, identificador, descrição, preço, **preço de comparação**, intervalo, **A cada**
+(meses entre cobranças), **meses pagos** e **meses de bônus** (pague 12, receba 15),
+**teste grátis no cartão** (0 ou 1 dia, só faz sentido em planos longos), **Recursos** (a lista de
+vantagens), **selo do card**, **ordem** e destaque.
 
-Para liberar um aluno específico sem cobrança, use **Alunos › liberar acesso até** — a liberação
-manual vale até a data escolhida, independentemente de assinatura.
+Quatro cartões no topo, incluindo a **receita mensal recorrente**, e o status do Asaas. Sem a chave
+configurada, os planos aparecem mas cartão e Pix não funcionam.
+
+As assinaturas têm oito estados: em teste, ativa, em atraso, cancelada, incompleta, expirada, não paga
+e pausada.
+
+> **Pagamentos sem acesso** — botão no cabeçalho. Lista as cobranças que o provedor confirmou e que
+> **não liberaram acesso** ao aluno, com a ação **Reprocessar**. É a ferramenta de resgate quando um
+> aviso do Asaas se perde. Se um aluno disser "paguei e não liberou", é aqui.
+
+Para liberar alguém sem cobrança, use **Alunos › Liberar acesso até**.
 
 ---
 
-## 28. Configurações
+## 32. Página inicial
 
-Tela: **Configurações** (`/admin/configuracoes`).
+Tela: **Página inicial** (`/admin/pagina-inicial`), com quatro abas.
+
+* **Blocos de texto** — nove blocos nomeados: Abertura, Reconhece isso?, Escolha seu objetivo, Como
+  funciona, Planos, Tudo em um só lugar, Depoimentos, Perguntas frequentes e Fechamento.
+* **Depoimentos** — nome, texto e foto.
+* **Perguntas frequentes** — pergunta e resposta. Dentro de uma resposta, o marcador `{{planos}}` é
+  trocado pela lista de preços atual, então não é preciso atualizar preço em dois lugares.
+* **Provas em destaque**.
+
+---
+
+## 33. Configurações
+
+Tela: **Configurações** (`/admin/configuracoes`). Há atalhos em chips no topo e um botão **Atualizar**.
 
 | Configuração | O que faz |
-|--------------|-----------|
-| **Nome da marca** | Nome exibido no painel, nos e-mails e no título das páginas. |
-| **Logo** | Endereço da imagem usada no cabeçalho e nos e-mails. |
-| **E-mail de suporte** | Endereço mostrado ao aluno e usado como remetente de resposta. |
-| **Exigir assinatura** | Ligado, bloqueia o aluno sem assinatura ativa (ele só acessa perfil e assinatura). Desligado, a plataforma fica aberta a todos os cadastrados. |
-| **Modelo do OpenRouter (tutor)** | Modelo usado no Tutor IA. |
-| **Modelo do OpenRouter (redação)** | Modelo usado na correção de redação — costuma ser um modelo mais forte. |
-| **Limite mensal de tokens** | Teto de consumo de IA no mês. Ao atingir, tutor e correção param com aviso claro. `0` significa sem limite. |
-| **Prompt do tutor** | Instruções de comportamento do Tutor IA: tom, nível de detalhe, o que não fazer. |
-| **Intervalos de revisão** | Os três intervalos, em dias, das revisões criadas ao concluir uma aula (padrão `1, 7, 30`). |
-| **Padrões do cronograma** | Minutos do bloco de questões, minutos do bloco de revisão, redação semanal (sim/não) e de quantos em quantos dias entra um simulado. |
-| **Aulas particulares habilitadas** | Liga ou desliga a área de aulas particulares para o aluno. |
-| **Frases do dia** | Frases motivacionais discretas exibidas no início do aluno. |
+|---|---|
+| **Nome da marca** | Nome no painel, nos e-mails e no título das páginas. |
+| **Logo da marca** | Imagem enviada por você, usada no cabeçalho e nos e-mails. Obrigatória. |
+| **E-mail de suporte** | Endereço mostrado ao aluno. |
+| **Exigir assinatura** | Ligado, o aluno sem assinatura ativa só acessa Perfil e Assinatura. |
+| **Meio de cobrança das assinaturas** | Asaas ou Nenhum (desliga a cobrança). |
+| **Modelo do tutor** | Modelo de IA usado no Tutor. |
+| **Modelo da correção de redação** | Costuma ser um modelo mais forte. |
+| **Limite mensal de tokens** | Teto de consumo de IA no mês; `0` é sem limite. |
+| **Questões por IA em um simulado** | Quantas a IA pode elaborar para fechar um simulado; `0` desliga. |
+| **Prompt do sistema** (Tutor IA) | Tom, nível de detalhe e o que o tutor não deve fazer. |
+| **Intervalos de revisão** | Os três intervalos, em dias (padrão 1, 7 e 30). |
+| **Padrões do cronograma** | Bloco de questões, bloco de revisão, redação semanal e de quantos em quantos dias entra simulado. |
+| **Oferecer aulas particulares aos alunos** | Liga e desliga a área de aulas particulares. |
+| **Frases do dia** | Frases exibidas no Início do aluno. |
 
-Chaves e segredos (OpenRouter, Asaas, SMTP) **não** ficam no painel: vivem em variáveis de ambiente no
-servidor. A tela mostra apenas o status de cada integração e os últimos caracteres da chave, para
-você conferir que a configuração certa está no ar.
+Três ferramentas que valem mais que a tabela:
+
+* **Enviar e-mail de teste** — dispara um e-mail de verdade e separa "o provedor recusou a conexão"
+  de "o provedor recusou a mensagem", com a dica certa para remetente não verificado. **Use antes de
+  o primeiro aluno esquecer a senha.**
+* **Bloco Asaas** — mostra a **URL do webhook com botão Copiar** e a **lista dos eventos
+  obrigatórios** a marcar no painel do Asaas, além dos selos Produção/Teste e webhook
+  configurado/pendente.
+* Chaves e segredos (IA, Asaas, e-mail) **não ficam aqui**: vivem em variáveis de ambiente no
+  servidor. A tela mostra só o status e os últimos caracteres da chave.
 
 ---
 
-## 29. Rotina sugerida
+## 34. Plataforma
 
-* **Toda semana:** conferir redações aguardando correção, agendamentos pendentes e alunos parados.
-* **Todo mês:** revisar o uso de IA em Plataforma, publicar novas aulas e questões, atualizar temas
-  de redação.
-* **A cada edital novo:** atualizar o conteúdo programático e os pesos do vestibular, e cadastrar a
-  prova anterior mais recente.
+Tela: **Plataforma** (`/admin/plataforma`).
 
-## 30. Perguntas frequentes
+* **Saúde**: tempo no ar, versão, banco de dados e memória em uso.
+* **Registros no banco**.
+* **Consumo de IA**: 30 dias, mês, erros, latência média, gráfico por dia, por funcionalidade e os
+  alunos que mais usam.
+* **Últimos erros**, com "Carregar mais".
+* **Registro de auditoria**, com filtros por ação e período e detalhe de cada alteração.
+
+---
+
+## 35. Rotina sugerida
+
+* **Toda semana:** redações aguardando correção, agendamentos pendentes, alunos parados e a fila de
+  **questões da IA sem conferência**.
+* **Todo mês:** uso de IA em Plataforma, novas aulas e questões, temas de redação novos.
+* **A cada edital novo:** publicar o edital (atualiza a data da prova), revisar o conteúdo
+  programático, os pesos e o plano de estudos, e subir a prova anterior mais recente.
+
+---
+
+## 36. Perguntas frequentes
 
 **Excluí sem querer. Dá para voltar?**
-Não. A exclusão é definitiva. Para tirar algo do ar preservando o histórico, use sempre
-**desativar**. O registro de quem excluiu o quê fica em Plataforma › Auditoria.
+Não. Para tirar do ar preservando o histórico, use **desativar**. Quem excluiu o quê fica em
+Plataforma › Auditoria.
 
 **Por que não consigo excluir uma matéria?**
-Porque existem assuntos, aulas ou questões vinculados. O aviso diz exatamente o que está preso —
-mova ou exclua esse conteúdo antes, ou desative a matéria.
+Porque há assuntos, aulas ou questões vinculados. O aviso diz o que está preso.
 
 **Cadastrei a aula e ela não aparece para o aluno.**
-Confira três pontos: a aula está **ativa**; o assunto e a matéria estão **ativos**; e o assunto está
-marcado no **conteúdo programático da prova** do aluno.
+Confira: a aula está **ativa**; o assunto e a matéria estão **ativos**; o assunto está no **conteúdo
+programático da prova** do aluno; e, se a prova tem **plano de estudos**, o passo correspondente
+existe no plano.
+
+**Mexi nos pesos e o cronograma não mudou.**
+Porque a prova tem plano de estudos ativo, e é ele que manda (seção 27).
 
 **A questão não aparece nos simulados de uma prova.**
 Marque a prova em **Provas em que cai**, no formulário da questão, ou na coluna `exams` do CSV.
 
+**Onde acho o identificador (slug) da matéria para a planilha?**
+No **Baixar modelo CSV** ou no **Exportar CSV** da tela de Questões. Ele não aparece na tela Conteúdo
+e não muda quando você renomeia.
+
+**Um aluno pagou e não liberou.**
+**Planos › Pagamentos sem acesso › Reprocessar** (seção 31).
+
 **A correção de redação falhou.**
-Veja a mensagem no modal da redação e confira, em Configurações, se a chave do OpenRouter está
-configurada e se o limite mensal de tokens não foi atingido.
+Veja a mensagem no modal e confira, em Configurações, a chave da IA e o limite mensal de tokens.
+
+**O aluno não recebe o e-mail de recuperação de senha.**
+Configure o provedor e use **Enviar e-mail de teste** (seção 33). Enquanto isso, redefina a senha dele
+em **Alunos › Redefinir senha**.
 
 ---
 
-## 31. O que a plataforma ainda não faz
+## 37. O que a plataforma ainda não faz
 
 Lista curta e honesta, para não prometer o que não existe:
 
 * **Não há confirmação de e-mail no cadastro.** Endereço digitado errado só aparece quando o aluno
   tenta recuperar a senha.
 * **Não há termos de uso nem política de privacidade.** O aceite foi retirado da tela de cadastro
-  justamente por prometer um documento que não existia. Volta quando os documentos existirem.
+  justamente por prometer um documento que não existia.
 * **Troca de plano e cancelamento pelo aluno não existem.** São feitos por você, no painel do Asaas.
-* **O item "Aulas Particulares" não some do menu** quando o recurso é desligado; a tela avisa que
-  está indisponível.
+* **Não dá para cadastrar aluno pelo painel** — a conta é criada pela própria pessoa.
+* **O item "Aulas Particulares" não some do menu do aluno** quando o recurso é desligado; a tela avisa
+  que está indisponível.
 * **A redação para em 6.000 caracteres** sem avisar quem está escrevendo.
-* **Exclusão é definitiva.** Para tirar algo do ar preservando o histórico, use sempre *desativar*.
-* **PDF digitalizado não vira questão** — prova que é foto de página não tem texto para ler. Use o
-  campo de colar texto (seção 21.3).
+* **Não há mais como cadastrar aula por link de YouTube ou Vimeo** — o vídeo é enviado por você.
+* **PDF digitalizado não vira questão**; use o campo de colar texto (seção 23.3).
+* **Exclusão é definitiva.**
 
 ---
 
