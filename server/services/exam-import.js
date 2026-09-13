@@ -42,18 +42,24 @@ const { AppError } = require('../middleware/errors');
  * respondia, a resposta era paga, e a conexão já tinha caído. Enunciado de
  * ENEM é longo (texto de apoio, citação), então é a SAÍDA que manda no tempo.
  */
-const BATCH_CHARS = 4_500;
+const BATCH_CHARS = 3_500;
 /** Teto absoluto: sem marca de questão no texto, o lote não pode crescer sem fim. */
-const BATCH_MAX_CHARS = 7_000;
+const BATCH_MAX_CHARS = 6_000;
 /**
- * Prazo da chamada. Fica abaixo do tempo que a borda aguenta de propósito:
- * é melhor o servidor desistir e explicar do que a conexão morrer sem resposta.
+ * Prazo da chamada.
+ *
+ * Era de 80 segundos porque a varredura acontecia dentro da requisição HTTP, e
+ * a borda da hospedagem derruba antes disso. Agora o trabalho roda solto (ver
+ * routes/admin/exam-imports.js): ninguém está esperando do outro lado, então o
+ * prazo pode ser o que a transcrição realmente precisa. Com 80 segundos, o
+ * modelo era interrompido no meio de trechos legítimos — e o trecho voltava
+ * para a fila sem nada gravado, depois de já ter sido pago.
  */
-const TIMEOUT_MS = 80_000;
-const MAX_TOKENS = 2800;
-const RETRY_MAX_TOKENS = 5600;
+const TIMEOUT_MS = 240_000;
+const MAX_TOKENS = 2200;
+const RETRY_MAX_TOKENS = 4400;
 /** Teto de questões por lote, para a resposta não crescer além do prazo. */
-const MAX_QUESTOES_POR_LOTE = 4;
+const MAX_QUESTOES_POR_LOTE = 3;
 /** Texto de prova maior que isto quase certamente não é uma prova. */
 const MAX_DOCUMENT_CHARS = 4_000_000;
 
