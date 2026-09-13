@@ -191,4 +191,31 @@ describe('Respostas JSON da IA', () => {
     assert.equal(res.data.title, 'Fechou por sorte');
     assert.equal(res.truncated, true);
   });
+
+  it('desliga o raciocínio do Qwen ao apenas transcrever uma prova', async () => {
+    let parametros = null;
+    ai.setClientForTests({
+      chat: {
+        completions: {
+          async create(params) {
+            parametros = params;
+            return {
+              model: 'qwen/qwen3.8-flash',
+              choices: [{ message: { content: '{"questions":[]}' }, finish_reason: 'stop' }],
+              usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+            };
+          },
+        },
+      },
+    });
+
+    await ai.json({
+      messages: pergunta,
+      model: 'qwen/qwen3.8-flash',
+      feature: 'exam_import',
+      maxTokens: 6000,
+    });
+
+    assert.deepEqual(parametros.reasoning, { enabled: false, exclude: true });
+  });
 });

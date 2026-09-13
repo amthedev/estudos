@@ -368,6 +368,29 @@ describe('Leitura de prova pelo painel', () => {
     assert.equal(final.items[0].payload.correct, 'B', 'o gabarito colado continua mandando');
   });
 
+  it('reinicia um upload interrompido sem duplicar o começo da prova', async () => {
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'Upload interrompido',
+      exam_id: exam.id,
+    });
+    const trechoIncompleto = fakeExam(1).slice(0, 120);
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: trechoIncompleto,
+      done: false,
+    });
+
+    const textoCompleto = fakeExam(2);
+    const retomada = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: textoCompleto,
+      done: true,
+      reset: true,
+    });
+    assert.equal(retomada.status, 200, JSON.stringify(retomada.body));
+    assert.equal(retomada.body.chars_total, textoCompleto.length, 'o trecho antigo não pode ser concatenado de novo');
+    const salvo = await db.one('SELECT document_text FROM exam_imports WHERE id = $1', [criada.body.id]);
+    assert.equal(salvo.document_text, textoCompleto);
+  });
+
   it('lista as provas anteriores que já têm PDF, para não reenviar o arquivo', async () => {
     // O cliente sobe a prova uma vez em "Provas anteriores"; ler as questões
     // dela não pode exigir enviar o mesmo arquivo de novo.
@@ -434,6 +457,67 @@ describe('Leitura de prova pelo painel', () => {
     const lista = await admin.agent.get('/api/admin/exam-imports/provas');
     const linha = lista.body.items.find((p) => p.id === prova.id);
     assert.ok(linha.leituras >= 1, 'o painel mostra que esta prova já foi lida');
+    assert.equal(linha.ultima_leitura_id, criada.body.id);
+    assert.equal(linha.leitura_concluida, false, 'só criar a leitura não pode tirar a prova da carga em massa');
+  });
+
+  it('uma prova parcial continua pendente e só sai da fila ao chegar a 100%', async () => {
+    const prova = await db.one(
+      `INSERT INTO past_exams (exam_id, year, title, board, pdf_url)
+       VALUES ($1, 2021, 'ENEM PPL 2021 — retomada', 'INEP', '/uploads/provas/ppl-retomada.pdf')
+       RETURNING id`,
+      [exam.id]
+    );
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'ENEM PPL 2021 — retomada',
+      past_exam_id: prova.id,
+      exam_id: exam.id,
+      answer_key: '1-A 2-B',
+    });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: fakeExam(2),
+      done: true,
+    });
+
+    let lista = await admin.agent.get('/api/admin/exam-imports/provas');
+    let linha = lista.body.items.find((p) => p.id === prova.id);
+    assert.equal(linha.leitura_concluida, false);
+    assert.equal(linha.ultima_leitura_percent, 0);
+    assert.equal(linha.ultima_leitura_id, criada.body.id, 'a tela precisa saber qual leitura retomar');
+
+    await varrerAteOFim(admin, criada.body.id);
+    lista = await admin.agent.get('/api/admin/exam-imports/provas');
+    linha = lista.body.items.find((p) => p.id === prova.id);
+    assert.equal(linha.leitura_concluida, true, 'uma varredura completa não deve ser paga outra vez');
+    assert.equal(linha.ultima_leitura_percent, 100);
+  });
+
+  it('um gabarito anexado depois reconcilia e importa as questões já lidas', async () => {
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'Gabarito chegou depois',
+      exam_id: exam.id,
+      year: 2020,
+    });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: fakeExam(2),
+      done: true,
+    });
+    const antes = await varrerAteOFim(admin, criada.body.id);
+    assert.equal(antes.items.filter((item) => item.status === 'pendente').length, 2);
+
+    const res = await admin.agent.put(`/api/admin/exam-imports/${criada.body.id}/answer-key`, {
+      answer_key: '1-D 2-A',
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.reconciled, 2);
+    assert.equal(res.body.imported_now, 2);
+    assert.equal(res.body.counts.importadas, 2);
+
+    const depois = await admin.agent.get(`/api/admin/exam-imports/${criada.body.id}`);
+    const primeira = depois.body.items.find((item) => item.number === 1);
+    assert.equal(primeira.status, 'importada');
+    assert.equal(primeira.payload.correct, 'D');
+    assert.equal(primeira.payload.answer_from_key, true);
   });
 
   it('a varredura responde na hora e trabalha por fora', async () => {

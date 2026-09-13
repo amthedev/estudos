@@ -242,11 +242,12 @@ async function chat({
   const params = { model: resolvedModel, messages, temperature, max_tokens: maxTokens };
   if (resolvedModel === 'qwen/qwen3.8-flash') {
     // Elaborar questão pede raciocínio: distrator plausível e resolução passo a
-    // passo não saem com esforço mínimo. TRANSCREVER prova não — é cópia, e
-    // ligar o raciocínio ali só fez a chamada passar de 80 segundos e estourar
-    // o prazo, pagando tokens de pensamento para copiar texto.
+    // passo não saem com esforço mínimo. TRANSCREVER prova não — é cópia. O
+    // modelo vem com raciocínio ligado por padrão; pedir esforço "minimal"
+    // ainda reservava parte do max_tokens para pensamento oculto e fez lotes
+    // legítimos terminarem com finish_reason=length antes de fechar o JSON.
     const pensaMais = feature === 'essay' || feature === 'questions';
-    params.reasoning = { effort: pensaMais ? 'low' : 'minimal', exclude: true };
+    params.reasoning = pensaMais ? { effort: 'low', exclude: true } : { enabled: false, exclude: true };
   }
   if (responseFormat) params.response_format = responseFormat;
   const requestOptions = { signal, timeout: timeoutMs };

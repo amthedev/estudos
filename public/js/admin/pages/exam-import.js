@@ -65,7 +65,11 @@ function newImportForm() {
               <option value="">Não — vou escolher o arquivo</option>
               ${(state.provas || []).map(
                 (p) => html`<option value="${p.id}" ${p.id === state.provaEscolhida ? 'selected' : ''}>
-                    ${p.title}${p.leituras ? ` · já lida ${p.leituras}x` : ''}
+                    ${p.title}${p.leitura_concluida
+                      ? ' · leitura concluída'
+                      : p.ultima_leitura_id
+                        ? ` · ${p.ultima_leitura_percent || 0}% lida`
+                        : ''}
                   </option>`
               )}
             </select>
@@ -372,9 +376,9 @@ function reviewStep() {
 // Carga de todas as provas
 // ---------------------------------------------------------------------
 
-/** Provas cadastradas que ainda não passaram pelo leitor. */
+/** Provas sem uma varredura completa, inclusive as interrompidas no caminho. */
 function pendentesDeLeitura() {
-  return (state.provas || []).filter((p) => !p.leituras);
+  return (state.provas || []).filter((p) => !p.leitura_concluida);
 }
 
 function loteView() {
@@ -459,35 +463,55 @@ async function lerTodasAsProvas() {
   );
 }
 
-/** Uma prova, do gabarito à varredura completa. */
+/** Uma prova, do gabarito à varredura completa, retomando do último cursor. */
 async function lerProvaInteira(prova) {
-  const gabarito = prova.tem_gabarito ? await lerGabarito(prova.id) : null;
+  let leitura = null;
+  if (prova.ultima_leitura_id && !prova.leitura_concluida) {
+    leitura = await api.get(`/api/admin/exam-imports/${prova.ultima_leitura_id}`);
+  }
 
-  const criada = await api.post('/api/admin/exam-imports', {
-    title: prova.title,
-    past_exam_id: prova.id,
-    exam_id: prova.exam_id || undefined,
-    year: prova.year || undefined,
-    board: prova.board || undefined,
-    answer_key: gabarito || undefined,
-  });
+  let gabarito = null;
+  if (!leitura) {
+    gabarito = prova.tem_gabarito ? await lerGabarito(prova.id) : null;
+    leitura = await api.post('/api/admin/exam-imports', {
+      title: prova.title,
+      past_exam_id: prova.id,
+      exam_id: prova.exam_id || undefined,
+      year: prova.year || undefined,
+      board: prova.board || undefined,
+      answer_key: gabarito || undefined,
+    });
+  } else if (prova.tem_gabarito && !leitura.answer_key_count) {
+    gabarito = await lerGabarito(prova.id);
+    if (gabarito) {
+      leitura = await api.put(`/api/admin/exam-imports/${leitura.id}/answer-key`, { answer_key: gabarito });
+    }
+  }
 
-  const { text } = await extractPdfText(`/api/admin/exam-imports/provas/${prova.id}/arquivo/prova`);
-  const partes = splitForUpload(text);
-  for (const [index, chunk] of partes.entries()) {
-    await api.post(`/api/admin/exam-imports/${criada.id}/text`, { chunk, done: index === partes.length - 1 });
+  // Status "lendo" significa que o navegador fechou no meio do upload. Recomeça
+  // o texto do zero; concatenar novamente duplicaria o começo inteiro da prova.
+  if (!leitura.has_text || leitura.status === 'lendo' || leitura.status === 'falhou') {
+    const { text } = await extractPdfText(`/api/admin/exam-imports/provas/${prova.id}/arquivo/prova`);
+    const partes = splitForUpload(text);
+    for (const [index, chunk] of partes.entries()) {
+      leitura = await api.post(`/api/admin/exam-imports/${leitura.id}/text`, {
+        chunk,
+        done: index === partes.length - 1,
+        reset: index === 0,
+      });
+    }
   }
 
   let continua = true;
   let voltas = 0;
   while (continua && voltas < 60 && !state.lote.parar) {
     voltas += 1;
-    continua = await sweepOnce(criada.id);
-    const atual = await api.get(`/api/admin/exam-imports/${criada.id}`);
+    continua = await sweepOnce(leitura.id);
+    const atual = await api.get(`/api/admin/exam-imports/${leitura.id}`);
     state.lote.atual = `${prova.title} — ${atual.percent}% · ${atual.found_count} questões`;
     paint();
   }
-  const final = await api.get(`/api/admin/exam-imports/${criada.id}`);
+  const final = await api.get(`/api/admin/exam-imports/${leitura.id}`);
   state.lote.encontradas += Number(final.found_count) || 0;
 
   // A própria varredura já manda ao banco tudo que o gabarito oficial
@@ -788,6 +812,7 @@ async function lerTexto(origem, { guardar = null, aoFalhar = null } = {}) {
       atualizado = await api.post(`/api/admin/exam-imports/${state.current.id}/text`, {
         chunk,
         done: index === partes.length - 1,
+        reset: index === 0,
       });
     }
     if (url) atualizado.source_url = url;
@@ -832,6 +857,7 @@ async function useTypedText(trigger) {
       atualizado = await api.post(`/api/admin/exam-imports/${state.current.id}/text`, {
         chunk,
         done: index === partes.length - 1,
+        reset: index === 0,
       });
     }
     state.current = { ...state.current, ...atualizado };

@@ -53,7 +53,7 @@ const emptyToUndefined = (value) => (value === '' ? undefined : value);
 const emptyToNull = (value) => (typeof value === 'string' && value.trim() === '' ? null : value);
 const optionalUuid = z.preprocess(emptyToUndefined, uuid.optional());
 
-const LIST_LIMIT = 30;
+const LIST_LIMIT = 100;
 /** Cada pedaço do texto cabe folgado no corpo aceito pelo servidor (2 MB). */
 const MAX_CHUNK_CHARS = 400_000;
 
@@ -73,6 +73,13 @@ const textBody = z
   .object({
     chunk: z.string().max(MAX_CHUNK_CHARS),
     done: z.boolean().optional(),
+    reset: z.boolean().optional(),
+  })
+  .strict();
+
+const answerKeyBody = z
+  .object({
+    answer_key: z.string().trim().min(1, 'Informe o gabarito oficial.').max(20_000),
   })
   .strict();
 
@@ -250,9 +257,36 @@ router.get(
       `SELECT p.id, p.title, p.year, p.day, p.board, p.pdf_url, p.exam_id,
               (p.answer_key_url IS NOT NULL AND p.answer_key_url <> '') AS tem_gabarito,
               e.name AS exam_name, e.short_name AS exam_short_name, e.board AS exam_board,
-              (SELECT count(*)::int FROM exam_imports i WHERE i.past_exam_id = p.id) AS leituras
+              coalesce(historico.leituras, 0)::int AS leituras,
+              coalesce(historico.concluidas, 0) > 0 AS leitura_concluida,
+              ultima.id AS ultima_leitura_id,
+              ultima.status AS ultima_leitura_status,
+              ultima.found_count AS ultima_leitura_encontradas,
+              ultima.imported_count AS ultima_leitura_importadas,
+              (ultima.document_text IS NOT NULL AND ultima.document_text <> '') AS ultima_leitura_tem_texto,
+              CASE
+                WHEN coalesce(ultima.chars_total, 0) > 0
+                  THEN least(100, round((ultima.chars_read::numeric / ultima.chars_total) * 100)::int)
+                ELSE 0
+              END AS ultima_leitura_percent
          FROM past_exams p
          LEFT JOIN exams e ON e.id = p.exam_id
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS leituras,
+                  count(*) FILTER (WHERE i.status = 'concluida'
+                                     AND i.chars_total > 0
+                                     AND i.chars_read >= i.chars_total)::int AS concluidas
+             FROM exam_imports i
+            WHERE i.past_exam_id = p.id
+         ) historico ON true
+         LEFT JOIN LATERAL (
+           SELECT i.id, i.status, i.document_text, i.chars_total, i.chars_read,
+                  i.found_count, i.imported_count
+             FROM exam_imports i
+            WHERE i.past_exam_id = p.id
+            ORDER BY i.updated_at DESC, i.created_at DESC
+            LIMIT 1
+         ) ultima ON true
         WHERE p.pdf_url IS NOT NULL AND p.pdf_url <> ''
         ORDER BY p.year DESC, e.sort_order, p.sort_order, p.title`
     );
@@ -349,6 +383,62 @@ router.get(
   })
 );
 
+/**
+ * Acrescenta ou corrige o gabarito de uma leitura já iniciada.
+ *
+ * Isso é necessário na retomada: o PDF da prova pode ter subido antes de o PDF
+ * do gabarito ficar disponível. As questões já encontradas são reconciliadas
+ * pelo número e, quando a alternativa existe, passam a ser confirmadas pela
+ * fonte oficial e entram no banco pelo mesmo caminho automático da varredura.
+ */
+router.put(
+  '/:id/answer-key',
+  validate({ params: idParams, body: answerKeyBody }),
+  wrap(async (req, res) => {
+    const row = await loadImport(req.valid.params.id);
+    const { key, count } = examImport.parseAnswerKey(req.valid.body.answer_key);
+    if (!count) throw new AppError(400, 'validation_error', 'Não foi possível identificar respostas nesse gabarito.');
+
+    const pendentes = await db.many(
+      `SELECT id, number, payload
+         FROM exam_import_items
+        WHERE import_id = $1 AND status = 'pendente' AND number IS NOT NULL`,
+      [row.id]
+    );
+    let reconciliadas = 0;
+
+    await db.tx(async (client) => {
+      await client.query(`UPDATE exam_imports SET answer_key = $2::jsonb, error_message = NULL WHERE id = $1`, [
+        row.id,
+        JSON.stringify(key),
+      ]);
+      for (const item of pendentes) {
+        const letra = key[String(item.number)];
+        if (!letra || !item.payload || !item.payload[letra]) continue;
+        const payload = { ...item.payload, correct: letra, answer_from_key: true };
+        await client.query(`UPDATE exam_import_items SET payload = $2::jsonb, error_message = NULL WHERE id = $1`, [
+          item.id,
+          JSON.stringify(payload),
+        ]);
+        reconciliadas += 1;
+      }
+    });
+
+    const atualizada = await loadImport(row.id);
+    const resultado = await importarConfirmadasAutomaticamente(atualizada, req.admin ? req.admin.id : null);
+    await audit(req, 'exam_import.answer_key', 'exam_import', row.id, {
+      answers: count,
+      reconciled: reconciliadas,
+      imported: resultado.imported,
+    });
+    res.json({
+      ...serialize(await loadImport(row.id), { counts: await itemCounts(row.id) }),
+      reconciled: reconciliadas,
+      imported_now: resultado.imported,
+    });
+  })
+);
+
 // ---------------------------------------------------------------------------
 // O texto do PDF sobe em pedaços
 // ---------------------------------------------------------------------------
@@ -361,16 +451,23 @@ router.post(
       throw new AppError(409, 'conflict', 'Esta leitura já foi processada. Crie outra para enviar um texto novo.');
     }
 
-    const { chunk, done } = req.valid.body;
+    const { chunk, done, reset } = req.valid.body;
+    if (reset && !['lendo', 'falhou'].includes(row.status)) {
+      throw new AppError(409, 'conflict', 'Só é possível reiniciar um envio que ainda não começou a ser varrido.');
+    }
+    if (reset && Number(row.chars_read) > 0) {
+      throw new AppError(409, 'conflict', 'Esta leitura já começou. Continue a varredura em vez de reenviar o texto.');
+    }
     const atualizado = await db.one(
       `UPDATE exam_imports
-          SET document_text = coalesce(document_text, '') || $2,
-              chars_total   = length(coalesce(document_text, '') || $2),
+          SET document_text = CASE WHEN $4 THEN $2 ELSE coalesce(document_text, '') || $2 END,
+              chars_total   = length(CASE WHEN $4 THEN $2 ELSE coalesce(document_text, '') || $2 END),
+              chars_read    = CASE WHEN $4 THEN 0 ELSE chars_read END,
               status        = CASE WHEN $3 THEN 'pronta' ELSE 'lendo' END,
               error_message = NULL
         WHERE id = $1
         RETURNING *`,
-      [row.id, chunk, Boolean(done)]
+      [row.id, chunk, Boolean(done), Boolean(reset)]
     );
 
     if (Number(atualizado.chars_total) > examImport.MAX_DOCUMENT_CHARS) {
