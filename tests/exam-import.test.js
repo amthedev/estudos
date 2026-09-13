@@ -248,6 +248,39 @@ describe('Leitura de prova pelo painel', () => {
     assert.equal(res.body.payload.statement, item.payload.statement, 'o resto do item fica como estava');
   });
 
+  it('aceita o texto da prova colado à mão, sem PDF', async () => {
+    // "adicionar em PDF ou em qualquer formato": prova em Word, copiada de um
+    // site ou digitalizada e passada por um leitor entra por aqui.
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'Prova colada à mão',
+      exam_id: exam.id,
+      answer_key: '1-B 2-B 3-B',
+    });
+    assert.equal(criada.status, 201);
+
+    const texto = fakeExam(3);
+    const res = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: texto,
+      done: true,
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.status, 'pronta');
+    assert.equal(res.body.chars_total, texto.length);
+
+    // Um lote termina no começo da questão seguinte, então a última questão
+    // do texto só entra na passada final — por isso a varredura vai até o fim.
+    let done = false;
+    let sweep = null;
+    for (let volta = 0; volta < 10 && !done; volta += 1) {
+      sweep = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
+      assert.equal(sweep.status, 200, JSON.stringify(sweep.body));
+      done = sweep.body.done;
+    }
+    assert.equal(done, true);
+    assert.equal(sweep.body.items.length, 3, 'as questões saem do texto colado como sairiam do PDF');
+    assert.equal(sweep.body.items[0].payload.correct, 'B', 'o gabarito colado continua mandando');
+  });
+
   it('varrer sem texto avisa, em vez de estourar', async () => {
     const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Prova vazia' });
     const res = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});

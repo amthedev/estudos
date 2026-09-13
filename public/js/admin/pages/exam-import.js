@@ -124,6 +124,22 @@ function readStep() {
                 text: state.readError,
               })
             : ''}
+
+          <div class="xim-or"><span>ou</span></div>
+
+          <div class="field">
+            <label class="label" for="xim-paste">Cole o texto da prova</label>
+            <textarea class="textarea" id="xim-paste" name="paste" rows="6"
+                      placeholder="QUESTÃO 1&#10;Enunciado…&#10;A) …&#10;B) …"
+                      ${state.busy ? 'disabled' : ''}></textarea>
+            <span class="hint">
+              Serve para prova em Word, em página da internet ou digitalizada que você já passou por um
+              leitor. Cole tudo de uma vez, na ordem das questões.
+            </span>
+          </div>
+          <button type="button" class="btn btn-secondary" data-action="use-text" ${state.busy ? 'disabled' : ''}>
+            ${icon('clipboard-list')}<span>Usar este texto</span>
+          </button>
         </div>
       </section>`;
   }
@@ -472,6 +488,44 @@ async function readPdf(file) {
   }
 }
 
+/**
+ * Sobe um texto colado à mão, sem PDF.
+ *
+ * O combinado com o cliente foi "adicionar em PDF ou em qualquer formato". O
+ * PDF cobre a prova oficial; isto cobre o resto — Word, página da internet,
+ * prova digitalizada que ele já passou por um leitor de texto.
+ */
+async function useTypedText(trigger) {
+  const campo = qs('#xim-paste', state.ctx.el);
+  const texto = campo ? campo.value.trim() : '';
+  if (texto.length < 200) {
+    toast('Cole o texto da prova — pelo menos algumas questões.', { type: 'warning' });
+    return;
+  }
+  state.busy = true;
+  state.readError = null;
+  state.busyText = 'Enviando o texto…';
+  setLoading(trigger, true);
+  paint();
+  try {
+    const partes = splitForUpload(texto);
+    let atualizado = null;
+    for (const [index, chunk] of partes.entries()) {
+      atualizado = await api.post(`/api/admin/exam-imports/${state.current.id}/text`, {
+        chunk,
+        done: index === partes.length - 1,
+      });
+    }
+    state.current = { ...state.current, ...atualizado };
+    toast(`Texto recebido: ${fmtNumber(texto.length)} caracteres.`, { type: 'success' });
+  } catch (err) {
+    state.readError = (err && err.message) || 'Não foi possível enviar este texto.';
+  } finally {
+    state.busy = false;
+    paint();
+  }
+}
+
 /** Uma passada. Devolve true quando ainda há texto pela frente. */
 async function sweepOnce() {
   const resultado = await api.post(`/api/admin/exam-imports/${state.current.id}/sweep`, {});
@@ -553,6 +607,7 @@ export default async function renderPage(ctx) {
       state.readError = null;
       paint();
     }),
+    on(ctx.el, 'click', '[data-action="use-text"]', (event, trigger) => useTypedText(trigger)),
     on(ctx.el, 'click', '[data-action="sweep"]', () => sweep()),
     on(ctx.el, 'click', '[data-action="sweep-all"]', () => sweep({ all: true })),
     on(ctx.el, 'click', '[data-action="import"]', (event, trigger) => importPicked(trigger)),

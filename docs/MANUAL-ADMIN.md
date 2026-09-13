@@ -290,8 +290,13 @@ ENEM, ENEM PPL, Barro Branco — em questões do banco sem digitar uma a uma.
    fica na própria questão.
 
 **PDF digitalizado não funciona.** Se a prova for uma foto de cada página (sem texto selecionável), a
-tela avisa com todas as letras. Procure a versão original do arquivo, ou use a importação por
-planilha.
+tela avisa com todas as letras. Procure a versão original do arquivo, ou use uma das alternativas
+abaixo.
+
+**Não tem PDF?** Na mesma tela, abaixo do arquivo, há o campo **Cole o texto da prova**. Serve para
+prova em Word, copiada de uma página da internet, ou digitalizada que você já passou por um leitor de
+texto. Cole tudo de uma vez, na ordem das questões, e clique em **Usar este texto** — daí em diante o
+caminho é o mesmo.
 
 ### 4.4 Conferir as questões que a IA escreveu
 
