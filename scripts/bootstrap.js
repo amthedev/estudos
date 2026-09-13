@@ -37,6 +37,19 @@ async function main() {
   log('garantindo o conteúdo base…');
   await runSeed({ quiet: true });
 
+  // Leitura de prova interrompida por um reinício fica marcada como "extraindo"
+  // para sempre, e a tela não explica nada. Quem sobe agora sabe que ninguém
+  // está varrendo: devolve para "pronta" e diz o que houve, para o
+  // administrador poder continuar de onde parou.
+  const retomadas = await db.many(
+    `UPDATE exam_imports
+        SET status = 'pronta',
+            error_message = 'A leitura foi interrompida quando a aplicação reiniciou. Continue de onde parou.'
+      WHERE status = 'extraindo'
+      RETURNING id`
+  );
+  if (retomadas.length) log(`${retomadas.length} leitura(s) de prova destravada(s) após reinício.`);
+
   log('pronto.');
 }
 

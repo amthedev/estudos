@@ -94,6 +94,29 @@ function normalizeError(err) {
   return { status: 500, code: 'internal', message: 'Erro interno. Tente novamente em instantes.', log: true };
 }
 
+/**
+ * Grava uma falha que não veio de uma requisição — queda do processo, por
+ * exemplo. Sem isto, o motivo de um reinício só existe no console da
+ * hospedagem, que nem sempre se alcança; e "a aplicação reiniciou e ninguém
+ * sabe por quê" custou horas de investigação às cegas.
+ */
+async function persistProcessError(err, origem) {
+  try {
+    const db = require('../db/pool');
+    await db.query(
+      `INSERT INTO error_logs (level, message, stack, path, method)
+       VALUES ('fatal', $1, $2, $3, 'PROCESSO')`,
+      [
+        `[${origem}] ${String(err && err.message ? err.message : err)}`.slice(0, 4000),
+        err && err.stack ? String(err.stack).slice(0, 12000) : null,
+        origem.slice(0, 1000),
+      ]
+    );
+  } catch (dbErr) {
+    console.error('[errors] não foi possível gravar a queda em error_logs:', dbErr.message);
+  }
+}
+
 async function persistError(err, req) {
   try {
     // require tardio para não criar dependência circular na inicialização
@@ -155,4 +178,4 @@ function errorHandler(err, req, res, next) {
   res.status(normalized.status).json(body);
 }
 
-module.exports = { AppError, wrap, notFound, errorHandler, normalizeError };
+module.exports = { AppError, wrap, notFound, errorHandler, normalizeError, persistProcessError };

@@ -7,6 +7,7 @@
 const config = require('./config');
 const { createApp } = require('./app');
 const db = require('./db/pool');
+const { persistProcessError } = require('./middleware/errors');
 
 function maskDatabaseUrl(url) {
   try {
@@ -61,12 +62,20 @@ async function main() {
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+  // Toda queda vira registro no banco antes de qualquer outra coisa. O console
+  // da hospedagem guarda só as últimas linhas e nem sempre se alcança; sem isto,
+  // um reinício no meio de um trabalho longo não deixa rastro nenhum — e foi
+  // exatamente assim que uma varredura de prova sumiu três vezes seguidas,
+  // levando junto o que já tinha sido pago à IA.
   process.on('unhandledRejection', (reason) => {
     console.error('[processo] rejeição não tratada:', reason);
+    persistProcessError(reason instanceof Error ? reason : new Error(String(reason)), 'unhandledRejection');
   });
   process.on('uncaughtException', (err) => {
     console.error('[processo] exceção não capturada:', err);
-    shutdown('uncaughtException');
+    // Grava e só então encerra: com o encerramento na frente, o registro não
+    // chegava a ser escrito.
+    persistProcessError(err, 'uncaughtException').finally(() => shutdown('uncaughtException'));
   });
 }
 
