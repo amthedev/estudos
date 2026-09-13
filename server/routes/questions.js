@@ -285,20 +285,40 @@ router.post(
   wrap(async (req, res) => {
     const { topic_id: topicId, subject_id: subjectId, exam_id: examId, difficulty } = req.valid.body;
 
-    const criadas = await questionAi.fillPool({
-      examId: examId || null,
-      subjectId: topicId ? null : subjectId || null,
-      topicId: topicId || null,
-      difficulty: questionAi.difficultyOf(difficulty),
-      count: GERAR_POR_VEZ,
-      userId: req.user.id,
-    });
+    // Quem espera aqui é uma tela com o botão girando, atrás de uma borda que
+    // corta a requisição perto dos 100 segundos. A elaboração tem que caber
+    // nesse tempo e parar sozinha se o aluno desistir — antes disso, um clique
+    // podia deixar a IA trabalhando por mais de uma hora para ninguém.
+    const controller = new AbortController();
+    const onClose = () => {
+      if (!res.writableEnded) controller.abort();
+    };
+    res.on('close', onClose);
+
+    let criadas;
+    try {
+      criadas = await questionAi.fillPool({
+        examId: examId || null,
+        subjectId: topicId ? null : subjectId || null,
+        topicId: topicId || null,
+        difficulty: questionAi.difficultyOf(difficulty),
+        count: GERAR_POR_VEZ,
+        userId: req.user.id,
+        prazoMs: questionAi.PRAZO_INTERATIVO_MS,
+        timeoutMs: questionAi.TIMEOUT_INTERATIVO_MS,
+        signal: controller.signal,
+      });
+    } finally {
+      res.off('close', onClose);
+    }
+
+    if (controller.signal.aborted) return;
 
     if (!criadas.length) {
       throw new AppError(
         503,
         'ai_unavailable',
-        'Não foi possível elaborar questões deste recorte agora. Tente outro assunto ou volte em instantes.'
+        'A IA não conseguiu elaborar questões deste assunto agora. Tente de novo em instantes ou escolha outro recorte.'
       );
     }
 

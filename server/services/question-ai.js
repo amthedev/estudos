@@ -33,6 +33,26 @@ const MAX_TOKENS_POR_QUESTAO = 700;
 const MAX_TOKENS_MINIMO = 1500;
 const MAX_TOKENS_TETO = 12_000;
 const TIMEOUT_MS = 120_000;
+/**
+ * Prazo de uma chamada quando quem espera é uma tela aberta.
+ *
+ * A borda (Cloudflare na frente da Square Cloud) corta a requisição perto dos
+ * 100 segundos e devolve uma página de erro que o front não sabe ler — o aluno
+ * via o botão girar e no fim um erro sem sentido no canto da tela. Uma chamada
+ * interativa precisa caber, com folga, dentro desse corte.
+ */
+const TIMEOUT_INTERATIVO_MS = 40_000;
+/**
+ * Teto de tempo da elaboração inteira, não de cada chamada.
+ *
+ * Sem ele, o laço abaixo tenta um assunto por vez e só desiste depois de falhar
+ * uma vez em CADA assunto da matéria. Matemática tem 35 assuntos: com a IA
+ * lenta, um clique virava mais de uma hora de requisição pendurada, gastando
+ * crédito, para terminar em erro. O prazo estourado devolve o que já deu para
+ * elaborar, do mesmo jeito que a cota diária já fazia.
+ */
+const PRAZO_TOTAL_MS = 6 * 60_000;
+const PRAZO_INTERATIVO_MS = 50_000;
 const MAX_POR_CHAMADA = 8;
 
 /** Dias sem repetir uma questão para o mesmo aluno. */
@@ -49,6 +69,17 @@ const DIAS_SEM_REPETIR = 7;
 // completo em um banco vazio. Doze deixam essa operação caber no limite sem
 // transformar o botão de prática em geração ilimitada.
 const GERACOES_POR_DIA = 12;
+/**
+ * Teto de TENTATIVAS por dia, contando as que falharam.
+ *
+ * A cota acima só conta chamada bem-sucedida. Quando o modelo responde fora do
+ * formato, a questão é descartada, nada é gravado — e o gasto acontece do mesmo
+ * jeito, porque o prompt foi enviado e cobrado. Sem este segundo teto, um
+ * modelo mal configurado gasta sem limite justamente no dia em que não entrega
+ * nada. É folgado de propósito: quem está usando a plataforma normalmente não
+ * chega perto dele.
+ */
+const TENTATIVAS_POR_DIA = 30;
 /** Quantas questões a prática pós-aula entrega (uma por assunto da aula). */
 const QUESTOES_POR_AULA = 3;
 
@@ -176,15 +207,17 @@ function assignCandidates(targets, candidates) {
 async function assertDailyQuota(userId) {
   if (!userId) return;
   const row = await db.one(
-    `SELECT count(*)::int AS total
+    `SELECT count(*) FILTER (WHERE status = 'ok')::int AS entregues,
+            count(*)::int AS tentativas
        FROM ai_usage
       WHERE user_id = $1
         AND feature = 'questions'
-        AND status = 'ok'
         AND (created_at AT TIME ZONE $2)::date = (now() AT TIME ZONE $2)::date`,
     [userId, TIMEZONE]
   );
-  if (row && row.total >= GERACOES_POR_DIA) {
+  const entregues = row ? row.entregues : 0;
+  const tentativas = row ? row.tentativas : 0;
+  if (entregues >= GERACOES_POR_DIA || tentativas >= TENTATIVAS_POR_DIA) {
     throw new AppError(
       429,
       'ai_limit_reached',
@@ -327,7 +360,18 @@ async function persistGenerated(client, item, { subjectId, topicId, lessonId, so
  * Pede à IA as questões que faltam e grava.
  * @returns {Promise<string[]>} ids das questões criadas, na ordem dos alvos
  */
-async function generate({ subject, topic, lesson, exam, difficulty, targets, userId }) {
+async function generate({
+  subject,
+  topic,
+  lesson,
+  exam,
+  difficulty,
+  targets,
+  userId,
+  timeoutMs = TIMEOUT_MS,
+  signal = null,
+  examId = null,
+}) {
   if (!targets.length) return [];
   await assertDailyQuota(userId);
   const pedidos = targets.slice(0, MAX_POR_CHAMADA);
@@ -349,7 +393,8 @@ async function generate({ subject, topic, lesson, exam, difficulty, targets, use
     retryMaxTokens: Math.min(MAX_TOKENS_TETO, maxTokens * 2),
     userId,
     feature: 'questions',
-    timeoutMs: TIMEOUT_MS,
+    timeoutMs,
+    signal,
   });
 
   const brutas = Array.isArray(result.data && result.data.questions) ? result.data.questions : [];
@@ -371,14 +416,22 @@ async function generate({ subject, topic, lesson, exam, difficulty, targets, use
   return db.tx(async (client) => {
     const ids = [];
     for (const item of prontas) {
-      ids.push(
-        await persistGenerated(client, item, {
-          subjectId: subject.id,
-          topicId: topic.id,
-          lessonId: lesson ? lesson.id : null,
-          source,
-        })
-      );
+      const id = await persistGenerated(client, item, {
+        subjectId: subject.id,
+        topicId: topic.id,
+        lessonId: lesson ? lesson.id : null,
+        source,
+      });
+      // O aluno filtrou por prova antes de pedir a elaboração. Sem este
+      // vínculo, a questão nasce fora do filtro que a pediu: a tela recarregava
+      // com "5 questões elaboradas" e continuava vazia.
+      if (examId) {
+        await client.query(
+          'INSERT INTO question_exams (question_id, exam_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [id, examId]
+        );
+      }
+      ids.push(id);
     }
     return ids;
   });
@@ -428,7 +481,18 @@ async function fillableTopics({ examId, subjectId, topicId, filters = {} }) {
  * do aluno quando o filtro dele não acha nada. O que muda entre os dois é só o
  * teto, que quem chama decide.
  */
-async function fillPool({ examId = null, subjectId = null, topicId = null, filters = {}, difficulty = 2, count, userId }) {
+async function fillPool({
+  examId = null,
+  subjectId = null,
+  topicId = null,
+  filters = {},
+  difficulty = 2,
+  count,
+  userId,
+  prazoMs = PRAZO_TOTAL_MS,
+  timeoutMs = TIMEOUT_MS,
+  signal = null,
+}) {
   const teto = Math.max(0, Math.min(Number(count) || 0, 90));
   if (teto <= 0) return [];
 
@@ -436,12 +500,21 @@ async function fillPool({ examId = null, subjectId = null, topicId = null, filte
   if (!topics.length) return [];
 
   const criadas = [];
+  const limite = Date.now() + Math.max(5_000, Number(prazoMs) || PRAZO_TOTAL_MS);
   // Espalha pelos assuntos e volta ao primeiro quando ainda falta questão.
   // A versão anterior passava por cada assunto uma vez; um simulado de um
   // único assunto, portanto, nunca recebia mais que MAX_POR_CHAMADA questões.
   let cursor = 0;
   let falhasSeguidas = 0;
   while (criadas.length < teto && falhasSeguidas < topics.length) {
+    // O aluno fechou a aba ou o prazo acabou: devolve o que já ficou pronto em
+    // vez de continuar chamando a IA para uma tela que não existe mais.
+    if (signal && signal.aborted) break;
+    const restante = limite - Date.now();
+    if (restante <= 5_000) {
+      console.warn(`[question-ai] prazo esgotado com ${criadas.length} de ${teto} questões elaboradas.`);
+      break;
+    }
     const topic = topics[cursor % topics.length];
     cursor += 1;
     const querAgora = Math.min(MAX_POR_CHAMADA, teto - criadas.length);
@@ -464,6 +537,9 @@ async function fillPool({ examId = null, subjectId = null, topicId = null, filte
         difficulty,
         targets,
         userId,
+        timeoutMs: Math.min(timeoutMs, restante - 2_000),
+        signal,
+        examId,
       });
       for (const id of ids) criadas.push({ id, subject_id: topic.subject_id, topic_id: topic.id });
       falhasSeguidas = ids.length ? 0 : falhasSeguidas + 1;
@@ -485,7 +561,11 @@ module.exports = {
   DIAS_SEM_REPETIR,
   GERACOES_POR_DIA,
   MAX_POR_CHAMADA,
+  TENTATIVAS_POR_DIA,
   TIMEOUT_MS,
+  TIMEOUT_INTERATIVO_MS,
+  PRAZO_TOTAL_MS,
+  PRAZO_INTERATIVO_MS,
   difficultyOf,
   lessonTargets,
   bankCandidates,

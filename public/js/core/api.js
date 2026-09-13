@@ -37,11 +37,18 @@ const DEFAULT_MESSAGES = {
   500: 'Erro interno. Tente novamente em instantes.',
   502: 'Servidor indisponível no momento.',
   503: 'Serviço temporariamente indisponível.',
+  // Cortes da borda (Cloudflare/proxy) em operação demorada. Sem estes textos o
+  // aluno recebia a página de erro do gateway como se fosse mensagem nossa.
+  504: 'O servidor demorou demais para responder. Se você pediu algo para a IA, pode ter dado certo mesmo assim — recarregue em um minuto.',
+  408: 'A requisição demorou demais. Tente novamente.',
+  522: 'Não foi possível falar com o servidor agora. Tente novamente em instantes.',
+  524: 'O servidor demorou demais para responder. Se você pediu algo para a IA, pode ter dado certo mesmo assim — recarregue em um minuto.',
 };
 
 const DEFAULT_CODES = {
   400: 'validation_error', 401: 'unauthorized', 402: 'payment_required', 403: 'forbidden',
   404: 'not_found', 409: 'conflict', 429: 'rate_limited', 500: 'internal', 503: 'ai_unavailable',
+  408: 'timeout', 504: 'timeout', 522: 'timeout', 524: 'timeout',
 };
 
 let redirecting = false;
@@ -103,10 +110,13 @@ async function parseBody(res) {
 async function toApiError(res) {
   const body = await parseBody(res);
   const err = body && typeof body === 'object' && body.error ? body.error : null;
+  // Página de erro de proxy é HTML curto e cabia no limite abaixo: o aluno via
+  // "<html><head><title>504 Gateway Time-out..." dentro do aviso vermelho.
+  const texto = typeof body === 'string' && body.length < 200 && !/<[a-z!/]/i.test(body) ? body : '';
   return new ApiError({
     status: res.status,
     code: (err && err.code) || DEFAULT_CODES[res.status] || 'internal',
-    message: (err && err.message) || (typeof body === 'string' && body.length < 200 ? body : '') || DEFAULT_MESSAGES[res.status] || `Erro ${res.status}.`,
+    message: (err && err.message) || texto || DEFAULT_MESSAGES[res.status] || `Erro ${res.status}.`,
     details: (err && err.details) || null,
   });
 }
