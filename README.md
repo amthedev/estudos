@@ -15,6 +15,7 @@ Domínio de produção: **focoelite.com.br**
 | Documento | Para que serve |
 |-----------|----------------|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Contrato técnico: convenções de backend e frontend, catálogo da API, design system, motor do cronograma. |
+| [`docs/MANUAL-DA-PLATAFORMA.md`](docs/MANUAL-DA-PLATAFORMA.md) | Manual de uso da plataforma inteira, tela a tela: o que o aluno encontra e o que o administrador opera. |
 | [`docs/CONTEUDO.md`](docs/CONTEUDO.md) | Como o conteúdo se organiza (área → matéria → assunto → subassunto → aula) e como operar os seeds. |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Publicação em VPS ou PaaS, Asaas, OpenRouter, SMTP e DNS. |
 | [`docs/CHECKLIST-ENTREGA.md`](docs/CHECKLIST-ENTREGA.md) | O que já foi entregue e o que o cliente precisa providenciar. |
