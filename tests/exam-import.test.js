@@ -187,6 +187,20 @@ describe('Gabarito oficial colado pelo administrador', () => {
     const { count } = examImport.parseAnswerKey('Gabarito oficial da prova aplicada em 2024');
     assert.equal(count, 0);
   });
+
+  it('prosa de folha de gabarito não vira resposta fantasma', () => {
+    // "a" e "e" são letras válidas em português; com o separador opcional,
+    // "questões 46 a 90" virava 46=A e ia para o banco como gabarito oficial,
+    // com a questão real chegando ao aluno com a resposta errada.
+    assert.equal(examImport.parseAnswerKey('Linguagens e Códigos — questões 46 a 90').count, 0);
+    assert.equal(examImport.parseAnswerKey('As questões 3 e 4 foram anuladas.').count, 0);
+    assert.equal(examImport.parseAnswerKey('As questões 5 e 17 foram anuladas.').count, 0);
+  });
+
+  it('gabarito de verdade colado junto da prosa ainda é lido', () => {
+    const { key } = examImport.parseAnswerKey('Questões 1 a 3.\n1-A 2-B 3-C');
+    assert.deepEqual(key, { 1: 'A', 2: 'B', 3: 'C' });
+  });
 });
 
 describe('Leitura de prova pelo painel', () => {

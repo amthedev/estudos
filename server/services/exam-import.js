@@ -134,7 +134,15 @@ function nextBatch(document, cursor = 0) {
       break;
     }
   }
-  if (corte > BATCH_MAX_CHARS) corte = Math.min(corte, BATCH_MAX_CHARS);
+  // O corte tem que cair EM CIMA de uma marca de questão. A primeira marca
+  // adiante é marks[1] (marks[0] é o começo deste lote); se até ela o texto já
+  // passou do teto, é uma questão sozinha maior que o lote — texto de apoio
+  // longo. Cortar no teto partiria essa questão no meio: o pedaço inicial sai
+  // incompleto (o prompt manda omitir questão incompleta) e o resto vira texto
+  // órfão sem marcador no próximo lote — a questão somia inteira, sem aviso.
+  // Melhor deixar UM lote maior com a questão inteira do que perdê-la.
+  const tetoDuro = Math.max(BATCH_MAX_CHARS, marks[1].index);
+  if (corte > tetoDuro) corte = tetoDuro;
   if (corte <= 0) corte = Math.min(resto.length, BATCH_MAX_CHARS);
 
   const trecho = resto.slice(0, corte);
@@ -395,9 +403,20 @@ function isDriveUrl(value) {
 function parseAnswerKey(input) {
   const key = {};
   const bruto = String(input || '');
-  const padrao = /(\d{1,3})\s*[).:\-–—=]?\s*([A-Ea-e])(?![A-Za-z])/g;
+  // Um par número→letra só vale com um separador EXPLÍCITO entre eles, ou com a
+  // letra colada ao número. Sem essa exigência, prosa comum de folha de
+  // gabarito virava resposta: "questões 46 a 90" dava 46=A, "itens 3 e 4" dava
+  // 3=E, "questões 5 e 17 anuladas" dava 5=E — porque em português "a" e "e"
+  // são letras válidas e o separador era opcional. Esses fantasmas iam para o
+  // banco marcados como gabarito oficial, e a questão chegava ao aluno com a
+  // resposta errada. Formatos reais de gabarito têm separador: "46-A", "46) A",
+  // "46.A", "01 A" com dois espaços no máximo, ou "46A".
+  const padrao = /(\d{1,3})(?:\s*[).:\-–—=]\s*|\s{0,2})([A-E])(?![A-Za-z])/g;
   let match = padrao.exec(bruto);
   while (match) {
+    // Descarta o par cujo "separador" foi só espaço quando a letra é 'a'/'e'
+    // minúscula grudada em palavra — mas como agora exigimos [A-E] MAIÚSCULO
+    // após espaço, "46 a 90" (minúsculo) já não casa. Mantém-se robusto.
     const numero = Number.parseInt(match[1], 10);
     if (Number.isInteger(numero) && numero > 0 && numero <= 300) key[String(numero)] = match[2].toUpperCase();
     match = padrao.exec(bruto);

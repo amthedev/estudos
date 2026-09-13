@@ -50,6 +50,21 @@ async function main() {
   );
   if (retomadas.length) log(`${retomadas.length} leitura(s) de prova destravada(s) após reinício.`);
 
+  // Redação enviada fica "submitted" enquanto a IA corrige. Se o processo
+  // reiniciar nessa janela, a correção síncrona não termina e a redação fica
+  // presa para sempre — o aluno vê "em correção" eterno, sem poder reenviar.
+  // Mesmo caso da leitura de prova acima, e a mesma cura: quem sobe agora sabe
+  // que ninguém está corrigindo. Volta para "failed" com aviso, e a tela do
+  // aluno já oferece "Enviar novamente" nesse estado.
+  const redacoes = await db.many(
+    `UPDATE essays
+        SET status = 'failed',
+            error_message = 'A correção foi interrompida quando a aplicação reiniciou. Envie novamente.'
+      WHERE status = 'submitted'
+      RETURNING id`
+  );
+  if (redacoes.length) log(`${redacoes.length} redação(ões) destravada(s) após reinício.`);
+
   log('pronto.');
 }
 

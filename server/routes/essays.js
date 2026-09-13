@@ -356,6 +356,19 @@ router.post(
       throw new AppError(400, 'validation_error', 'Escreva a redação antes de enviar para correção.');
     }
 
+    // "submitted" órfã: a correção anterior foi interrompida (reinício no meio) e
+    // ninguém está corrigindo esta redação agora. Sem isto, reenviar era barrado
+    // e a redação ficava "em correção" para sempre. Uma correção de verdade em
+    // curso dura no máximo o timeout; passado isso com folga, é órfã e pode
+    // recomeçar. Uma que ainda esteja dentro da janela é barrada, para não
+    // rodar duas correções ao mesmo tempo.
+    if (essay.status === 'submitted') {
+      const desde = essay.submitted_at ? Date.now() - new Date(essay.submitted_at).getTime() : Infinity;
+      if (desde < essays.CORRECTION_TIMEOUT_MS + 30_000) {
+        throw new AppError(409, 'conflict', 'Esta redação já está sendo corrigida. Aguarde um instante.');
+      }
+    }
+
     await db.query(
       `UPDATE essays SET status = 'submitted', submitted_at = now(), error_message = NULL
         WHERE id = $1 AND user_id = $2`,

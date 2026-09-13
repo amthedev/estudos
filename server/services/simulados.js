@@ -421,15 +421,28 @@ async function buildAttempt({
   // escolheu questão por questão, e acrescentar outra desfaria a escolha dele.
   let generated = 0;
   if (!curatedIds.length && questions.length < count) {
-    const novas = await fillWithAi({
-      missing: count - questions.length,
-      examId: exam ? exam.id : null,
-      subjectId: type === 'subject' ? subject.id : null,
-      topicId: type === 'topic' ? topic.id : null,
-      filters: type === 'custom' ? filters : {},
-      difficulty: Array.isArray(filters.difficulty) && filters.difficulty.length ? filters.difficulty[0] : 2,
-      userId,
-    });
+    let novas = [];
+    try {
+      novas = await fillWithAi({
+        missing: count - questions.length,
+        examId: exam ? exam.id : null,
+        subjectId: type === 'subject' ? subject.id : null,
+        topicId: type === 'topic' ? topic.id : null,
+        filters: type === 'custom' ? filters : {},
+        difficulty: Array.isArray(filters.difficulty) && filters.difficulty.length ? filters.difficulty[0] : 2,
+        userId,
+      });
+    } catch (err) {
+      // Cota diária de IA esgotada: se o banco já deu questões, o simulado sai
+      // menor em vez de falhar inteiro. Jogar fora as questões reais já
+      // escolhidas por causa do complemento seria o pior dos dois mundos. Só
+      // quando não há NENHUMA questão o aluno precisa saber que não dá agora.
+      if (err && err.code === 'ai_limit_reached' && questions.length) {
+        // segue com o que o banco tem
+      } else {
+        throw err;
+      }
+    }
     if (novas.length) {
       generated = novas.length;
       questions = shuffleByHash(questions.concat(novas), seed);

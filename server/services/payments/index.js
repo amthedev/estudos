@@ -557,6 +557,18 @@ async function applyAsaasEvent(tx, event) {
           unchanged: 'cobrança já creditada',
         };
       }
+      // Pix é avulso e o CHECKOUT_PAID já concedeu o período, gravando
+      // last_payment_id como "checkout:<id>". O PAYMENT_RECEIVED/CONFIRMED que
+      // vem depois é a MESMA cobrança, mas com outro id ("pay_<id>"), então a
+      // comparação acima não bate e o período era somado de novo — o aluno
+      // pagava 6 meses e recebia 12. Quando já há crédito por checkout numa
+      // assinatura avulsa, este evento não acrescenta período.
+      if (avulso && current && typeof current.last_payment_id === 'string' && current.last_payment_id.startsWith('checkout:')) {
+        return {
+          subscription_id: current.id,
+          unchanged: 'cobrança já creditada pelo checkout',
+        };
+      }
       const paidAt = (info.payment && info.payment.paid_at) || now;
       const first = !current || !current.last_payment_at;
       const months = asaas.accessMonths(plan, { first });

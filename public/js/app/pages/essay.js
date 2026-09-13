@@ -200,7 +200,30 @@ function draftView(essay) {
     </section>`;
 }
 
-function submittedView() {
+function submittedView(essay) {
+  // Passados alguns minutos ainda "em correção", o mais provável é que a
+  // correção foi interrompida (reinício no meio) e ninguém está mais corrigindo.
+  // Em vez de deixar o aluno preso num spinner que nunca resolve, ofereça o
+  // reenvio — o backend aceita reenviar uma redação órfã.
+  const desde = essay && essay.submitted_at ? Date.now() - new Date(essay.submitted_at).getTime() : 0;
+  const provavelmentePresa = desde > 4 * 60 * 1000;
+
+  if (provavelmentePresa) {
+    return html`
+      <section class="card ess-state">
+        <span class="icon-box icon-box-lg orange">${icon('clock')}</span>
+        <h2 class="ess-state-title">A correção está demorando mais que o normal</h2>
+        <p class="ess-state-text">
+          Costuma levar menos de dois minutos. Seu texto está guardado por inteiro —
+          você pode atualizar mais uma vez ou reenviar para correção.
+        </p>
+        <div class="ess-state-actions">
+          <button type="button" class="btn btn-ghost" data-action="reload-essay">${icon('refresh-cw')}<span>Atualizar</span></button>
+          <button type="button" class="btn btn-primary" data-action="resubmit">${icon('send')}<span>Enviar novamente</span></button>
+        </div>
+      </section>`;
+  }
+
   return html`
     <section class="card ess-state" role="status" aria-live="polite">
       <span class="spinner spinner-lg" aria-hidden="true"></span>
@@ -259,7 +282,7 @@ function paint() {
 
   let body;
   if (essay.status === 'draft') body = draftView(essay);
-  else if (essay.status === 'submitted') body = submittedView();
+  else if (essay.status === 'submitted') body = submittedView(essay);
   else if (essay.status === 'failed') body = failedView(essay);
   else {
     body = html`
