@@ -173,7 +173,10 @@ router.post(
       ]
     );
     await audit(req, 'exam_import.create', 'exam_import', created.id, { title: body.title, answer_key: count });
-    res.status(201).json({ ...serialize(created), answer_key_count: count });
+    // Relê com o nome do vestibular: o INSERT devolve só o id, e a tela ficava
+    // dizendo "Sem vestibular" numa leitura que tinha vestibular.
+    const completo = await loadImport(created.id);
+    res.status(201).json({ ...serialize(completo), answer_key_count: count });
   })
 );
 
@@ -183,6 +186,35 @@ router.post(
  * O cliente sobe a prova uma vez em "Provas anteriores"; ler as questões dela
  * não pode exigir enviar o mesmo arquivo de novo.
  */
+/**
+ * Matérias e assuntos com nome E identificador.
+ *
+ * A tela de conferência precisa deixar o administrador corrigir a
+ * classificação escolhendo pelo NOME — o identificador não aparece em lugar
+ * nenhum do painel, e exigir que ele o soubesse deixava a questão presa.
+ */
+router.get(
+  '/taxonomia',
+  wrap(async (req, res) => {
+    const rows = await db.many(
+      `SELECT s.slug AS subject_slug, s.name AS subject_name,
+              t.slug AS topic_slug, t.name AS topic_name
+         FROM topics t
+         JOIN subjects s ON s.id = t.subject_id AND s.active
+        WHERE t.active
+        ORDER BY s.sort_order, s.name, t.sort_order, t.name`
+    );
+    const materias = new Map();
+    for (const row of rows) {
+      if (!materias.has(row.subject_slug)) {
+        materias.set(row.subject_slug, { slug: row.subject_slug, name: row.subject_name, topics: [] });
+      }
+      materias.get(row.subject_slug).topics.push({ slug: row.topic_slug, name: row.topic_name });
+    }
+    res.json({ items: [...materias.values()] });
+  })
+);
+
 router.get(
   '/provas',
   wrap(async (req, res) => {
@@ -337,13 +369,23 @@ router.post(
       throw err;
     }
 
-    // Questão repetida acontece quando um lote começa onde o anterior terminou.
+    // Questão repetida acontece de dois jeitos: entre lotes, quando um começa
+    // onde o anterior terminou, e DENTRO do mesmo lote, quando o modelo
+    // transcreve a mesma questão duas vezes. Uma varredura de prova real
+    // trouxe as duas coisas.
     const jaVistos = new Set(
       (await db.many('SELECT number FROM exam_import_items WHERE import_id = $1 AND number IS NOT NULL', [row.id])).map(
         (item) => item.number
       )
     );
-    const novas = encontradas.filter((item) => item.number === null || !jaVistos.has(item.number));
+    const novas = [];
+    for (const item of encontradas) {
+      if (item.number !== null) {
+        if (jaVistos.has(item.number)) continue;
+        jaVistos.add(item.number);
+      }
+      novas.push(item);
+    }
 
     for (const item of novas) {
       await db.query(
@@ -399,13 +441,24 @@ router.patch(
     // corrigiu foi uma pessoa olhando a prova.
     const payload = { ...item.payload, ...campos };
     if (campos.correct) payload.answer_from_key = true;
+    // Trocar a matéria zera o assunto: assunto pertence a uma matéria, e o que
+    // valia na anterior quase nunca vale na nova.
+    if (campos.subject_slug && campos.subject_slug !== item.payload.subject_slug && !campos.topic_slug) {
+      payload.topic_slug = '';
+    }
+
+    // Item que falhou e acabou de ser corrigido volta para a fila. Sem isto a
+    // correção não servia para nada: a importação só leva o que está pendente,
+    // e o item consertado ficava preso em "falhou" para sempre.
+    const corrigiu = Object.keys(campos).length > 0;
+    const proximoStatus = status || (item.status === 'falhou' && corrigiu ? 'pendente' : null);
 
     const atualizado = await db.one(
       `UPDATE exam_import_items
           SET payload = $2::jsonb, status = coalesce($3, status), error_message = NULL
         WHERE id = $1
         RETURNING id, number, payload, status, question_id, error_message`,
-      [itemId, JSON.stringify(payload), status || null]
+      [itemId, JSON.stringify(payload), proximoStatus]
     );
     res.json(atualizado);
   })

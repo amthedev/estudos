@@ -225,6 +225,27 @@ function readStep() {
 // ---------------------------------------------------------------------
 // Passo 4 — conferência
 // ---------------------------------------------------------------------
+/** Assuntos da matéria escolhida, para o segundo seletor. */
+function assuntosDe(subjectSlug) {
+  const materia = (state.taxonomia || []).find((m) => m.slug === subjectSlug);
+  return materia ? materia.topics : [];
+}
+
+/**
+ * Como a classificação da questão aparece.
+ *
+ * O nome vem da taxonomia quando o identificador existe. Quando não existe, é
+ * porque a IA classificou num assunto que não está cadastrado — e aí o selo
+ * precisa gritar, porque é isso que impede a questão de entrar no banco.
+ */
+function classificacaoBadge(payload) {
+  const materia = (state.taxonomia || []).find((m) => m.slug === payload.subject_slug);
+  const assunto = materia ? materia.topics.find((t) => t.slug === payload.topic_slug) : null;
+  if (materia && assunto) return badge(`${materia.name} › ${assunto.name}`, 'gray');
+  if (!payload.subject_slug && !payload.topic_slug) return badge('Sem classificação', 'red', { icon: 'triangle-alert' });
+  return badge('Assunto não cadastrado — escolha abaixo', 'red', { icon: 'triangle-alert' });
+}
+
 function itemRow(item) {
   const payload = item.payload || {};
   const letras = ['A', 'B', 'C', 'D', 'E'].filter((letra) => payload[letra]);
@@ -241,7 +262,7 @@ function itemRow(item) {
         </label>
         <div class="xim-item-tags">
           ${badge(rotulo, tom)}
-          ${payload.subject_slug ? badge(`${payload.subject_slug} › ${payload.topic_slug || '?'}`, 'gray') : badge('Sem classificação', 'red')}
+          ${classificacaoBadge(payload)}
           ${semGabarito ? badge('Gabarito deduzido pela IA', 'orange', { icon: 'triangle-alert' }) : ''}
         </div>
       </header>
@@ -255,9 +276,27 @@ function itemRow(item) {
         )}
       </ol>
       ${item.error_message ? html`<p class="xim-item-error">${icon('circle-x', { size: 14 })}<span>${item.error_message}</span></p>` : ''}
-      ${pendente
+      ${pendente || item.status === 'falhou'
         ? html`
           <footer class="xim-item-actions">
+            <label class="xim-inline">
+              <span>Matéria</span>
+              <select class="select select-sm" data-action="fix-subject" data-item="${item.id}">
+                <option value="">Escolha</option>
+                ${(state.taxonomia || []).map(
+                  (m) => html`<option value="${m.slug}" ${payload.subject_slug === m.slug ? 'selected' : ''}>${m.name}</option>`
+                )}
+              </select>
+            </label>
+            <label class="xim-inline">
+              <span>Assunto</span>
+              <select class="select select-sm" data-action="fix-topic" data-item="${item.id}">
+                <option value="">Escolha</option>
+                ${assuntosDe(payload.subject_slug).map(
+                  (t) => html`<option value="${t.slug}" ${payload.topic_slug === t.slug ? 'selected' : ''}>${t.name}</option>`
+                )}
+              </select>
+            </label>
             <label class="xim-inline">
               <span>Gabarito</span>
               <select class="select select-sm" data-action="fix-correct" data-item="${item.id}">
@@ -429,14 +468,18 @@ function preencherPelaProva(id) {
 // ---------------------------------------------------------------------
 async function loadList() {
   try {
-    const [lista, exams, provas] = await Promise.all([
+    const [lista, exams, provas, taxonomia] = await Promise.all([
       api.get('/api/admin/exam-imports'),
       state.exams ? Promise.resolve({ items: state.exams }) : api.get('/api/admin/exams', { query: { limit: 100 } }),
       api.get('/api/admin/exam-imports/provas').catch(() => ({ items: [] })),
+      state.taxonomia && state.taxonomia.length
+        ? Promise.resolve({ items: state.taxonomia })
+        : api.get('/api/admin/exam-imports/taxonomia').catch(() => ({ items: [] })),
     ]);
     state.list = lista.items || [];
     state.exams = Array.isArray(exams) ? exams : exams.items || [];
     state.provas = provas.items || [];
+    state.taxonomia = taxonomia.items || [];
     if (state.provaEscolhida && !state.provas.some((p) => p.id === state.provaEscolhida)) {
       state.provaEscolhida = null;
     }
@@ -680,6 +723,7 @@ export default async function renderPage(ctx) {
     list: [],
     exams: null,
     provas: [],
+    taxonomia: [],
     // Prova anterior vinda de "/admin/ler-prova?prova=<id>", quando o professor
     // chega pelo atalho da tela de Provas anteriores.
     provaEscolhida: (ctx.query && ctx.query.prova) || null,
@@ -715,6 +759,12 @@ export default async function renderPage(ctx) {
     ),
     on(ctx.el, 'change', '[data-action="fix-correct"]', (event, trigger) =>
       patchItem(trigger.dataset.item, { correct: trigger.value })
+    ),
+    on(ctx.el, 'change', '[data-action="fix-subject"]', (event, trigger) =>
+      patchItem(trigger.dataset.item, { subject_slug: trigger.value })
+    ),
+    on(ctx.el, 'change', '[data-action="fix-topic"]', (event, trigger) =>
+      patchItem(trigger.dataset.item, { topic_slug: trigger.value })
     ),
     on(ctx.el, 'click', '[data-action="delete"]', async (event, trigger) => {
       const ok = await confirm({

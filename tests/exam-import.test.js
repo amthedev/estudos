@@ -341,6 +341,7 @@ describe('Leitura de prova pelo painel', () => {
     });
     assert.equal(criada.status, 201, JSON.stringify(criada.body));
     assert.equal(criada.body.past_exam_id, prova.id);
+    assert.equal(criada.body.exam_short_name, 'ENEM', 'a resposta já traz o vestibular, para a tela não dizer "sem vestibular"');
 
     // E a prova passa a contar quantas leituras já teve.
     const lista = await admin.agent.get('/api/admin/exam-imports/provas');
@@ -353,6 +354,180 @@ describe('Leitura de prova pelo painel', () => {
     const res = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
     assert.equal(res.status, 409);
     assert.match(res.body.error.message, /texto/i);
+  });
+
+  it('o caminho inteiro: prova cadastrada → leitura → banco → o aluno acha pesquisando', async () => {
+    // É exatamente o que o cliente pediu: "as questões desses PDF tinha que tá
+    // na parte de questões, o pessoal pesquisar lá e aparecer pra eles".
+    const prova = await db.one(
+      `INSERT INTO past_exams (exam_id, year, title, board, pdf_url)
+       VALUES ($1, 2023, 'ENEM PPL 2023 — caminho completo', 'INEP', '/uploads/provas/ppl-completo.pdf')
+       RETURNING id`,
+      [exam.id]
+    );
+
+    // 1. A leitura nasce ligada à prova — sem reenviar arquivo nenhum.
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'ENEM PPL 2023',
+      past_exam_id: prova.id,
+      exam_id: exam.id,
+      year: 2023,
+      board: 'INEP',
+      answer_key: '1-A 2-B 3-C 4-D',
+    });
+    assert.equal(criada.status, 201, JSON.stringify(criada.body));
+
+    // 2. O texto da prova entra e é varrido até o fim.
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: fakeExam(4),
+      done: true,
+    });
+    let done = false;
+    let ultimo = null;
+    for (let volta = 0; volta < 10 && !done; volta += 1) {
+      ultimo = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
+      assert.equal(ultimo.status, 200, JSON.stringify(ultimo.body));
+      done = ultimo.body.done;
+    }
+    assert.equal(done, true);
+
+    // 3. As questões conferidas vão para o banco.
+    const pendentes = ultimo.body.items.filter((i) => i.status === 'pendente');
+    assert.ok(pendentes.length >= 3, `encontrou ${pendentes.length} questões`);
+    const importadas = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/import`, {
+      item_ids: pendentes.map((i) => i.id),
+    });
+    assert.equal(importadas.status, 200, JSON.stringify(importadas.body));
+    assert.equal(importadas.body.failed, 0, JSON.stringify(importadas.body.errors));
+
+    // 4. O ALUNO acha a questão pesquisando — pelo assunto, pelo ano e pela prova.
+    const aluno = await ctx.registerStudent({ name: 'Aluna que Pesquisa' });
+    const topico = await db.one('SELECT topic_id FROM questions WHERE id = $1', [importadas.body.ids[0]]);
+
+    const porAssunto = await aluno.agent.get(`/api/questions?topic_id=${topico.topic_id}`);
+    assert.equal(porAssunto.status, 200, JSON.stringify(porAssunto.body));
+    assert.ok(porAssunto.body.items.length >= 3, 'as questões da prova aparecem no banco do aluno');
+
+    const porAno = await aluno.agent.get('/api/questions?year=2023');
+    assert.ok(porAno.body.items.length >= 3, 'e aparecem filtrando pelo ano da prova');
+
+    const porProva = await aluno.agent.get(`/api/questions?exam_id=${exam.id}`);
+    assert.ok(porProva.body.items.length >= 3, 'e aparecem filtrando pela prova de origem');
+
+    // 5. O gabarito nunca sai junto com a questão.
+    for (const questao of porAssunto.body.items) {
+      for (const alternativa of questao.options) {
+        assert.equal(alternativa.is_correct, undefined);
+      }
+    }
+
+    // 6. E dá para responder de verdade.
+    const primeira = porAssunto.body.items[0];
+    const correta = await db.one('SELECT id FROM question_options WHERE question_id = $1 AND is_correct', [primeira.id]);
+    const resposta = await aluno.agent.post(`/api/questions/${primeira.id}/answer`, {
+      option_id: correta.id,
+      context: 'bank',
+    });
+    assert.equal(resposta.status, 201, JSON.stringify(resposta.body));
+    assert.equal(resposta.body.is_correct, true);
+  });
+
+  it('questão repetida dentro do mesmo lote não entra duas vezes', async () => {
+    // Achado em uma varredura de prova real: a checagem só olhava os lotes
+    // anteriores, então o modelo transcrevendo a mesma questão duas vezes na
+    // mesma resposta passava direto.
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'Prova com questão repetida',
+      exam_id: exam.id,
+    });
+    // O mesmo bloco de questões duas vezes seguidas no texto.
+    const bloco = fakeExam(3);
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: `${bloco}\n${bloco}`,
+      done: true,
+    });
+
+    let done = false;
+    let ultimo = null;
+    for (let volta = 0; volta < 12 && !done; volta += 1) {
+      ultimo = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
+      assert.equal(ultimo.status, 200, JSON.stringify(ultimo.body));
+      done = ultimo.body.done;
+    }
+    assert.equal(done, true);
+
+    const numeros = ultimo.body.items.map((i) => i.number).filter((n) => n != null);
+    assert.equal(new Set(numeros).size, numeros.length, `números repetidos: ${numeros.join(', ')}`);
+  });
+
+  it('questão que a IA classificou errado não fica presa', async () => {
+    // O caso que trava uma prova de verdade: a IA escolhe um assunto que não
+    // existe, a questão é recusada — e antes não havia como consertar, porque
+    // a importação só leva o que está pendente e o item ficava em "falhou".
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'Prova com classificação errada',
+      exam_id: exam.id,
+    });
+    await db.query(
+      `INSERT INTO exam_import_items (import_id, number, payload) VALUES ($1, 1, $2::jsonb)`,
+      [
+        criada.body.id,
+        JSON.stringify({
+          number: 1,
+          statement: 'Enunciado transcrito com tamanho suficiente para passar na validação.',
+          A: 'a', B: 'b', C: 'c', D: 'd', E: 'e',
+          correct: 'B',
+          subject_slug: 'matematica',
+          topic_slug: 'assunto-que-a-ia-inventou',
+          difficulty: 2,
+          answer_from_key: true,
+        }),
+      ]
+    );
+    const item = await db.one('SELECT id FROM exam_import_items WHERE import_id = $1', [criada.body.id]);
+
+    // 1. A importação recusa, e diz por quê.
+    const primeira = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/import`, {
+      item_ids: [item.id],
+    });
+    assert.equal(primeira.body.failed, 1);
+    assert.match(primeira.body.errors[0].message, /Assunto .* não encontrado/i);
+    const falhou = await db.one('SELECT status FROM exam_import_items WHERE id = $1', [item.id]);
+    assert.equal(falhou.status, 'falhou');
+
+    // 2. O administrador escolhe o assunto certo pelo nome — a tela oferece a lista.
+    const taxonomia = await admin.agent.get('/api/admin/exam-imports/taxonomia');
+    assert.equal(taxonomia.status, 200);
+    const materia = taxonomia.body.items.find((m) => m.slug === 'matematica');
+    assert.ok(materia && materia.topics.length, 'a lista traz matéria e assuntos com nome');
+
+    const corrigido = await admin.agent.patch(`/api/admin/exam-imports/${criada.body.id}/items/${item.id}`, {
+      topic_slug: materia.topics[0].slug,
+    });
+    assert.equal(corrigido.status, 200, JSON.stringify(corrigido.body));
+    assert.equal(corrigido.body.status, 'pendente', 'corrigir devolve a questão para a fila');
+    assert.equal(corrigido.body.error_message, null);
+
+    // 3. E agora entra no banco.
+    const segunda = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/import`, {
+      item_ids: [item.id],
+    });
+    assert.equal(segunda.body.imported, 1, JSON.stringify(segunda.body.errors));
+  });
+
+  it('trocar a matéria limpa o assunto que valia na anterior', async () => {
+    const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Troca de matéria' });
+    await db.query(
+      `INSERT INTO exam_import_items (import_id, number, payload) VALUES ($1, 9, $2::jsonb)`,
+      [criada.body.id, JSON.stringify({ statement: 'Enunciado suficiente.', A: 'a', B: 'b', correct: 'A', subject_slug: 'matematica', topic_slug: 'porcentagem' })]
+    );
+    const item = await db.one('SELECT id FROM exam_import_items WHERE import_id = $1', [criada.body.id]);
+
+    const res = await admin.agent.patch(`/api/admin/exam-imports/${criada.body.id}/items/${item.id}`, {
+      subject_slug: 'outra-materia',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.payload.topic_slug, '', 'assunto pertence a uma matéria; o antigo não vale na nova');
   });
 
   it('apagar a leitura leva os itens junto', async () => {
