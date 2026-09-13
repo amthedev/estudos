@@ -54,6 +54,55 @@ const emptyToNull = (value) => (typeof value === 'string' && value.trim() === ''
 const optionalUuid = z.preprocess(emptyToUndefined, uuid.optional());
 
 const LIST_LIMIT = 100;
+/** Prazo para o servidor do arquivo começar a responder. */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+/** O Blob recusa rajada com 429 — ler 25 provas seguidas esbarra nisso. */
+const DOWNLOAD_TENTATIVAS = 3;
+
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Baixa o PDF da prova, com prazo e retentativa.
+ *
+ * Sem isto, uma recusa temporária do armazenamento virava 502 na cara de quem
+ * estava lendo as provas em lote — e, como o lote só contava a falha, a prova
+ * simplesmente não era lida e ninguém sabia por quê.
+ */
+async function baixarPdf(destino) {
+  let ultimoStatus = 0;
+  for (let tentativa = 1; tentativa <= DOWNLOAD_TENTATIVAS; tentativa += 1) {
+    const controller = new AbortController();
+    const relogio = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+    let resposta = null;
+    try {
+      resposta = await fetch(destino, { redirect: 'follow', signal: controller.signal });
+    } catch (err) {
+      if (tentativa === DOWNLOAD_TENTATIVAS) {
+        throw new AppError(
+          504,
+          'timeout',
+          'O servidor onde o PDF está guardado demorou demais para responder. Tente de novo em instantes.'
+        );
+      }
+      await esperar(1500 * tentativa);
+      continue;
+    } finally {
+      clearTimeout(relogio);
+    }
+    if (resposta.ok && resposta.body) return resposta;
+    ultimoStatus = resposta.status;
+    const valeTentarDeNovo = resposta.status === 429 || resposta.status >= 500;
+    if (!valeTentarDeNovo || tentativa === DOWNLOAD_TENTATIVAS) break;
+    await esperar(1500 * tentativa);
+  }
+  throw new AppError(
+    502,
+    'bad_gateway',
+    ultimoStatus === 429
+      ? 'O armazenamento recusou tantos downloads seguidos. Espere um minuto e leia esta prova de novo.'
+      : `Não foi possível baixar o PDF desta prova (HTTP ${ultimoStatus}).`
+  );
+}
 /** Cada pedaço do texto cabe folgado no corpo aceito pelo servidor (2 MB). */
 const MAX_CHUNK_CHARS = 400_000;
 
@@ -74,6 +123,10 @@ const textBody = z
     chunk: z.string().max(MAX_CHUNK_CHARS),
     done: z.boolean().optional(),
     reset: z.boolean().optional(),
+    // Endereço do PDF que acabou de ser guardado. Sem isto o arquivo subia para
+    // o Blob e não ficava registrado em lugar nenhum: sumia no F5, e do lado de
+    // fora parecia que "o PDF não subiu".
+    source_url: z.string().trim().url().max(500).optional(),
   })
   .strict();
 
@@ -156,12 +209,13 @@ async function itemCounts(importId) {
             count(*) FILTER (WHERE status = 'pendente')::int AS pendentes,
             count(*) FILTER (WHERE status = 'importada')::int AS importadas,
             count(*) FILTER (WHERE status = 'recusada')::int AS recusadas,
+            count(*) FILTER (WHERE status = 'falhou')::int AS falharam,
             count(*) FILTER (WHERE status = 'pendente'
                              AND coalesce((payload->>'answer_from_key')::boolean, false))::int AS com_gabarito
        FROM exam_import_items WHERE import_id = $1`,
     [importId]
   );
-  return row || { total: 0, pendentes: 0, importadas: 0, recusadas: 0, com_gabarito: 0 };
+  return row || { total: 0, pendentes: 0, importadas: 0, recusadas: 0, falharam: 0, com_gabarito: 0 };
 }
 
 router.get(
@@ -172,11 +226,26 @@ router.get(
               i.chars_total, i.chars_read, i.found_count, i.imported_count, i.last_number,
               i.error_message, i.created_at, i.updated_at,
               (i.document_text IS NOT NULL AND i.document_text <> '') AS has_text,
-              (SELECT count(*)::int FROM exam_import_items it
-                WHERE it.import_id = i.id AND it.status = 'pendente') AS pending_count,
+              c.pendentes AS pending_count,
+              -- Contados dos itens, não dos acumuladores da leitura: se o
+              -- processo cair entre gravar as questões e somar o contador, o
+              -- acumulador fica para trás e a linha passa a mentir. E o que
+              -- falhou não aparecia em número nenhum — a conta "8 lidas, 1 no
+              -- banco" não fechava e ninguém sabia onde estavam as outras 7.
+              c.lidas AS read_count,
+              c.no_banco AS in_bank_count,
+              c.nao_entraram AS rejected_count,
               e.short_name AS exam_short_name
          FROM exam_imports i
          LEFT JOIN exams e ON e.id = i.exam_id
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS lidas,
+                  count(*) FILTER (WHERE it.status = 'pendente')::int AS pendentes,
+                  count(*) FILTER (WHERE it.status = 'importada')::int AS no_banco,
+                  count(*) FILTER (WHERE it.status IN ('falhou', 'recusada'))::int AS nao_entraram
+             FROM exam_import_items it
+            WHERE it.import_id = i.id
+         ) c ON true
         ORDER BY i.created_at DESC
         LIMIT $1`,
       [LIST_LIMIT]
@@ -319,7 +388,9 @@ router.get(
     }
 
     const url = String(endereco).trim();
-    res.setHeader('Content-Type', 'application/pdf');
+    // O cabeçalho de PDF vai só quando o arquivo está a caminho. Marcado antes,
+    // ele saía junto com o JSON de erro — e o leitor de PDF do navegador
+    // mostrava "resposta inesperada do servidor" no lugar da explicação.
 
     // Caminho interno: o arquivo está no disco da própria aplicação.
     if (url.startsWith('/uploads/')) {
@@ -327,6 +398,7 @@ router.get(
       if (!alvo.startsWith(uploads.UPLOADS_DIR) || !fs.existsSync(alvo)) {
         throw new AppError(404, 'not_found', 'O arquivo desta prova não foi encontrado no servidor.');
       }
+      res.setHeader('Content-Type', 'application/pdf');
       // pipeline e não pipe: `pipe` não repassa erro, e um erro de stream sem
       // tratamento derruba o processo inteiro — é o que acontecia quando o
       // navegador desistia no meio do download.
@@ -339,10 +411,7 @@ router.get(
     // Link do Google Drive abre o visualizador, não o arquivo. Sem converter,
     // a leitura receberia uma página HTML e diria que o PDF não tem texto.
     const destino = examImport.directDownloadUrl(url);
-    const resposta = await fetch(destino, { redirect: 'follow' });
-    if (!resposta.ok || !resposta.body) {
-      throw new AppError(502, 'bad_gateway', `Não foi possível baixar o PDF desta prova (HTTP ${resposta.status}).`);
-    }
+    const resposta = await baixarPdf(destino);
 
     // O Drive devolve HTML quando o arquivo não é público — e um HTML servido
     // como PDF vira "este arquivo não tem texto", que manda olhar o lugar errado.
@@ -357,6 +426,7 @@ router.get(
       );
     }
 
+    res.setHeader('Content-Type', 'application/pdf');
     const tamanho = resposta.headers.get('content-length');
     if (tamanho) res.setHeader('Content-Length', tamanho);
     // Mesmo motivo do caminho de disco: cliente que desiste no meio não pode
@@ -451,10 +521,11 @@ router.post(
       throw new AppError(409, 'conflict', 'Esta leitura já foi processada. Crie outra para enviar um texto novo.');
     }
 
-    const { chunk, done, reset } = req.valid.body;
-    if (reset && !['lendo', 'falhou'].includes(row.status)) {
-      throw new AppError(409, 'conflict', 'Só é possível reiniciar um envio que ainda não começou a ser varrido.');
-    }
+    const { chunk, done, reset, source_url: sourceUrl } = req.valid.body;
+    // O que impede reenviar o texto é a varredura já ter começado, não o rótulo
+    // da situação: uma leitura marcada como "pronta" que ficou sem texto nenhum
+    // era recusada com uma mensagem que dizia o contrário do que acontecia, e
+    // não havia como consertá-la.
     if (reset && Number(row.chars_read) > 0) {
       throw new AppError(409, 'conflict', 'Esta leitura já começou. Continue a varredura em vez de reenviar o texto.');
     }
@@ -464,10 +535,11 @@ router.post(
               chars_total   = length(CASE WHEN $4 THEN $2 ELSE coalesce(document_text, '') || $2 END),
               chars_read    = CASE WHEN $4 THEN 0 ELSE chars_read END,
               status        = CASE WHEN $3 THEN 'pronta' ELSE 'lendo' END,
+              source_url    = coalesce($5, source_url),
               error_message = NULL
         WHERE id = $1
         RETURNING *`,
-      [row.id, chunk, Boolean(done), Boolean(reset)]
+      [row.id, chunk, Boolean(done), Boolean(reset), sourceUrl || null]
     );
 
     if (Number(atualizado.chars_total) > examImport.MAX_DOCUMENT_CHARS) {

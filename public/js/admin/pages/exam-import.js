@@ -400,6 +400,15 @@ function loteView() {
           <div><dt>Questões encontradas</dt><dd>${fmtNumber(lote.encontradas)}</dd></div>
           <div><dt>Provas com problema</dt><dd>${fmtNumber(lote.falhas)}</dd></div>
         </dl>
+        ${(lote.erros || []).length
+          ? html`
+            <div class="xim-lote-erros">
+              <h3 class="xim-step-title">${icon('triangle-alert')}<span>Provas que não foram lidas</span></h3>
+              <ul class="xim-lote-erros-lista">
+                ${lote.erros.map((erro) => html`<li><strong>${erro.prova}</strong><span class="xim-row-sub">${erro.motivo}</span></li>`)}
+              </ul>
+            </div>`
+          : ''}
         ${lote.terminou
           ? html`<p class="xim-done">${icon('circle-check')}<span>Carga concluída. Confira as questões em cada leitura.</span></p>`
           : html`<button type="button" class="btn btn-ghost" data-action="parar-lote">${icon('circle-x')}<span>Parar</span></button>`}
@@ -433,7 +442,7 @@ async function lerTodasAsProvas() {
   });
   if (!ok) return;
 
-  state.lote = { total: pendentes.length, feitas: 0, encontradas: 0, noBanco: 0, aConferir: 0, falhas: 0, atual: '', parar: false, terminou: false };
+  state.lote = { total: pendentes.length, feitas: 0, encontradas: 0, noBanco: 0, aConferir: 0, falhas: 0, erros: [], atual: '', parar: false, terminou: false };
   state.busy = true;
   paint();
 
@@ -444,7 +453,11 @@ async function lerTodasAsProvas() {
     try {
       await lerProvaInteira(prova);
     } catch (err) {
+      // O motivo tem que sobrar na tela. Antes ele ficava só no console do
+      // navegador: quem rodou a carga via "Provas com problema: 3" e não tinha
+      // como saber quais nem por quê.
       state.lote.falhas += 1;
+      state.lote.erros.push({ prova: prova.title, motivo: (err && err.message) || 'erro desconhecido' });
       console.error(`[ler prova] ${prova.title}: ${err.message}`);
     }
     state.lote.feitas += 1;
@@ -549,7 +562,15 @@ function listView() {
           : html`
             <table class="table">
               <thead>
-                <tr><th>Prova</th><th>Situação</th><th class="nowrap">Encontradas</th><th class="nowrap">No banco</th><th></th></tr>
+                <tr>
+                  <th>Prova</th>
+                  <th>Situação</th>
+                  <th class="nowrap">Lidas da prova</th>
+                  <th class="nowrap">No banco de questões</th>
+                  <th class="nowrap">A conferir</th>
+                  <th class="nowrap">Não entraram</th>
+                  <th></th>
+                </tr>
               </thead>
               <tbody>
                 ${items.map((job) => {
@@ -561,14 +582,17 @@ function listView() {
                         <span class="xim-row-sub">${job.exam_short_name || '—'} · ${fmtDateTime(job.created_at)}</span>
                       </td>
                       <td>${badge(rotulo, tom)} <span class="xim-row-sub">${job.percent}%</span></td>
-                      <td class="nowrap">${fmtNumber(job.found_count)}</td>
+                      <td class="nowrap">${fmtNumber(job.read_count ?? job.found_count)}</td>
+                      <td class="nowrap">${fmtNumber(job.in_bank_count ?? job.imported_count)}</td>
                       <td class="nowrap">
-                        ${fmtNumber(job.imported_count)}
                         ${job.pending_count > 0
-                          ? html`<span class="xim-row-sub xim-row-warn"
-                              >${fmtNumber(job.pending_count)} fora do banco</span
-                            >`
-                          : ''}
+                          ? html`<span class="xim-row-warn">${fmtNumber(job.pending_count)}</span>`
+                          : '—'}
+                      </td>
+                      <td class="nowrap">
+                        ${job.rejected_count > 0
+                          ? html`<span class="xim-row-warn">${fmtNumber(job.rejected_count)}</span>`
+                          : '—'}
                       </td>
                       <td class="nowrap">
                         <button type="button" class="btn btn-ghost btn-sm" data-action="open" data-id="${job.id}">
@@ -794,12 +818,17 @@ async function lerTexto(origem, { guardar = null, aoFalhar = null } = {}) {
     // Guardar o arquivo é conveniência, não requisito: falhar aqui não pode
     // derrubar uma leitura que já deu certo.
     let url = null;
+    let avisoArquivo = null;
     if (guardar) {
       try {
         const saved = await uploadFile(guardar, { folder: 'provas' });
         url = saved && saved.url;
       } catch (err) {
-        console.warn('[ler prova] o PDF não pôde ser guardado:', err.message);
+        // Não derruba a leitura, mas também não pode passar em silêncio: o
+        // painel dizia "texto lido" e o arquivo não estava guardado em canto
+        // nenhum, o que de fora parece "o PDF não subiu".
+        avisoArquivo = (err && err.message) || 'motivo desconhecido';
+        console.warn('[ler prova] o PDF não pôde ser guardado:', avisoArquivo);
       }
     }
 
@@ -809,16 +838,23 @@ async function lerTexto(origem, { guardar = null, aoFalhar = null } = {}) {
     const partes = splitForUpload(text);
     let atualizado = null;
     for (const [index, chunk] of partes.entries()) {
+      const ultimo = index === partes.length - 1;
       atualizado = await api.post(`/api/admin/exam-imports/${state.current.id}/text`, {
         chunk,
-        done: index === partes.length - 1,
+        done: ultimo,
         reset: index === 0,
+        // Vai junto do último pedaço para o endereço do arquivo ficar gravado
+        // na leitura, e não apenas neste objeto em memória.
+        ...(ultimo && url ? { source_url: url } : {}),
       });
     }
-    if (url) atualizado.source_url = url;
     state.current = { ...state.current, ...atualizado };
     state.readProgress = null;
-    toast(`Texto lido: ${fmtNumber(text.length)} caracteres em ${pages} páginas.`, { type: 'success' });
+    if (avisoArquivo) {
+      toast(`Texto lido, mas o PDF não pôde ser guardado: ${avisoArquivo}`, { type: 'warning' });
+    } else {
+      toast(`Texto lido: ${fmtNumber(text.length)} caracteres em ${pages} páginas.`, { type: 'success' });
+    }
   } catch (err) {
     state.readProgress = null;
     state.readError =

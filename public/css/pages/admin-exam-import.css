@@ -230,6 +230,27 @@
   border-left: 3px solid var(--primary);
 }
 
+/* O motivo de cada prova que não foi lida. Sem isto o operador só via o número
+   de falhas e tinha que abrir o console do navegador para saber quais foram. */
+.xim-lote-erros {
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--border);
+}
+.xim-lote-erros-lista {
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s-2);
+}
+.xim-lote-erros-lista li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+}
+
 /* "Encontrada" não é "no banco": a diferença entre as duas colunas é a razão
    de alguém ler 25 provas e o aluno continuar sem ver questão nenhuma. */
 .xim-row-warn {
