@@ -46,5 +46,8 @@ module.exports = {
     essay_weekly: true,
     simulado_every_days: 14,
   },
+  // Permite que um simulado completo seja realmente completado pela IA quando
+  // o banco ainda não tiver as 80 questões do recorte escolhido.
+  simulado_ai_questions_max: 80,
   private_lessons_enabled: true,
 };

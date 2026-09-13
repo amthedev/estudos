@@ -139,6 +139,25 @@ const pastExams = enemYears.flatMap((year) => [1, 2].map((day) => ({
   sort_order: day,
 })));
 
+// O acervo PPL foi combinado como três provas adicionais. Cada aplicação tem
+// dois dias; usamos os cadernos azuis e os gabaritos oficiais do Inep, já
+// publicados no mesmo Blob dos demais PDFs para a leitura não depender do
+// certificado TLS incompleto do servidor de download do Inep.
+const enemPplYears = [2024, 2023, 2022];
+pastExams.push(...enemPplYears.flatMap((year) => [1, 2].map((day) => ({
+  exam: 'enem',
+  year,
+  day,
+  title: `ENEM PPL ${year} - ${day}º dia`,
+  board: 'INEP',
+  ...publishedDocument(
+    `/assets/past-exams/enem-ppl/${year}/enem-ppl-${year}-dia-${day}.pdf`,
+    `/assets/past-exams/enem-ppl/${year}/enem-ppl-${year}-gabarito-dia-${day}.pdf`
+  ),
+  notes: 'Reaplicação / Pessoas Privadas de Liberdade (PPL)',
+  sort_order: 10 + day,
+}))));
+
 pastExams.push(
   {
     exam: 'barro-branco',

@@ -141,6 +141,9 @@ describe('Cena 2 — as questões da prova no banco de questões', () => {
       exam_id: enem.id,
       title: 'ENEM PPL 2024 — 1º dia',
       year: 2024,
+      // No navegador este texto é extraído do PDF de gabarito cadastrado na
+      // Cena 1 antes de criar a leitura.
+      answer_key: '1-A 2-B 3-C 4-D 5-E 6-A',
     });
     assert.equal(criada.status, 201, JSON.stringify(criada.body));
     leitura = criada.body;
@@ -167,26 +170,22 @@ describe('Cena 2 — as questões da prova no banco de questões', () => {
     );
   });
 
-  it('mas elas ainda NÃO estão no banco — falta um passo, e é aqui que o cliente parou', async () => {
+  it('as confirmadas pelo gabarito já entram no banco durante a própria varredura', async () => {
     const res = await aluno.agent.get('/api/questions');
-    assert.equal(res.body.total, 0, 'questão lida ainda é rascunho: só entra no banco depois de importada');
+    assert.equal(res.body.total, 6, 'o aluno não pode abrir a tela e encontrar o banco vazio depois da leitura');
 
-    const pendentes = await db.one(
-      `SELECT count(*)::int AS total FROM exam_import_items WHERE import_id = $1 AND status = 'pendente'`,
+    const importadas = await db.one(
+      `SELECT count(*)::int AS total FROM exam_import_items WHERE import_id = $1 AND status = 'importada'`,
       [leitura.id]
     );
-    assert.equal(pendentes.total, 6, 'as seis estão esperando alguém mandar para o banco');
+    assert.equal(importadas.total, 6, 'o gabarito oficial dispensa marcar questão por questão');
   });
 
-  it('o admin manda as questões para o banco', async () => {
-    const itens = await admin.agent.get(`/api/admin/exam-imports/${leitura.id}`);
-    assert.equal(itens.status, 200, JSON.stringify(itens.body));
-    const ids = (itens.body.items || []).filter((i) => i.status === 'pendente').map((i) => i.id);
-    assert.equal(ids.length, 6, 'a tela precisa entregar as seis para escolher');
-
-    const res = await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/import`, { item_ids: ids });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.imported, 6, `falhas: ${JSON.stringify(res.body.errors)}`);
+  it('repetir a importação automática não duplica as questões', async () => {
+    const res = await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/import`, { com_gabarito: true });
+    assert.equal(res.status, 400, 'não deve sobrar questão confirmada para importar outra vez');
+    const total = await db.one('SELECT count(*)::int AS total FROM questions WHERE source_exam_id = $1', [enem.id]);
+    assert.equal(total.total, 6);
   });
 
   it('agora sim: o aluno abre Questões e elas estão lá', async () => {

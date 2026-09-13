@@ -404,8 +404,111 @@ router.post(
  */
 const emAndamento = new Map();
 
+/** Questões pendentes cuja alternativa correta veio do gabarito oficial. */
+async function itensConfirmadosPeloGabarito(importId) {
+  return db.many(
+    `SELECT id, number, payload FROM exam_import_items
+      WHERE import_id = $1 AND status = 'pendente'
+        AND coalesce((payload->>'answer_from_key')::boolean, false)
+      ORDER BY number NULLS LAST`,
+    [importId]
+  );
+}
+
+/**
+ * Grava itens já selecionados no banco de questões.
+ *
+ * É compartilhado pela importação automática do gabarito e pelo botão de
+ * revisão. Assim os dois caminhos aplicam exatamente a mesma validação e
+ * atualizam os mesmos contadores.
+ */
+async function importarItens(row, items, adminId) {
+  const maps = await loadSlugMaps();
+  const errors = [];
+  const criadas = [];
+
+  for (const item of items) {
+    try {
+      const questionId = await db.tx(async (client) => {
+        // A seleção aconteceu antes da transação. Trava e relê a linha para
+        // impedir que dois cliques simultâneos gravem duas questões a partir
+        // do mesmo item, e para respeitar uma correção feita nesse intervalo.
+        const atual = await client.one(
+          `SELECT payload, status FROM exam_import_items WHERE id = $1 FOR UPDATE`,
+          [item.id]
+        );
+        if (!atual || atual.status !== 'pendente') return null;
+
+        const bruto = { ...(atual.payload || {}) };
+        if (row.exam_id) bruto.exams = [row.exam_id];
+        const dados = buildImportRow(bruto, maps);
+
+        if (row.exam_id) {
+          dados.exam_ids = [row.exam_id];
+          dados.source_exam_id = row.exam_id;
+        }
+
+        const id = await insertQuestion(client, dados, adminId || null);
+        await client.query(
+          `UPDATE exam_import_items SET status = 'importada', question_id = $2, error_message = NULL WHERE id = $1`,
+          [item.id, id]
+        );
+        return id;
+      });
+      if (questionId) criadas.push(questionId);
+    } catch (err) {
+      const mensagem =
+        err instanceof RowError
+          ? err.message
+          : 'Não foi possível gravar esta questão. Revise os dados e tente de novo.';
+      errors.push({ number: item.number, message: mensagem });
+      // Se outro pedido conseguiu importar enquanto este falhava, não desfaça
+      // o estado vencedor. A condição mantém a atualização idempotente.
+      await db.query(
+        `UPDATE exam_import_items SET status = 'falhou', error_message = $2
+          WHERE id = $1 AND status = 'pendente'`,
+        [item.id, mensagem]
+      );
+      if (!(err instanceof RowError)) {
+        console.error(`[exam-imports] falha ao gravar a questão ${item.number}:`, err.message);
+      }
+    }
+  }
+
+  const atualizado = await db.one(
+    `UPDATE exam_imports SET imported_count = imported_count + $2 WHERE id = $1 RETURNING *`,
+    [row.id, criadas.length]
+  );
+  return { atualizado, criadas, errors };
+}
+
+/** Importa, sem outro clique, tudo que a banca já respondeu oficialmente. */
+async function importarConfirmadasAutomaticamente(row, adminId) {
+  const confirmadas = await itensConfirmadosPeloGabarito(row.id);
+  if (!confirmadas.length) return { imported: 0, failed: 0 };
+
+  const resultado = await importarItens(row, confirmadas, adminId);
+  await audit(
+    adminId ? { admin: { id: adminId } } : null,
+    'exam_import.auto_import',
+    'exam_import',
+    row.id,
+    {
+      requested: confirmadas.length,
+      imported: resultado.criadas.length,
+      failed: resultado.errors.length,
+    }
+  );
+  return { imported: resultado.criadas.length, failed: resultado.errors.length };
+}
+
 /** Varre UM lote e grava o resultado. Roda solta, fora da requisição. */
 async function varrerUmLote(row, adminId) {
+  // Recupera também itens seguros deixados por uma tentativa anterior. A
+  // próxima chamada de IA pode falhar; o que já veio do gabarito não depende
+  // dela e não deve continuar preso.
+  await importarConfirmadasAutomaticamente(row, adminId);
+
   const batch = examImport.nextBatch(row.document_text, Number(row.chars_read) || 0);
   if (!batch) {
     await db.query(`UPDATE exam_imports SET status = 'concluida' WHERE id = $1`, [row.id]);
@@ -456,6 +559,11 @@ async function varrerUmLote(row, adminId) {
     ]);
   }
 
+  // Gabarito oficial não precisa de conferência humana. Antes isso só
+  // acontecia no botão de leitura em massa; ao ler uma prova individualmente,
+  // o painel dizia que terminou mas o banco do aluno continuava vazio.
+  await importarConfirmadasAutomaticamente(row, adminId);
+
   const fim = batch.end >= String(row.document_text).length;
   await db.query(
     `UPDATE exam_imports
@@ -472,9 +580,15 @@ router.post(
   validate({ params: idParams }),
   wrap(async (req, res) => {
     const row = await loadImport(req.valid.params.id);
+    const adminId = req.admin ? req.admin.id : null;
     if (!row.document_text) {
       throw new AppError(409, 'conflict', 'Envie o texto da prova antes de varrer.');
     }
+
+    // Faz primeiro o trabalho determinístico. Mesmo que não exista mais texto
+    // para varrer, ou que a próxima chamada de IA falhe, o gabarito que já foi
+    // extraído chega ao banco.
+    await importarConfirmadasAutomaticamente(row, adminId);
 
     // "extraindo" órfão: a linha diz que está varrendo, mas ninguém está — este
     // processo não a conhece (emAndamento é da memória e some no restart) e o
@@ -499,7 +613,6 @@ router.post(
       // "já está rodando?" e o "marquei que está", dois cliques ao mesmo tempo
       // passavam os dois pela porta e o mesmo trecho era varrido — e pago —
       // duas vezes.
-      const adminId = req.admin ? req.admin.id : null;
       const trabalho = (async () => {
         await db.query(
           `UPDATE exam_imports SET status = 'extraindo', error_message = NULL, updated_at = now() WHERE id = $1`,
@@ -578,13 +691,7 @@ router.post(
   wrap(async (req, res) => {
     const row = await loadImport(req.valid.params.id);
     const items = req.valid.body.com_gabarito
-      ? await db.many(
-          `SELECT id, number, payload FROM exam_import_items
-            WHERE import_id = $1 AND status = 'pendente'
-              AND coalesce((payload->>'answer_from_key')::boolean, false)
-            ORDER BY number NULLS LAST`,
-          [row.id]
-        )
+      ? await itensConfirmadosPeloGabarito(row.id)
       : await db.many(
           `SELECT id, number, payload FROM exam_import_items
             WHERE import_id = $1 AND id = ANY($2::uuid[]) AND status = 'pendente'
@@ -601,58 +708,10 @@ router.post(
       );
     }
 
-    const maps = await loadSlugMaps();
-    const errors = [];
-    const criadas = [];
-
-    for (const item of items) {
-      const payload = item.payload || {};
-      const bruto = { ...payload };
-      // A prova de origem entra como referência da questão.
-      if (row.exam_id) bruto.exams = [row.exam_id];
-
-      let dados;
-      try {
-        dados = buildImportRow(bruto, maps);
-      } catch (err) {
-        if (!(err instanceof RowError)) throw err;
-        errors.push({ number: item.number, message: err.message });
-        await db.query(`UPDATE exam_import_items SET status = 'falhou', error_message = $2 WHERE id = $1`, [
-          item.id,
-          err.message,
-        ]);
-        continue;
-      }
-
-      if (row.exam_id) {
-        dados.exam_ids = [row.exam_id];
-        dados.source_exam_id = row.exam_id;
-      }
-
-      try {
-        // Cada questão em sua própria transação: uma falha não desfaz as anteriores.
-        const questionId = await db.tx(async (client) =>
-          insertQuestion(client, dados, req.admin ? req.admin.id : null)
-        );
-        await db.query(
-          `UPDATE exam_import_items SET status = 'importada', question_id = $2, error_message = NULL WHERE id = $1`,
-          [item.id, questionId]
-        );
-        criadas.push(questionId);
-      } catch (err) {
-        const mensagem = 'Não foi possível gravar esta questão. Revise os dados e tente de novo.';
-        errors.push({ number: item.number, message: mensagem });
-        await db.query(`UPDATE exam_import_items SET status = 'falhou', error_message = $2 WHERE id = $1`, [
-          item.id,
-          mensagem,
-        ]);
-        console.error(`[exam-imports] falha ao gravar a questão ${item.number}:`, err.message);
-      }
-    }
-
-    const atualizado = await db.one(
-      `UPDATE exam_imports SET imported_count = imported_count + $2 WHERE id = $1 RETURNING *`,
-      [row.id, criadas.length]
+    const { atualizado, criadas, errors } = await importarItens(
+      row,
+      items,
+      req.admin ? req.admin.id : null
     );
     await audit(req, 'exam_import.import', 'exam_import', row.id, {
       requested: items.length,

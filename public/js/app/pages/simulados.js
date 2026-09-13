@@ -467,16 +467,15 @@ function openConfig(type) {
         <span class="label">Matérias</span>
         <div class="sim-check-grid" role="group" aria-label="Matérias do simulado">
           ${(data.catalog.subjects || [])
-            .filter((s) => s.question_count > 0)
             .map(
               (s) => html`
                 <label class="check">
                   <input type="checkbox" name="subject_ids" value="${s.id}">
-                  <span>${s.name}</span>
+                  <span>${s.name}${s.question_count ? ` (${s.question_count})` : ''}</span>
                 </label>`
             )}
         </div>
-        <span class="hint">Sem seleção, o simulado usa todas as matérias disponíveis.</span>
+        <span class="hint">Sem seleção, o simulado usa todas as matérias. O que faltar no banco é elaborado na hora.</span>
       </div>
       <div class="field">
         <span class="label">Dificuldade</span>
@@ -564,14 +563,14 @@ async function bindTopicChain(root) {
     }
     try {
       const result = await api.get('/api/simulados/catalog', { query: { subject_id: id } });
-      const topics = (result.topics || []).filter((t) => t.question_count > 0);
+      const topics = result.topics || [];
       if (!topics.length) {
-        topic.innerHTML = '<option value="">Nenhum assunto com questões nesta matéria</option>';
+        topic.innerHTML = '<option value="">Nenhum assunto cadastrado nesta matéria</option>';
         return;
       }
       topic.innerHTML = String(
         html`<option value="">Selecione um assunto</option>
-          ${topics.map((t) => html`<option value="${t.id}">${t.name} (${t.question_count})</option>`)}`
+          ${topics.map((t) => html`<option value="${t.id}">${t.name}${t.question_count ? ` (${t.question_count})` : ' · IA'}</option>`)}`
       );
       topic.disabled = false;
     } catch (err) {

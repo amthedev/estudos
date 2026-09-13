@@ -45,7 +45,10 @@ const DIAS_SEM_REPETIR = 7;
  * manda a IA escrever três questões novas. O limitador de requisições segura
  * rajada, não gasto ao longo do dia.
  */
-const GERACOES_POR_DIA = 8;
+// Dez chamadas de oito questões são necessárias para montar um simulado
+// completo em um banco vazio. Doze deixam essa operação caber no limite sem
+// transformar o botão de prática em geração ilimitada.
+const GERACOES_POR_DIA = 12;
 /** Quantas questões a prática pós-aula entrega (uma por assunto da aula). */
 const QUESTOES_POR_AULA = 3;
 
@@ -433,10 +436,14 @@ async function fillPool({ examId = null, subjectId = null, topicId = null, filte
   if (!topics.length) return [];
 
   const criadas = [];
-  // Espalha pelos assuntos em vez de esgotar um: é assim que uma prova se
-  // parece com uma prova.
-  for (const topic of topics) {
-    if (criadas.length >= teto) break;
+  // Espalha pelos assuntos e volta ao primeiro quando ainda falta questão.
+  // A versão anterior passava por cada assunto uma vez; um simulado de um
+  // único assunto, portanto, nunca recebia mais que MAX_POR_CHAMADA questões.
+  let cursor = 0;
+  let falhasSeguidas = 0;
+  while (criadas.length < teto && falhasSeguidas < topics.length) {
+    const topic = topics[cursor % topics.length];
+    cursor += 1;
     const querAgora = Math.min(MAX_POR_CHAMADA, teto - criadas.length);
     const subtopics = await db.many(
       'SELECT id, name FROM subtopics WHERE topic_id = $1 AND active ORDER BY sort_order, name',
@@ -459,12 +466,14 @@ async function fillPool({ examId = null, subjectId = null, topicId = null, filte
         userId,
       });
       for (const id of ids) criadas.push({ id, subject_id: topic.subject_id, topic_id: topic.id });
+      falhasSeguidas = ids.length ? 0 : falhasSeguidas + 1;
     } catch (err) {
       // Falta de questão não pode virar tela vazia: quem chamou recebe o que
       // deu para elaborar, e o motivo fica no log. Teto diário do aluno sobe.
       if (err && err.code === 'ai_limit_reached' && !criadas.length) throw err;
       console.warn(`[question-ai] não foi possível elaborar questões de ${topic.name}: ${err.message}`);
-      break;
+      if (err && err.code === 'ai_limit_reached') break;
+      falhasSeguidas += 1;
     }
   }
   return criadas;

@@ -223,5 +223,65 @@
     "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_2025_gabarito_dia_2_e7b2c9.pdf",
     "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_2025_gabarito_dia_2_e7b2c9.pdf",
     "bytes": 294764
+  },
+  "/assets/past-exams/enem-ppl/2022/enem-ppl-2022-dia-1.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_dia_1_5c3db7.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_dia_1_5c3db7.pdf",
+    "bytes": 4876019
+  },
+  "/assets/past-exams/enem-ppl/2022/enem-ppl-2022-dia-2.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_dia_2_bcf49f.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_dia_2_bcf49f.pdf",
+    "bytes": 4537053
+  },
+  "/assets/past-exams/enem-ppl/2022/enem-ppl-2022-gabarito-dia-1.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_gabarito_d_81ef2d.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_gabarito_d_81ef2d.pdf",
+    "bytes": 212661
+  },
+  "/assets/past-exams/enem-ppl/2022/enem-ppl-2022-gabarito-dia-2.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_gabarito_d_27d928.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2022_gabarito_d_27d928.pdf",
+    "bytes": 210586
+  },
+  "/assets/past-exams/enem-ppl/2023/enem-ppl-2023-dia-1.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_dia_1_fb5a4d.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_dia_1_fb5a4d.pdf",
+    "bytes": 2811189
+  },
+  "/assets/past-exams/enem-ppl/2023/enem-ppl-2023-dia-2.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_dia_2_c751b8.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_dia_2_c751b8.pdf",
+    "bytes": 2972774
+  },
+  "/assets/past-exams/enem-ppl/2023/enem-ppl-2023-gabarito-dia-1.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_gabarito_d_063d5e.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_gabarito_d_063d5e.pdf",
+    "bytes": 594234
+  },
+  "/assets/past-exams/enem-ppl/2023/enem-ppl-2023-gabarito-dia-2.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_gabarito_d_f76298.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2023_gabarito_d_f76298.pdf",
+    "bytes": 594431
+  },
+  "/assets/past-exams/enem-ppl/2024/enem-ppl-2024-dia-1.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_dia_1_b5bff3.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_dia_1_b5bff3.pdf",
+    "bytes": 5905326
+  },
+  "/assets/past-exams/enem-ppl/2024/enem-ppl-2024-dia-2.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_dia_2_c980dd.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_dia_2_c980dd.pdf",
+    "bytes": 4905004
+  },
+  "/assets/past-exams/enem-ppl/2024/enem-ppl-2024-gabarito-dia-1.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_gabarito_d_b55fb8.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_gabarito_d_b55fb8.pdf",
+    "bytes": 120386
+  },
+  "/assets/past-exams/enem-ppl/2024/enem-ppl-2024-gabarito-dia-2.pdf": {
+    "url": "https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_gabarito_d_f92c37.pdf",
+    "key": "0a9f7f1de21c92b5fe36d1006d36b96186874a93/provas/enem_ppl_2024_gabarito_d_f92c37.pdf",
+    "bytes": 123313
   }
 }

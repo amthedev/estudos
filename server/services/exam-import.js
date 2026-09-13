@@ -80,7 +80,7 @@ const LETRAS = ['A', 'B', 'C', 'D', 'E'];
  *   "QUESTÃO 42", "Questão 42", "42.", "42)", "42 -"
  * Sempre no início da linha — um "42." no meio de um parágrafo é outra coisa.
  */
-const INICIO_DE_QUESTAO = /^[ \t]*(?:QUEST(?:ÃO|AO)[ \t]*)?(\d{1,3})[ \t]*[.)\-–—]?[ \t]*$|^[ \t]*(?:QUEST(?:ÃO|AO)[ \t]*)(\d{1,3})\b/gim;
+const INICIO_DE_QUESTAO = /^[ \t]*(?:(?:QUEST(?:ÃO|AO)[ \t]*)(\d{1,3})[ \t]*[.)\-–—]?[ \t]*|(\d{1,3})(?:[.)]|[ \t]+-)[ \t]*)$/gim;
 
 /** Posições onde uma questão começa, com o número que a encabeça. */
 function questionMarks(text) {

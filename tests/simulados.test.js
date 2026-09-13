@@ -112,6 +112,7 @@ describe('Formatos do simulado', () => {
     const modes = res.body.defaults.modes || [];
     assert.deepEqual(modes.map((m) => m.key).sort(), ['completo', 'mini']);
     assert.equal(res.body.defaults.max.duration_min, simulados.MAX_DURATION);
+    assert.equal(res.body.defaults.ai_fill.max, 80, 'o padrão precisa comportar o simulado completo prometido');
   });
 });
 
@@ -147,6 +148,22 @@ describe('Complemento por IA quando o banco é curto', () => {
 
     const depois = await db.one('SELECT count(*)::int AS total FROM questions WHERE generated_by_ai');
     assert.equal(depois.total - antes.total, 6, 'as questões elaboradas ficam no banco para os próximos');
+    await aluno.agent.post(`/api/simulados/attempts/${res.body.id}/abandon`, {});
+  });
+
+  it('com teto completo, continua gerando até entregar as 80 questões', async () => {
+    await settings.setSetting('simulado_ai_questions_max', 80);
+    await db.query('DELETE FROM ai_usage WHERE user_id = $1', [aluno.user.id]);
+
+    const res = await aluno.agent.post('/api/simulados/attempts', {
+      type: 'exam',
+      mode: 'completo',
+      exam_id: exam.id,
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.questions.length, 80, 'simulado completo não pode parar após uma volta pelos assuntos');
+    assert.equal(res.body.config.delivered_count, 80);
+    assert.ok(res.body.config.generated_count > simulados.EXAM_MODES.mini.question_count);
     await aluno.agent.post(`/api/simulados/attempts/${res.body.id}/abandon`, {});
   });
 

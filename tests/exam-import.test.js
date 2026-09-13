@@ -74,13 +74,18 @@ describe('Recorte da prova em lotes', () => {
   });
 
   it('entende os outros formatos de numeração', () => {
-    const texto = ['12.', 'Enunciado um.', '', '13)', 'Enunciado dois.', '', 'Questão 14', 'Enunciado três.'].join('\n');
-    assert.deepEqual(examImport.questionMarks(texto).map((m) => m.number), [12, 13, 14]);
+    const texto = ['12.', 'Enunciado um.', '', '13)', 'Enunciado dois.', '', 'Questão 14', 'Enunciado três.', '', '15 -'].join('\n');
+    assert.deepEqual(examImport.questionMarks(texto).map((m) => m.number), [12, 13, 14, 15]);
   });
 
   it('não confunde um número no meio do parágrafo com início de questão', () => {
     const texto = 'O produto custava 42. Depois do desconto, passou a custar 30 reais.';
     assert.deepEqual(examImport.questionMarks(texto), []);
+  });
+
+  it('não confunde número isolado de página, gráfico ou tabela com questão', () => {
+    const texto = ['12', 'QUESTÃO 13', 'Enunciado.', '14', 'Valor da coluna', '6 .', '2–', '15.'].join('\n');
+    assert.deepEqual(examImport.questionMarks(texto).map((m) => m.number), [13, 15]);
   });
 
   it('o lote termina sempre no começo de uma questão', () => {
@@ -281,24 +286,17 @@ describe('Leitura de prova pelo painel', () => {
     assert.equal(primeira.payload.answer_from_key, true);
   });
 
-  it('manda as questões conferidas para o banco de questões', async () => {
+  it('as questões conferidas já estão no banco de questões', async () => {
     const lista = await admin.agent.get('/api/admin/exam-imports');
     const id = lista.body.items[0].id;
     const detalhe = await admin.agent.get(`/api/admin/exam-imports/${id}`);
-    const pendentes = detalhe.body.items.filter((item) => item.status === 'pendente').slice(0, 5);
-    assert.ok(pendentes.length >= 2);
-
-    const res = await admin.agent.post(`/api/admin/exam-imports/${id}/import`, {
-      item_ids: pendentes.map((item) => item.id),
-    });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.imported, pendentes.length, JSON.stringify(res.body.errors));
-    assert.equal(res.body.failed, 0);
+    const importadas = detalhe.body.items.filter((item) => item.status === 'importada');
+    assert.ok(importadas.length >= 10);
 
     // A questão entrou de verdade, com alternativas e ligada à prova de origem.
     const questao = await db.one(
       'SELECT id, statement, year, board, source_exam_id, generated_by_ai FROM questions WHERE id = $1',
-      [res.body.ids[0]]
+      [importadas[0].question_id]
     );
     assert.ok(questao);
     assert.equal(questao.year, 2024);
@@ -315,16 +313,26 @@ describe('Leitura de prova pelo painel', () => {
 
     // Importar de novo o mesmo item não duplica.
     const repetido = await admin.agent.post(`/api/admin/exam-imports/${id}/import`, {
-      item_ids: [pendentes[0].id],
+      item_ids: [importadas[0].id],
     });
     assert.equal(repetido.status, 400, 'item já importado não volta para o banco');
   });
 
   it('o administrador corrige o gabarito de um item antes de importar', async () => {
-    const lista = await admin.agent.get('/api/admin/exam-imports');
-    const id = lista.body.items[0].id;
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'Prova sem gabarito para conferência',
+      exam_id: exam.id,
+      year: 2024,
+    });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, {
+      chunk: fakeExam(1),
+      done: true,
+    });
+    await varrerAteOFim(admin, criada.body.id);
+    const id = criada.body.id;
     const detalhe = await admin.agent.get(`/api/admin/exam-imports/${id}`);
     const item = detalhe.body.items.find((row) => row.status === 'pendente');
+    assert.ok(item, 'sem gabarito oficial a questão precisa esperar uma pessoa');
 
     const res = await admin.agent.patch(`/api/admin/exam-imports/${id}/items/${item.id}`, { correct: 'D' });
     assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -499,18 +507,13 @@ describe('Leitura de prova pelo painel', () => {
     const ultimo = await varrerAteOFim(admin, criada.body.id);
     assert.equal(ultimo.status, 'concluida');
 
-    // 3. As questões conferidas vão para o banco.
-    const pendentes = ultimo.items.filter((i) => i.status === 'pendente');
-    assert.ok(pendentes.length >= 3, `encontrou ${pendentes.length} questões`);
-    const importadas = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/import`, {
-      item_ids: pendentes.map((i) => i.id),
-    });
-    assert.equal(importadas.status, 200, JSON.stringify(importadas.body));
-    assert.equal(importadas.body.failed, 0, JSON.stringify(importadas.body.errors));
+    // 3. O gabarito oficial faz as questões entrarem no banco sem outro clique.
+    const importadas = ultimo.items.filter((i) => i.status === 'importada');
+    assert.ok(importadas.length >= 3, `encontrou ${importadas.length} questões importadas`);
 
     // 4. O ALUNO acha a questão pesquisando — pelo assunto, pelo ano e pela prova.
     const aluno = await ctx.registerStudent({ name: 'Aluna que Pesquisa' });
-    const topico = await db.one('SELECT topic_id FROM questions WHERE id = $1', [importadas.body.ids[0]]);
+    const topico = await db.one('SELECT topic_id FROM questions WHERE id = $1', [importadas[0].question_id]);
 
     const porAssunto = await aluno.agent.get(`/api/questions?topic_id=${topico.topic_id}`);
     assert.equal(porAssunto.status, 200, JSON.stringify(porAssunto.body));
@@ -763,23 +766,92 @@ describe('Leitura de prova pelo painel', () => {
       await varrerAteOFim(admin, leitura.id);
     });
 
-    it('a varredura separa quem veio do gabarito de quem é palpite da IA', async () => {
+    it('a varredura manda as confirmadas para o banco e deixa só o palpite para conferência', async () => {
       const res = await admin.agent.get(`/api/admin/exam-imports/${leitura.id}`);
-      const pendentes = res.body.items.filter((i) => i.status === 'pendente');
-      assert.equal(pendentes.length, 3);
-      const comGabarito = pendentes.filter((i) => i.payload && i.payload.answer_from_key);
-      assert.equal(comGabarito.length, 2, 'só as duas que estavam no gabarito oficial');
-    });
-
-    it('com_gabarito manda só essas para o banco, sem escolher uma a uma', async () => {
-      const res = await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/import`, { com_gabarito: true });
-      assert.equal(res.status, 200, JSON.stringify(res.body));
-      assert.equal(res.body.imported, 2, `falhas: ${JSON.stringify(res.body.errors)}`);
-
-      const depois = await admin.agent.get(`/api/admin/exam-imports/${leitura.id}`);
-      const sobrou = depois.body.items.filter((i) => i.status === 'pendente');
+      const importadas = res.body.items.filter((i) => i.status === 'importada');
+      const sobrou = res.body.items.filter((i) => i.status === 'pendente');
+      assert.equal(importadas.length, 2, 'as duas respostas do gabarito entram sem outro clique');
       assert.equal(sobrou.length, 1, 'a questão sem gabarito continua esperando conferência');
       assert.ok(!sobrou[0].payload.answer_from_key, 'e é justamente a que a IA respondeu sozinha');
+    });
+
+    it('recupera uma questão confirmada mesmo quando já não há texto para varrer', async () => {
+      const criada = await admin.agent.post('/api/admin/exam-imports', {
+        exam_id: exam.id,
+        title: 'Leitura interrompida depois do gabarito',
+        year: 2024,
+      });
+      await db.query(
+        `UPDATE exam_imports
+            SET document_text = 'fim', chars_total = 3, chars_read = 3, status = 'pronta'
+          WHERE id = $1`,
+        [criada.body.id]
+      );
+      await db.query(
+        `INSERT INTO exam_import_items (import_id, number, payload) VALUES ($1, 1, $2::jsonb)`,
+        [
+          criada.body.id,
+          JSON.stringify({
+            number: 1,
+            statement: 'Questão que já estava pronta antes de a leitura ser interrompida.',
+            A: 'Alternativa A', B: 'Alternativa B', C: 'Alternativa C', D: 'Alternativa D', E: 'Alternativa E',
+            correct: 'A',
+            subject_slug: 'matematica',
+            topic_slug: 'porcentagem',
+            difficulty: 2,
+            answer_from_key: true,
+          }),
+        ]
+      );
+
+      const res = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.done, true);
+      assert.equal(res.body.imported_count, 1, 'o item seguro entra antes de encerrar a leitura');
+      const item = await db.one('SELECT status, question_id FROM exam_import_items WHERE import_id = $1', [criada.body.id]);
+      assert.equal(item.status, 'importada');
+      assert.ok(item.question_id);
+    });
+
+    it('dois cliques simultâneos gravam a questão confirmada uma única vez', async () => {
+      const criada = await admin.agent.post('/api/admin/exam-imports', {
+        exam_id: exam.id,
+        title: 'Importação automática concorrente',
+        year: 2024,
+      });
+      const enunciado = `Questão concorrente ${criada.body.id}`;
+      await db.query(
+        `UPDATE exam_imports
+            SET document_text = 'fim', chars_total = 3, chars_read = 3, status = 'pronta'
+          WHERE id = $1`,
+        [criada.body.id]
+      );
+      await db.query(
+        `INSERT INTO exam_import_items (import_id, number, payload) VALUES ($1, 1, $2::jsonb)`,
+        [
+          criada.body.id,
+          JSON.stringify({
+            number: 1,
+            statement: enunciado,
+            A: 'Alternativa A', B: 'Alternativa B', C: 'Alternativa C', D: 'Alternativa D', E: 'Alternativa E',
+            correct: 'A',
+            subject_slug: 'matematica',
+            topic_slug: 'porcentagem',
+            difficulty: 2,
+            answer_from_key: true,
+          }),
+        ]
+      );
+
+      const respostas = await Promise.all(
+        Array.from({ length: 4 }, () => admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {}))
+      );
+      assert.ok(respostas.every((res) => res.status === 200), respostas.map((res) => res.status).join(', '));
+
+      const questoes = await db.one(`SELECT count(*)::int AS total FROM questions WHERE statement = $1`, [enunciado]);
+      const leituraAtual = await db.one(`SELECT imported_count FROM exam_imports WHERE id = $1`, [criada.body.id]);
+      assert.equal(questoes.total, 1, 'um item confirmado não pode originar questões duplicadas');
+      assert.equal(leituraAtual.imported_count, 1, 'o contador também precisa avançar uma única vez');
     });
 
     it('repetir não duplica: as que já entraram não voltam', async () => {

@@ -490,18 +490,11 @@ async function lerProvaInteira(prova) {
   const final = await api.get(`/api/admin/exam-imports/${criada.id}`);
   state.lote.encontradas += Number(final.found_count) || 0;
 
-  // Ler não é o mesmo que estar no banco. Quem manda 25 provas de uma vez não
-  // vai abrir prova por prova para marcar as caixinhas — e o banco continuaria
-  // vazio depois de toda a leitura, que foi exatamente o que aconteceu.
-  // Vão sozinhas as que a banca já respondeu no gabarito oficial; as outras
-  // ficam esperando conferência, e o aviso do fim diz quantas são.
+  // A própria varredura já manda ao banco tudo que o gabarito oficial
+  // confirmou. Aqui só acumulamos o resultado para o resumo do lote.
   const pendentes = (final.items || []).filter((item) => item.status === 'pendente');
-  const comGabarito = pendentes.filter((item) => item.payload && item.payload.answer_from_key).length;
-  state.lote.aConferir += pendentes.length - comGabarito;
-  if (comGabarito) {
-    const res = await api.post(`/api/admin/exam-imports/${criada.id}/import`, { com_gabarito: true });
-    state.lote.noBanco += Number(res.imported) || 0;
-  }
+  state.lote.aConferir += pendentes.length;
+  state.lote.noBanco += Number(final.imported_count) || 0;
 }
 
 // ---------------------------------------------------------------------
@@ -906,7 +899,18 @@ async function sweep({ all = false } = {}) {
       state.busyText = `Varrido ${state.current.percent}% da prova · ${state.current.found_count} questões encontradas`;
       paint();
     } while (all && continua && voltas < 60);
-    if (!continua) toast('Prova varrida por inteiro.', { type: 'success' });
+    if (!continua) {
+      const atual = await api.get(`/api/admin/exam-imports/${state.current.id}`);
+      state.current = atual;
+      const importadas = Number(atual.imported_count) || 0;
+      const pendentes = atual.counts ? Number(atual.counts.pendentes) || 0 : 0;
+      toast(
+        importadas
+          ? `${pluralize(importadas, 'questão entrou', 'questões entraram')} automaticamente no banco${pendentes ? `; ${pendentes} aguardam conferência.` : '.'}`
+          : 'Prova varrida por inteiro. Revise as questões antes de mandar para o banco.',
+        { type: importadas ? 'success' : 'warning' }
+      );
+    }
   } catch (err) {
     toast(err.message || 'A varredura parou. Nada se perdeu: continue de onde parou.', { type: 'error' });
     await openJob(state.current.id);

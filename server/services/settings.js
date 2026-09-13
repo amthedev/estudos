@@ -45,10 +45,11 @@ const DEFAULTS = Object.freeze({
     essay_weekly: true,
     simulado_every_days: 14,
   },
-  // Teto de questões que a IA pode elaborar para UM simulado. Segura o custo
-  // quando o banco está vazio e o aluno pede um simulado completo de 80.
+  // O formato completo prometido ao aluno tem 80 questões. O teto continua
+  // administrável, mas o padrão precisa conseguir entregar esse formato mesmo
+  // enquanto o banco de provas ainda está sendo abastecido.
   // Zero desliga o complemento por IA.
-  simulado_ai_questions_max: 20,
+  simulado_ai_questions_max: 80,
   private_lessons_enabled: true,
   payment_provider: 'asaas',
   daily_quotes: [
