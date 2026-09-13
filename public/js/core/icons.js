@@ -5,7 +5,17 @@
 // =====================================================================
 import { raw, escapeHtml } from './ui.js';
 
-export const ICONS_URL = '/assets/icons.svg';
+/**
+ * Endereço do sprite, com a marca da versão quando a página informa uma.
+ *
+ * O sprite é montado aqui, em código, então não passa pela reescrita do HTML.
+ * Sem a marca ele ficaria até 31 dias no cache do navegador (o Cloudflare
+ * reescreve o cabeçalho de cache dos estáticos) e um ícone novo não apareceria.
+ */
+const MARCA = typeof document !== 'undefined'
+  ? (document.querySelector('meta[name="fe-assets"]')?.content || '')
+  : '';
+export const ICONS_URL = MARCA ? `/a/${MARCA}/assets/icons.svg` : '/assets/icons.svg';
 
 // nomes antigos/alternativos → id existente no sprite
 const ALIASES = {

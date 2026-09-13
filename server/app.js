@@ -24,6 +24,7 @@ const uploads = require('./services/uploads');
 const { requireAdmin } = require('./middleware/auth');
 const { apiLimiter } = require('./middleware/rateLimit');
 const { AppError, notFound, errorHandler } = require('./middleware/errors');
+const assets = require('./utils/assets');
 
 const ROUTES_DIR = path.join(__dirname, 'routes');
 const ADMIN_ROUTES_DIR = path.join(ROUTES_DIR, 'admin');
@@ -114,17 +115,32 @@ function csrfGuard(req, res, next) {
   next();
 }
 
+/**
+ * Serve uma página, versionando os endereços de JS, CSS e imagens.
+ *
+ * O HTML sai sem cache; os estáticos ganham a marca da versão no caminho. É o
+ * que faz uma publicação nova chegar a quem já visitou o site — sem isso, o
+ * Cloudflare mantém o JavaScript antigo no navegador por 31 dias.
+ */
 function sendPage(file) {
   const absolute = path.join(config.publicDir, file);
+  // O HTML versionado é montado uma vez por arquivo: reler e reescrever a cada
+  // visita seria trabalho repetido para um resultado sempre igual.
+  let pronto = null;
   return (req, res, next) => {
-    res.sendFile(absolute, { headers: { 'Cache-Control': 'no-store' } }, (err) => {
-      if (!err) return;
+    try {
+      if (pronto === null || config.isDev) {
+        pronto = assets.versionHtml(fs.readFileSync(absolute, 'utf8'), config.publicDir);
+      }
+    } catch (err) {
       if (err.code === 'ENOENT') {
         console.warn(`[páginas] arquivo ausente: public/${file}`);
         return next(new AppError(404, 'not_found', 'Página não encontrada.'));
       }
-      next(err);
-    });
+      return next(err);
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(pronto);
   };
 }
 
@@ -199,6 +215,18 @@ function createApp() {
 
   // ---- estáticos e páginas ------------------------------------------------------
   app.get('/favicon.ico', (req, res) => res.redirect(301, '/assets/favicon.svg'));
+  // Caminho versionado (/a/<marca>/js/…): a marca some da URL e o arquivo é
+  // servido normalmente. Como o endereço muda a cada publicação, aqui o cache
+  // longo do Cloudflare é aliado, não problema — o conteúdo daquele endereço
+  // nunca muda.
+  app.use((req, res, next) => {
+    const separado = assets.splitVersioned(req.url.split('?')[0]);
+    if (!separado) return next();
+    req.url = separado.rest + (req.url.includes('?') ? `?${req.url.split('?').slice(1).join('?')}` : '');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    next();
+  });
+
   app.use(
     express.static(config.publicDir, {
       index: false,
