@@ -229,3 +229,15 @@
   margin-bottom: var(--s-5);
   border-left: 3px solid var(--primary);
 }
+
+/* "Encontrada" não é "no banco": a diferença entre as duas colunas é a razão
+   de alguém ler 25 provas e o aluno continuar sem ver questão nenhuma. */
+.xim-row-warn {
+  color: var(--warning);
+}
+
+.xim-review-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}

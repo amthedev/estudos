@@ -339,11 +339,24 @@ function reviewStep() {
             ${pluralize(counts.pendentes || 0, 'questão aguardando', 'questões aguardando')} ·
             ${fmtNumber(counts.importadas || 0)} já no banco
           </p>
+          ${pendentes.length
+            ? html`<p class="xim-review-note">
+                Questão lida ainda não é questão no banco: o aluno só vê depois que ela é
+                mandada para lá.
+              </p>`
+            : ''}
         </div>
         <div class="xim-review-actions">
-          <button type="button" class="btn btn-ghost btn-sm" data-action="pick-safe">
-            ${icon('check-check')}<span>Marcar as ${prontas.length} com gabarito</span>
-          </button>
+          ${prontas.length
+            ? html`<button type="button" class="btn btn-ghost btn-sm" data-action="pick-safe">
+                ${icon('check-check')}<span>Marcar as ${prontas.length} com gabarito</span>
+              </button>`
+            : ''}
+          ${pendentes.length && pendentes.length !== prontas.length
+            ? html`<button type="button" class="btn btn-ghost btn-sm" data-action="pick-all">
+                ${icon('list-checks')}<span>Marcar as ${pendentes.length} pendentes</span>
+              </button>`
+            : ''}
           <button type="button" class="btn btn-primary" data-action="import" ${state.busy ? 'disabled' : ''}>
             ${icon('database')}<span>Mandar as marcadas para o banco</span>
           </button>
@@ -532,7 +545,14 @@ function listView() {
                       </td>
                       <td>${badge(rotulo, tom)} <span class="xim-row-sub">${job.percent}%</span></td>
                       <td class="nowrap">${fmtNumber(job.found_count)}</td>
-                      <td class="nowrap">${fmtNumber(job.imported_count)}</td>
+                      <td class="nowrap">
+                        ${fmtNumber(job.imported_count)}
+                        ${job.found_count > job.imported_count
+                          ? html`<span class="xim-row-sub xim-row-warn"
+                              >${fmtNumber(job.found_count - job.imported_count)} fora do banco</span
+                            >`
+                          : ''}
+                      </td>
                       <td class="nowrap">
                         <button type="button" class="btn btn-ghost btn-sm" data-action="open" data-id="${job.id}">
                           ${icon('arrow-right')}<span>Abrir</span>
@@ -972,6 +992,16 @@ export default async function renderPage(ctx) {
     on(ctx.el, 'click', '[data-action="sweep"]', () => sweep()),
     on(ctx.el, 'click', '[data-action="sweep-all"]', () => sweep({ all: true })),
     on(ctx.el, 'click', '[data-action="import"]', (event, trigger) => importPicked(trigger)),
+    on(ctx.el, 'click', '[data-action="pick-all"]', () => {
+      // Prova sem gabarito oficial cadastrado — as cinco do Barro Branco são
+      // assim — não tem nenhuma questão "conferida", e o atalho de cima marca
+      // zero. Sem esta opção, a única saída é marcar 90 caixinhas à mão, que é
+      // o mesmo que não haver saída.
+      for (const box of qsa('[data-pick]', ctx.el)) {
+        const item = (state.current.items || []).find((row) => row.id === box.dataset.pick);
+        box.checked = Boolean(item && item.status === 'pendente');
+      }
+    }),
     on(ctx.el, 'click', '[data-action="pick-safe"]', () => {
       for (const box of qsa('[data-pick]', ctx.el)) {
         const item = (state.current.items || []).find((row) => row.id === box.dataset.pick);
