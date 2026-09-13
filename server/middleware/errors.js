@@ -100,16 +100,17 @@ function normalizeError(err) {
  * hospedagem, que nem sempre se alcança; e "a aplicação reiniciou e ninguém
  * sabe por quê" custou horas de investigação às cegas.
  */
-async function persistProcessError(err, origem) {
+async function persistProcessError(err, origem, level = 'fatal') {
   try {
     const db = require('../db/pool');
     await db.query(
       `INSERT INTO error_logs (level, message, stack, path, method)
-       VALUES ('fatal', $1, $2, $3, 'PROCESSO')`,
+       VALUES ($1, $2, $3, $4, 'PROCESSO')`,
       [
+        level,
         `[${origem}] ${String(err && err.message ? err.message : err)}`.slice(0, 4000),
         err && err.stack ? String(err.stack).slice(0, 12000) : null,
-        origem.slice(0, 1000),
+        String(origem).slice(0, 1000),
       ]
     );
   } catch (dbErr) {
