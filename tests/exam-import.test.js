@@ -281,6 +281,73 @@ describe('Leitura de prova pelo painel', () => {
     assert.equal(sweep.body.items[0].payload.correct, 'B', 'o gabarito colado continua mandando');
   });
 
+  it('lista as provas anteriores que já têm PDF, para não reenviar o arquivo', async () => {
+    // O cliente sobe a prova uma vez em "Provas anteriores"; ler as questões
+    // dela não pode exigir enviar o mesmo arquivo de novo.
+    const comPdf = await db.one(
+      `INSERT INTO past_exams (exam_id, year, title, board, pdf_url)
+       VALUES ($1, 2023, 'ENEM PPL 2023 — dia 1', 'INEP', '/uploads/provas/ppl-2023.pdf')
+       RETURNING id`,
+      [exam.id]
+    );
+    await db.query(
+      `INSERT INTO past_exams (exam_id, year, title) VALUES ($1, 2022, 'Prova sem arquivo')`,
+      [exam.id]
+    );
+
+    const res = await admin.agent.get('/api/admin/exam-imports/provas');
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const ids = res.body.items.map((p) => p.id);
+    assert.ok(ids.includes(comPdf.id));
+    assert.equal(
+      res.body.items.every((p) => p.pdf_url),
+      true,
+      'prova sem PDF não serve para ler questões e não entra na lista'
+    );
+  });
+
+  it('o PDF da prova é entregue pelo próprio domínio', async () => {
+    // Buscar o arquivo direto do armazenamento seria barrado pela política de
+    // segurança da página, então quem busca é o servidor.
+    const prova = await db.one(
+      `SELECT id FROM past_exams WHERE pdf_url IS NOT NULL ORDER BY created_at LIMIT 1`
+    );
+    const res = await admin.agent.get(`/api/admin/exam-imports/provas/${prova.id}/arquivo`);
+    // O arquivo não existe no disco de teste: o que importa é que a rota
+    // resolveu a prova e foi procurá-lo, em vez de aceitar um endereço de fora.
+    assert.equal(res.status, 404);
+    assert.match(res.body.error.message, /arquivo|encontrado/i);
+  });
+
+  it('prova sem PDF cadastrado não tem arquivo para ler', async () => {
+    const semPdf = await db.one(`SELECT id FROM past_exams WHERE pdf_url IS NULL LIMIT 1`);
+    const res = await admin.agent.get(`/api/admin/exam-imports/provas/${semPdf.id}/arquivo`);
+    assert.equal(res.status, 404);
+    assert.match(res.body.error.message, /não tem PDF/i);
+  });
+
+  it('aluno não baixa prova pelo caminho do painel', async () => {
+    const prova = await db.one(`SELECT id FROM past_exams WHERE pdf_url IS NOT NULL LIMIT 1`);
+    const res = await student.agent.get(`/api/admin/exam-imports/provas/${prova.id}/arquivo`);
+    assert.ok([401, 403].includes(res.status), `respondeu ${res.status}`);
+  });
+
+  it('a leitura guarda a prova de origem', async () => {
+    const prova = await db.one(`SELECT id FROM past_exams WHERE pdf_url IS NOT NULL LIMIT 1`);
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: 'Leitura ligada à prova',
+      past_exam_id: prova.id,
+      exam_id: exam.id,
+    });
+    assert.equal(criada.status, 201, JSON.stringify(criada.body));
+    assert.equal(criada.body.past_exam_id, prova.id);
+
+    // E a prova passa a contar quantas leituras já teve.
+    const lista = await admin.agent.get('/api/admin/exam-imports/provas');
+    const linha = lista.body.items.find((p) => p.id === prova.id);
+    assert.ok(linha.leituras >= 1, 'o painel mostra que esta prova já foi lida');
+  });
+
   it('varrer sem texto avisa, em vez de estourar', async () => {
     const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Prova vazia' });
     const res = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});

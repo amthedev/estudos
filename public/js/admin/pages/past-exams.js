@@ -202,6 +202,19 @@ async function renderPastExamsPage(ctx) {
     onRowClick: (row) => openForm(row),
     rowActions: [
       { label: 'Editar', icon: 'square-pen', onClick: (row) => openForm(row) },
+      {
+        label: 'Ler as questões desta prova',
+        icon: 'scan-text',
+        onClick: (row) => {
+          if (!row.pdf_url) {
+            toast('Cadastre o PDF desta prova antes de ler as questões.', { type: 'warning' });
+            return;
+          }
+          // Leva para a leitura já com esta prova escolhida: o arquivo já está
+          // na plataforma e não precisa ser enviado de novo.
+          state.ctx.navigate(`/admin/ler-prova?prova=${encodeURIComponent(row.id)}`);
+        },
+      },
       { label: 'Mostrar ou ocultar', icon: 'toggle-right', onClick: (row, table) => toggleActive(row, table) },
       { label: 'Excluir', icon: 'trash-2', danger: true, onClick: (row, table) => removeRow(row, table) },
     ],

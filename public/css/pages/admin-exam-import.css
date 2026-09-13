@@ -205,3 +205,21 @@
   height: 1px;
   background: var(--border);
 }
+
+/* Leitura a partir de uma prova já cadastrada: o arquivo já está na plataforma. */
+.xim-from-exam {
+  padding: var(--s-4);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+}
+.xim-from-exam .xim-step-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: var(--s-3);
+}
+.xim-from-exam .icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

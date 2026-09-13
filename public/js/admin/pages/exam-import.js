@@ -60,6 +60,21 @@ function newImportForm() {
             <span class="hint">É só para você se achar depois.</span>
           </div>
           <div class="field">
+            <label class="label" for="xim-prova">Aproveitar uma prova já cadastrada</label>
+            <select class="select" id="xim-prova" name="past_exam_id">
+              <option value="">Não — vou escolher o arquivo</option>
+              ${(state.provas || []).map(
+                (p) => html`<option value="${p.id}" ${p.id === state.provaEscolhida ? 'selected' : ''}>
+                    ${p.title}${p.leituras ? ` · já lida ${p.leituras}x` : ''}
+                  </option>`
+              )}
+            </select>
+            <span class="hint">
+              As provas de <strong>Provas anteriores</strong> que já têm PDF aparecem aqui. Escolher uma
+              preenche os campos e dispensa enviar o arquivo de novo.
+            </span>
+          </div>
+          <div class="field">
             <label class="label" for="xim-exam">Vestibular</label>
             <select class="select" id="xim-exam" name="exam_id">
               <option value="">Nenhum (só para o banco)</option>
@@ -111,6 +126,20 @@ function readStep() {
             O texto é lido aqui no seu navegador e só o texto sobe para a plataforma.
             Um PDF de prova inteira leva alguns segundos.
           </p>
+          ${job.past_exam_id
+            ? html`
+              <div class="xim-from-exam">
+                <p class="xim-step-text">
+                  ${icon('file', { size: 14 })}
+                  <span>Esta leitura está ligada a uma prova já cadastrada. O arquivo já está na
+                  plataforma — não precisa enviar de novo.</span>
+                </p>
+                <button type="button" class="btn btn-primary" data-action="read-exam" ${state.busy ? 'disabled' : ''}>
+                  ${icon('scan-text')}<span>Ler o PDF desta prova</span>
+                </button>
+              </div>
+              <div class="xim-or"><span>ou envie outro arquivo</span></div>`
+            : ''}
           <input type="file" accept="application/pdf" id="xim-file" class="xim-file" ${state.busy ? 'disabled' : ''}>
           ${state.readProgress
             ? html`<div class="xim-progress">
@@ -373,6 +402,26 @@ function paint() {
 
   const file = qs('#xim-file', el);
   if (file) file.addEventListener('change', () => readPdf(file.files && file.files[0]));
+
+  const prova = qs('#xim-prova', el);
+  if (prova) prova.addEventListener('change', () => preencherPelaProva(prova.value));
+}
+
+/** Escolher uma prova cadastrada preenche o resto do formulário. */
+function preencherPelaProva(id) {
+  state.provaEscolhida = id || null;
+  const escolhida = (state.provas || []).find((p) => p.id === id);
+  if (!escolhida) return;
+  const el = state.ctx.el;
+  const set = (name, valor) => {
+    const campo = qs(`[name="${name}"]`, el);
+    if (campo && !campo.value) campo.value = valor == null ? '' : String(valor);
+  };
+  set('title', escolhida.title);
+  set('year', escolhida.year);
+  set('board', escolhida.board || escolhida.exam_board);
+  const exam = qs('[name="exam_id"]', el);
+  if (exam && !exam.value && escolhida.exam_id) exam.value = escolhida.exam_id;
 }
 
 // ---------------------------------------------------------------------
@@ -380,17 +429,23 @@ function paint() {
 // ---------------------------------------------------------------------
 async function loadList() {
   try {
-    const [lista, exams] = await Promise.all([
+    const [lista, exams, provas] = await Promise.all([
       api.get('/api/admin/exam-imports'),
       state.exams ? Promise.resolve({ items: state.exams }) : api.get('/api/admin/exams', { query: { limit: 100 } }),
+      api.get('/api/admin/exam-imports/provas').catch(() => ({ items: [] })),
     ]);
     state.list = lista.items || [];
     state.exams = Array.isArray(exams) ? exams : exams.items || [];
+    state.provas = provas.items || [];
+    if (state.provaEscolhida && !state.provas.some((p) => p.id === state.provaEscolhida)) {
+      state.provaEscolhida = null;
+    }
   } catch (err) {
     toast(err.message || 'Não foi possível carregar as leituras.', { type: 'error' });
   }
   state.loading = false;
   paint();
+  if (state.provaEscolhida) preencherPelaProva(state.provaEscolhida);
 }
 
 async function openJob(id) {
@@ -418,6 +473,7 @@ async function createJob(trigger) {
   try {
     const criada = await api.post('/api/admin/exam-imports', {
       title,
+      past_exam_id: value('past_exam_id') || undefined,
       exam_id: value('exam_id') || undefined,
       year: value('year') || undefined,
       board: value('board') || undefined,
@@ -433,29 +489,54 @@ async function createJob(trigger) {
   }
 }
 
+/**
+ * Lê o PDF de uma prova já cadastrada, servido pelo próprio domínio.
+ *
+ * O arquivo mora no armazenamento da plataforma; buscá-lo direto de lá seria
+ * barrado pela política de segurança da página, então o servidor entrega.
+ */
+async function readFromPastExam() {
+  if (state.busy || !state.current || !state.current.past_exam_id) return;
+  await lerTexto(`/api/admin/exam-imports/provas/${state.current.past_exam_id}/arquivo`, {
+    aoFalhar: 'Não foi possível abrir o PDF desta prova. Confira o arquivo em Provas anteriores.',
+  });
+}
+
 /** Lê o PDF no navegador, guarda o arquivo e sobe o texto em pedaços. */
 async function readPdf(file) {
   if (!file || state.busy) return;
+  // O arquivo escolhido também fica guardado, para quem quiser conferir depois.
+  await lerTexto(file, { guardar: file });
+}
+
+/**
+ * Caminho único de leitura: extrai o texto (de um arquivo escolhido ou de um
+ * endereço servido pela plataforma), guarda o arquivo quando faz sentido e sobe
+ * o texto em pedaços.
+ */
+async function lerTexto(origem, { guardar = null, aoFalhar = null } = {}) {
   state.busy = true;
   state.readError = null;
   state.busyText = 'Lendo o PDF…';
   paint();
 
   try {
-    const { text, pages } = await extractPdfText(file, (page, total) => {
+    const { text, pages } = await extractPdfText(origem, (page, total) => {
       state.readProgress = { page, total, percent: Math.round((page / total) * 100) };
       const bar = qs('.xim-progress', state.ctx.el);
       if (bar) render(bar, progressBar(state.readProgress.percent, { label: `Lendo página ${page} de ${total}`, showValue: true }));
     });
 
-    // O arquivo fica guardado para quem quiser conferir depois; a leitura não
-    // depende disso, então uma falha aqui não derruba o processo.
+    // Guardar o arquivo é conveniência, não requisito: falhar aqui não pode
+    // derrubar uma leitura que já deu certo.
     let url = null;
-    try {
-      const saved = await uploadFile(file, { folder: 'provas' });
-      url = saved && saved.url;
-    } catch (err) {
-      console.warn('[ler prova] o PDF não pôde ser guardado:', err.message);
+    if (guardar) {
+      try {
+        const saved = await uploadFile(guardar, { folder: 'provas' });
+        url = saved && saved.url;
+      } catch (err) {
+        console.warn('[ler prova] o PDF não pôde ser guardado:', err.message);
+      }
     }
 
     state.busyText = `Enviando o texto (${pages} páginas)…`;
@@ -469,10 +550,7 @@ async function readPdf(file) {
         done: index === partes.length - 1,
       });
     }
-    if (url) {
-      // guarda a origem sem depender de uma rota nova
-      atualizado.source_url = url;
-    }
+    if (url) atualizado.source_url = url;
     state.current = { ...state.current, ...atualizado };
     state.readProgress = null;
     toast(`Texto lido: ${fmtNumber(text.length)} caracteres em ${pages} páginas.`, { type: 'success' });
@@ -480,8 +558,8 @@ async function readPdf(file) {
     state.readProgress = null;
     state.readError =
       err instanceof PdfSemTexto
-        ? 'Este PDF não tem texto — é uma digitalização (foto de cada página). Procure a versão original do arquivo, ou cadastre as questões pela planilha.'
-        : err.message || 'Não foi possível ler este arquivo.';
+        ? 'Este PDF não tem texto — é uma digitalização (foto de cada página). Procure a versão original do arquivo, ou cole o texto no campo abaixo.'
+        : aoFalhar || err.message || 'Não foi possível ler este arquivo.';
   } finally {
     state.busy = false;
     paint();
@@ -596,7 +674,21 @@ async function patchItem(itemId, body) {
 
 // ---------------------------------------------------------------------
 export default async function renderPage(ctx) {
-  state = { ctx, loading: true, list: [], exams: null, current: null, busy: false, busyText: '', readProgress: null, readError: null };
+  state = {
+    ctx,
+    loading: true,
+    list: [],
+    exams: null,
+    provas: [],
+    // Prova anterior vinda de "/admin/ler-prova?prova=<id>", quando o professor
+    // chega pelo atalho da tela de Provas anteriores.
+    provaEscolhida: (ctx.query && ctx.query.prova) || null,
+    current: null,
+    busy: false,
+    busyText: '',
+    readProgress: null,
+    readError: null,
+  };
   paint();
 
   cleanup.push(
@@ -607,6 +699,7 @@ export default async function renderPage(ctx) {
       state.readError = null;
       paint();
     }),
+    on(ctx.el, 'click', '[data-action="read-exam"]', () => readFromPastExam()),
     on(ctx.el, 'click', '[data-action="use-text"]', (event, trigger) => useTypedText(trigger)),
     on(ctx.el, 'click', '[data-action="sweep"]', () => sweep()),
     on(ctx.el, 'click', '[data-action="sweep-all"]', () => sweep({ all: true })),

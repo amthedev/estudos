@@ -12,6 +12,8 @@
  *   PATCH  /api/admin/exam-imports/:id/items/:itemId  corrige matéria, assunto, gabarito ou dificuldade
  *   POST   /api/admin/exam-imports/:id/import   { item_ids } → manda para o banco de questões
  *   DELETE /api/admin/exam-imports/:id
+ *   GET    /api/admin/exam-imports/provas                 provas anteriores com PDF, para escolher
+ *   GET    /api/admin/exam-imports/provas/:id/arquivo     entrega o PDF da prova pelo próprio domínio
  *
  * Por que em lotes: uma prova do ENEM tem 90 questões e o texto passa de 200
  * mil caracteres. Isso não cabe em uma chamada de IA nem em uma requisição
@@ -32,6 +34,10 @@ const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { nullableFileRef } = require('../../utils/validators');
+const fs = require('node:fs');
+const path = require('node:path');
+const { Readable } = require('node:stream');
+const uploads = require('../../services/uploads');
 const examImport = require('../../services/exam-import');
 const { buildImportRow, loadSlugMaps, insertQuestion, RowError } = require('./questions');
 
@@ -168,6 +174,69 @@ router.post(
     );
     await audit(req, 'exam_import.create', 'exam_import', created.id, { title: body.title, answer_key: count });
     res.status(201).json({ ...serialize(created), answer_key_count: count });
+  })
+);
+
+/**
+ * As provas anteriores que já têm PDF cadastrado.
+ *
+ * O cliente sobe a prova uma vez em "Provas anteriores"; ler as questões dela
+ * não pode exigir enviar o mesmo arquivo de novo.
+ */
+router.get(
+  '/provas',
+  wrap(async (req, res) => {
+    const rows = await db.many(
+      `SELECT p.id, p.title, p.year, p.day, p.board, p.pdf_url, p.exam_id,
+              e.name AS exam_name, e.short_name AS exam_short_name, e.board AS exam_board,
+              (SELECT count(*)::int FROM exam_imports i WHERE i.past_exam_id = p.id) AS leituras
+         FROM past_exams p
+         LEFT JOIN exams e ON e.id = p.exam_id
+        WHERE p.pdf_url IS NOT NULL AND p.pdf_url <> ''
+        ORDER BY p.year DESC, e.sort_order, p.sort_order, p.title`
+    );
+    res.json({ items: rows, total: rows.length });
+  })
+);
+
+/**
+ * Entrega o PDF de uma prova anterior pelo próprio domínio.
+ *
+ * O arquivo mora no Blob da Square Cloud, em outro endereço. O navegador do
+ * administrador não pode buscá-lo direto: a política de segurança da página
+ * (connect-src 'self') barra, e afrouxá-la valeria para o site inteiro. Aqui o
+ * servidor busca e devolve — e a origem do arquivo vem do banco, nunca de um
+ * endereço que alguém tenha digitado.
+ */
+router.get(
+  '/provas/:id/arquivo',
+  validate({ params: idParams }),
+  wrap(async (req, res) => {
+    const prova = await db.one('SELECT id, title, pdf_url FROM past_exams WHERE id = $1', [req.valid.params.id]);
+    if (!prova || !prova.pdf_url) throw new AppError(404, 'not_found', 'Esta prova não tem PDF cadastrado.');
+
+    const url = String(prova.pdf_url).trim();
+    res.setHeader('Content-Type', 'application/pdf');
+
+    // Caminho interno: o arquivo está no disco da própria aplicação.
+    if (url.startsWith('/uploads/')) {
+      const alvo = path.join(uploads.UPLOADS_DIR, url.replace('/uploads/', ''));
+      if (!alvo.startsWith(uploads.UPLOADS_DIR) || !fs.existsSync(alvo)) {
+        throw new AppError(404, 'not_found', 'O arquivo desta prova não foi encontrado no servidor.');
+      }
+      return fs.createReadStream(alvo).pipe(res);
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      throw new AppError(409, 'conflict', 'O endereço do PDF desta prova não é um arquivo que a plataforma consiga abrir.');
+    }
+
+    const resposta = await fetch(url, { redirect: 'follow' });
+    if (!resposta.ok || !resposta.body) {
+      throw new AppError(502, 'bad_gateway', `Não foi possível baixar o PDF desta prova (HTTP ${resposta.status}).`);
+    }
+    const tamanho = resposta.headers.get('content-length');
+    if (tamanho) res.setHeader('Content-Length', tamanho);
+    Readable.fromWeb(resposta.body).pipe(res);
   })
 );
 
