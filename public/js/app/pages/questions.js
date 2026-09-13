@@ -104,6 +104,8 @@ export default async function renderPage(ctx) {
     topics: [],
     subtopics: [],
     options: { years: [], boards: [] },
+    counts: { subjects: new Map(), topics: new Map(), subtopics: new Map() },
+    temContagem: false,
     result: null,
     loading: true,
     error: null,
@@ -139,16 +141,58 @@ export default async function renderPage(ctx) {
     return Object.values(state.filters).some(Boolean);
   }
 
+  /**
+   * Um <select> de filtro. Quando as opções trazem `group`, saem separadas em
+   * <optgroup>: é assim que a matéria que ainda não tem questão nenhuma aparece
+   * como tal, em vez de virar uma escolha que leva a uma tela vazia sem
+   * explicação nenhuma.
+   */
   function select(name, label, options, { placeholder, disabled = false } = {}) {
     const value = state.filters[name] || '';
+    const option = (item) =>
+      html`<option value="${item.value}" ${String(value) === String(item.value) ? raw('selected') : ''}>${item.label}</option>`;
+    const grupos = [];
+    for (const item of options) {
+      const nome = item.group || '';
+      const grupo = grupos.find((atual) => atual.nome === nome);
+      if (grupo) grupo.itens.push(item);
+      else grupos.push({ nome, ordem: Number(item.groupOrder) || 0, itens: [item] });
+    }
+    // O que tem questão vem primeiro: a ordem do conteúdo programático colocava
+    // as matérias zeradas na frente, que é justamente o que o aluno não quer ver.
+    grupos.sort((a, b) => a.ordem - b.ordem);
     return html`
       <div class="field qbank-field">
         <label class="label" for="qbank-${name}">${label}</label>
         <select class="select" id="qbank-${name}" data-filter="${name}" ${disabled ? raw('disabled') : ''}>
           <option value="">${placeholder || 'Todos'}</option>
-          ${options.map((option) => html`<option value="${option.value}" ${String(value) === String(option.value) ? raw('selected') : ''}>${option.label}</option>`)}
+          ${grupos.map((grupo) =>
+            grupo.nome
+              ? html`<optgroup label="${grupo.nome}">${grupo.itens.map(option)}</optgroup>`
+              : html`${grupo.itens.map(option)}`
+          )}
         </select>
       </div>`;
+  }
+
+  /**
+   * Rotula uma opção com quantas questões existem por trás dela.
+   *
+   * O cliente abriu o banco, escolheu Matemática e levou uma tela vazia. A
+   * contagem que faltava já vinha pronta de /api/questions/filters e era jogada
+   * fora aqui. Agora ela aparece antes do clique, e o que está zerado fica num
+   * grupo separado — continua escolhível, porque é dali que sai o pedido para a
+   * IA elaborar as questões daquele recorte.
+   */
+  function comContagem(id, nome, total) {
+    if (!state.temContagem) return { value: id, label: nome };
+    const n = Number(total) || 0;
+    return {
+      value: id,
+      label: n ? `${nome} (${n})` : nome,
+      group: n ? 'Com questões no banco' : 'Ainda sem questões',
+      groupOrder: n ? 0 : 1,
+    };
   }
 
   function filtersView() {
@@ -162,12 +206,12 @@ export default async function renderPage(ctx) {
         </div>
         <div class="qbank-filters-grid">
           ${select('exam_id', 'Prova', state.exams.map((exam) => ({ value: exam.id, label: exam.short_name || exam.name })), { placeholder: 'Todas as provas' })}
-          ${select('subject_id', 'Matéria', state.subjects.map((subject) => ({ value: subject.id, label: subject.name })), { placeholder: 'Todas as matérias' })}
-          ${select('topic_id', 'Assunto', state.topics.map((topic) => ({ value: topic.id, label: topic.name })), {
+          ${select('subject_id', 'Matéria', state.subjects.map((subject) => comContagem(subject.id, subject.name, state.counts.subjects.get(String(subject.id)))), { placeholder: 'Todas as matérias' })}
+          ${select('topic_id', 'Assunto', state.topics.map((topic) => comContagem(topic.id, topic.name, state.counts.topics.get(String(topic.id)))), {
             placeholder: state.filters.subject_id ? 'Todos os assuntos' : 'Escolha uma matéria',
             disabled: !state.filters.subject_id,
           })}
-          ${select('subtopic_id', 'Subassunto', state.subtopics.map((subtopic) => ({ value: subtopic.id, label: subtopic.name })), {
+          ${select('subtopic_id', 'Subassunto', state.subtopics.map((subtopic) => comContagem(subtopic.id, subtopic.name, state.counts.subtopics.get(String(subtopic.id)))), {
             placeholder: state.filters.topic_id ? 'Todos os subassuntos' : 'Escolha um assunto',
             disabled: !state.filters.topic_id,
           })}
@@ -186,6 +230,34 @@ export default async function renderPage(ctx) {
       </div>`;
   }
 
+  /**
+   * Diz POR QUE a tela está vazia.
+   *
+   * "Nenhuma questão atende a esses filtros" jogava a culpa no aluno mesmo
+   * quando o banco simplesmente não tem uma questão daquela matéria. A
+   * contagem que separa os dois casos já está carregada.
+   */
+  function textoVazio() {
+    if (!hasFilters()) return 'Ainda não há questões publicadas na plataforma.';
+    if (!state.temContagem) return 'Nenhuma questão atende a esses filtros. Tente ampliar a busca.';
+    const nomeDe = (lista, id) => {
+      const achado = (lista || []).find((item) => String(item.id) === String(id));
+      return achado ? achado.name : '';
+    };
+    const recortes = [
+      { id: state.filters.subtopic_id, mapa: state.counts.subtopics, lista: state.subtopics, rotulo: 'O subassunto' },
+      { id: state.filters.topic_id, mapa: state.counts.topics, lista: state.topics, rotulo: 'O assunto' },
+      { id: state.filters.subject_id, mapa: state.counts.subjects, lista: state.subjects, rotulo: 'A matéria' },
+    ];
+    for (const recorte of recortes) {
+      if (!recorte.id) continue;
+      if ((Number(recorte.mapa.get(String(recorte.id))) || 0) > 0) continue;
+      const nome = nomeDe(recorte.lista, recorte.id);
+      return `${recorte.rotulo}${nome ? ` ${nome}` : ''} ainda não tem nenhuma questão no banco.`;
+    }
+    return 'Nenhuma questão atende a esses filtros. Tente ampliar a busca.';
+  }
+
   function listView() {
     if (state.error) return errorState({ message: state.error });
     if (state.loading) return skeleton('list', 5);
@@ -198,9 +270,7 @@ export default async function renderPage(ctx) {
         ${emptyState({
           icon: 'file-text',
           title: 'Nenhuma questão encontrada',
-          text: hasFilters()
-            ? 'Nenhuma questão atende a esses filtros. Tente ampliar a busca.'
-            : 'Ainda não há questões publicadas na plataforma.',
+          text: textoVazio(),
           action: hasFilters() ? { label: 'Limpar filtros', icon: 'rotate-ccw', variant: 'secondary', dataAction: 'clear' } : null,
         })}
         ${podeGerar
@@ -261,7 +331,7 @@ export default async function renderPage(ctx) {
     render(listEl, listView());
   }
 
-  async function loadList() {
+  async function loadList({ jaAjustou = false } = {}) {
     state.loading = true;
     state.error = null;
     paintList();
@@ -272,6 +342,16 @@ export default async function renderPage(ctx) {
       }
       state.result = await api.get('/api/questions', { query });
       state.loading = false;
+      // Página além do fim (o filtro mudou, ou o endereço veio com ?page=3):
+      // sem isto a tela dizia "nenhuma questão encontrada" com o total cheio e
+      // sem paginador, deixando o aluno preso numa página que não existe.
+      const total = Number(state.result.total) || 0;
+      const paginas = Math.max(1, Number(state.result.pages) || 1);
+      if (!jaAjustou && total > 0 && !state.result.items.length && state.page > paginas) {
+        state.page = paginas;
+        syncUrl();
+        return loadList({ jaAjustou: true });
+      }
     } catch (err) {
       state.loading = false;
       state.error = (err && err.message) || 'Não foi possível carregar as questões.';
@@ -305,13 +385,24 @@ export default async function renderPage(ctx) {
     const [exams, subjects, options] = await Promise.all([
       api.get('/api/exams').catch(() => []),
       api.get('/api/subjects', { query: { all: 1 } }).catch(() => []),
-      api.get('/api/questions/filters').catch(() => ({ years: [], boards: [] })),
+      api.get('/api/questions/filters').catch(() => null),
     ]);
     state.exams = Array.isArray(exams) ? exams : [];
     state.subjects = Array.isArray(subjects) ? subjects : [];
+    // Sem a resposta dos filtros não dá para dizer o que está zerado. Melhor
+    // rótulo sem contagem do que marcar tudo como "sem questões".
+    state.temContagem = Boolean(options);
+    const filtros = options || {};
     state.options = {
-      years: Array.isArray(options.years) ? options.years : [],
-      boards: Array.isArray(options.boards) ? options.boards : [],
+      years: Array.isArray(filtros.years) ? filtros.years : [],
+      boards: Array.isArray(filtros.boards) ? filtros.boards : [],
+    };
+    const porId = (lista) =>
+      new Map((Array.isArray(lista) ? lista : []).map((linha) => [String(linha.id), Number(linha.total) || 0]));
+    state.counts = {
+      subjects: porId(filtros.subjects),
+      topics: porId(filtros.topics),
+      subtopics: porId(filtros.subtopics),
     };
     await Promise.all([loadTopics(), loadSubtopics()]);
     paintFilters();
