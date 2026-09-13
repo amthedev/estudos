@@ -172,6 +172,26 @@ describe('Painel administrativo', () => {
     assert.equal(gone.status, 404);
   });
 
+  it('a busca do banco encontra pelo nome do assunto, não só pelo enunciado', async () => {
+    // O enunciado não repete o nome do assunto; procurar "Funções" tem que
+    // trazer a questão de Funções mesmo assim. Antes a busca só olhava o
+    // enunciado e voltava vazia.
+    const criada = await admin.agent.post('/api/admin/questions', questionPayload(content));
+    assert.equal(criada.status, 201, JSON.stringify(criada.body));
+
+    const porAssunto = await admin.agent.get('/api/admin/questions?q=' + encodeURIComponent('Funções'));
+    assert.equal(porAssunto.status, 200);
+    assert.ok(porAssunto.body.total >= 1, 'buscar pelo nome do assunto tem que achar a questão');
+
+    const semAcento = await admin.agent.get('/api/admin/questions?q=' + encodeURIComponent('funcoes'));
+    assert.ok(semAcento.body.total >= 1, 'sem acento também');
+
+    const porMateria = await admin.agent.get('/api/admin/questions?q=' + encodeURIComponent('Matemática'));
+    assert.ok(porMateria.body.total >= 1, 'e pelo nome da matéria');
+
+    await admin.agent.del(`/api/admin/questions/${criada.body.id}`);
+  });
+
   it('recusa questão com duas alternativas corretas e questão sem gabarito', async () => {
     const twoCorrect = await admin.agent.post(
       '/api/admin/questions',

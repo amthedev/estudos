@@ -213,8 +213,15 @@ function buildFilters(query) {
   if (query.q) {
     const like = push(`%${query.q}%`);
     const term = push(query.q);
+    // Inclui os nomes de matéria, assunto e subassunto: quem procura no banco
+    // digita "Evolução", não uma palavra do enunciado. O índice cobre só o
+    // enunciado, então sem isto a busca por assunto voltava vazia — o mesmo
+    // defeito que havia na busca do aluno.
     clauses.push(`(fe_unaccent(q.statement) ILIKE fe_unaccent(${like})
-                   OR q.search_vector @@ plainto_tsquery('portuguese', fe_unaccent(${term})))`);
+                   OR q.search_vector @@ plainto_tsquery('portuguese', fe_unaccent(${term}))
+                   OR fe_unaccent(s.name) ILIKE fe_unaccent(${like})
+                   OR fe_unaccent(t.name) ILIKE fe_unaccent(${like})
+                   OR fe_unaccent(st.name) ILIKE fe_unaccent(${like}))`);
   }
   if (query.subject_id) clauses.push(`q.subject_id = ${push(query.subject_id)}`);
   if (query.topic_id) clauses.push(`q.topic_id = ${push(query.topic_id)}`);
@@ -782,7 +789,17 @@ router.get(
     const sort = parseSort(query, SORTABLE, { defaultSort: 'created_at', defaultDir: 'desc' });
     const { where, params } = buildFilters(query);
 
-    const totalRow = await db.one(`SELECT count(*)::int AS total FROM questions q ${where}`, params);
+    // Os mesmos JOINs do SELECT: o filtro de busca agora referencia os nomes de
+    // matéria/assunto (s, t, st), então a contagem precisa deles também.
+    const totalRow = await db.one(
+      `SELECT count(*)::int AS total
+         FROM questions q
+         JOIN subjects s ON s.id = q.subject_id
+         JOIN topics t ON t.id = q.topic_id
+         LEFT JOIN subtopics st ON st.id = q.subtopic_id
+         ${where}`,
+      params
+    );
     const items = await db.many(
       `${SELECT_LIST} ${where} ORDER BY ${sort.sql}, q.id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
