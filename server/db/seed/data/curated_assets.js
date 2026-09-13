@@ -139,11 +139,19 @@ const pastExams = enemYears.flatMap((year) => [1, 2].map((day) => ({
   sort_order: day,
 })));
 
-// O acervo PPL foi combinado como três provas adicionais. Cada aplicação tem
-// dois dias; usamos os cadernos azuis e os gabaritos oficiais do Inep, já
-// publicados no mesmo Blob dos demais PDFs para a leitura não depender do
+// O acervo PPL vai de 2016 a 2024: nove aplicações, dois dias cada. Cada dia é
+// uma prova completa de 90 questões com gabarito oficial, o que praticamente
+// dobra o material disponível para o banco de questões e para o simulado.
+//
+// O caderno escolhido varia de ano para ano porque a numeração do Inep muda (o
+// azul do 2º dia é o 5 em 2021, o 7 em 2019 e o 19 em 2018). O que importa, e
+// foi conferido arquivo por arquivo, é que a prova e o gabarito de cada linha
+// sejam do MESMO caderno — cadernos diferentes embaralham as alternativas, e um
+// gabarito trocado entraria como gabarito errado em 90 questões de uma vez.
+//
+// Os PDFs ficam no mesmo Blob dos demais para a leitura não depender do
 // certificado TLS incompleto do servidor de download do Inep.
-const enemPplYears = [2024, 2023, 2022];
+const enemPplYears = [2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
 pastExams.push(...enemPplYears.flatMap((year) => [1, 2].map((day) => ({
   exam: 'enem',
   year,
