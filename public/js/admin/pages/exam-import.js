@@ -994,8 +994,16 @@ async function importPicked(trigger) {
     const res = await api.post(`/api/admin/exam-imports/${state.current.id}/import`, { item_ids: ids });
     state.current = { ...state.current, ...res };
     await openJob(state.current.id);
+    // "Já estavam no banco" é releitura da mesma prova: a questão foi reaproveitada
+    // em vez de gravada de novo, e dizer isso evita a impressão de que sumiu.
+    const repetidas = Number(res.reused) || 0;
+    const jaEstavam = repetidas ? `, ${repetidas} já ${repetidas === 1 ? 'estava' : 'estavam'} no banco` : '';
     if (res.failed) {
-      toast(`${res.imported} no banco, ${res.failed} não entraram. Veja o motivo em cada questão.`, { type: 'warning' });
+      toast(`${res.imported} no banco${jaEstavam}, ${res.failed} não entraram. Veja o motivo em cada questão.`, {
+        type: 'warning',
+      });
+    } else if (repetidas) {
+      toast(`${pluralize(res.imported, 'questão nova', 'questões novas')} no banco${jaEstavam}.`, { type: 'success' });
     } else {
       // pluralize já traz o número na frente.
       toast(`${pluralize(res.imported, 'questão foi', 'questões foram')} para o banco.`, { type: 'success' });

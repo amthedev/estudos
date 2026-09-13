@@ -310,3 +310,93 @@ describe('Leitura da prova nao pode perder questao no meio do caminho', () => {
     assert.equal(item.answer_from_key, true);
   });
 });
+
+describe('Reler a mesma prova nao duplica o banco', () => {
+  let admin;
+  let provaAnterior;
+
+  /** Um trecho de prova com `total` questoes numeradas. */
+  function provaFalsa(total) {
+    const partes = [];
+    for (let i = 1; i <= total; i += 1) {
+      partes.push(`QUESTÃO ${i}`);
+      partes.push(
+        `Um comerciante aplicou um desconto sobre o preco de um produto e precisa saber o valor final. ` +
+          `Este e o enunciado da questao numero ${i}, com contexto suficiente para ser respondida.`
+      );
+      for (const letra of ['A', 'B', 'C', 'D', 'E']) partes.push(`${letra}  Alternativa ${letra}.`);
+      partes.push('');
+    }
+    return partes.join('\n');
+  }
+
+  async function lerAteOFim(id) {
+    for (let volta = 0; volta < 30; volta += 1) {
+      const disparo = await admin.agent.post(`/api/admin/exam-imports/${id}/sweep`, {});
+      assert.ok([200, 202].includes(disparo.status), `varredura recusada: ${disparo.status}`);
+      if (disparo.body.done) break;
+      for (let espera = 0; espera < 200; espera += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const atual = await admin.agent.get(`/api/admin/exam-imports/${id}`);
+        if (atual.body.status !== 'extraindo') break;
+      }
+    }
+    const final = await admin.agent.get(`/api/admin/exam-imports/${id}`);
+    return final.body;
+  }
+
+  async function novaLeitura(titulo) {
+    const criada = await admin.agent.post('/api/admin/exam-imports', {
+      title: titulo,
+      past_exam_id: provaAnterior.id,
+      exam_id: exam.id,
+      year: 2024,
+      board: 'INEP',
+      answer_key: '1-A 2-A 3-A 4-A 5-A 6-A',
+    });
+    assert.equal(criada.status, 201, JSON.stringify(criada.body));
+    const prova = provaFalsa(6);
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: prova, done: true });
+    return criada.body.id;
+  }
+
+  before(async () => {
+    admin = await ctx.loginAdmin();
+    provaAnterior = await db.one(
+      `INSERT INTO past_exams (exam_id, year, day, title, board, pdf_url)
+       VALUES ($1, 2024, 1, 'Prova para reler', 'INEP', 'https://exemplo/prova.pdf') RETURNING id`,
+      [exam.id]
+    );
+  });
+
+  it('a segunda leitura reaproveita as questoes em vez de gravar de novo', async () => {
+    const primeira = await lerAteOFim(await novaLeitura('Primeira leitura'));
+    const noBancoDepoisDaPrimeira = await db.one(
+      `SELECT count(*)::int AS total FROM questions WHERE source_exam_id = $1`,
+      [exam.id]
+    );
+    assert.ok(primeira.imported_count > 0, 'a primeira leitura precisa ter gravado alguma coisa');
+    assert.equal(noBancoDepoisDaPrimeira.total, primeira.imported_count);
+
+    await lerAteOFim(await novaLeitura('Segunda leitura'));
+    const noBancoDepoisDaSegunda = await db.one(
+      `SELECT count(*)::int AS total FROM questions WHERE source_exam_id = $1`,
+      [exam.id]
+    );
+    assert.equal(
+      noBancoDepoisDaSegunda.total,
+      noBancoDepoisDaPrimeira.total,
+      'reler a mesma prova duplicava as questoes no banco do aluno'
+    );
+  });
+
+  it('e os itens da segunda leitura apontam para as questoes que ja existiam', async () => {
+    const apontam = await db.one(
+      `SELECT count(*)::int AS total
+         FROM exam_import_items it
+         JOIN exam_imports i ON i.id = it.import_id
+        WHERE i.title = 'Segunda leitura' AND it.status = 'importada' AND it.question_id IS NOT NULL`
+    );
+    assert.ok(apontam.total > 0, 'o item reaproveitado continua contando como "no banco"');
+  });
+});

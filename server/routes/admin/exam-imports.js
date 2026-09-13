@@ -590,6 +590,45 @@ async function itensConfirmadosPeloGabarito(importId) {
 }
 
 /**
+ * Questões que uma leitura ANTERIOR da mesma prova já mandou para o banco.
+ *
+ * Reler uma prova é normal: a primeira leitura falha no meio, ou sai com menos
+ * questões do que a prova tem, e o administrador cria outra. Sem esta conferência
+ * cada releitura gravava tudo de novo — a prova que já tinha rendido 36 questões
+ * voltava com as mesmas 36 duplicadas no banco do aluno.
+ *
+ * A chave é o número da questão dentro da prova. Duas leituras são da mesma
+ * prova quando apontam para o mesmo registro de "provas anteriores" ou, na falta
+ * dele, quando têm a mesma prova, o mesmo ano e o mesmo título.
+ *
+ * @returns {Promise<Map<number, string>>} número da questão → id da questão já gravada
+ */
+async function numerosJaNoBanco(row) {
+  const rows = await db.many(
+    `SELECT it.number, it.question_id
+       FROM exam_import_items it
+       JOIN exam_imports i ON i.id = it.import_id
+      WHERE it.status = 'importada'
+        AND it.number IS NOT NULL
+        AND it.question_id IS NOT NULL
+        AND i.id <> $1
+        AND CASE
+              WHEN $2::uuid IS NOT NULL THEN i.past_exam_id = $2
+              ELSE i.past_exam_id IS NULL
+                   AND i.exam_id IS NOT DISTINCT FROM $3::uuid
+                   AND i.year IS NOT DISTINCT FROM $4::int
+                   AND i.title = $5
+            END
+        -- Questão apagada de propósito no painel pode voltar numa releitura.
+        AND EXISTS (SELECT 1 FROM questions q WHERE q.id = it.question_id)`,
+    [row.id, row.past_exam_id || null, row.exam_id || null, row.year ?? null, row.title]
+  );
+  const mapa = new Map();
+  for (const linha of rows) if (!mapa.has(linha.number)) mapa.set(linha.number, linha.question_id);
+  return mapa;
+}
+
+/**
  * Grava itens já selecionados no banco de questões.
  *
  * É compartilhado pela importação automática do gabarito e pelo botão de
@@ -600,8 +639,24 @@ async function importarItens(row, items, adminId) {
   const maps = await loadSlugMaps();
   const errors = [];
   const criadas = [];
+  const reaproveitadas = [];
+  const jaNoBanco = await numerosJaNoBanco(row);
 
   for (const item of items) {
+    // Já veio de outra leitura desta mesma prova: o item aponta para a questão
+    // que existe, em vez de gravar uma cópia. Ele conta como "no banco" porque
+    // é exatamente o que ele é.
+    const existente = item.number !== null ? jaNoBanco.get(item.number) : undefined;
+    if (existente) {
+      await db.query(
+        `UPDATE exam_import_items SET status = 'importada', question_id = $2, error_message = NULL
+          WHERE id = $1 AND status = 'pendente'`,
+        [item.id, existente]
+      );
+      reaproveitadas.push(existente);
+      continue;
+    }
+
     try {
       const questionId = await db.tx(async (client) => {
         // A seleção aconteceu antes da transação. Trava e relê a linha para
@@ -653,7 +708,7 @@ async function importarItens(row, items, adminId) {
     `UPDATE exam_imports SET imported_count = imported_count + $2 WHERE id = $1 RETURNING *`,
     [row.id, criadas.length]
   );
-  return { atualizado, criadas, errors };
+  return { atualizado, criadas, errors, reaproveitadas };
 }
 
 /** Importa, sem outro clique, tudo que a banca já respondeu oficialmente. */
@@ -670,10 +725,15 @@ async function importarConfirmadasAutomaticamente(row, adminId) {
     {
       requested: confirmadas.length,
       imported: resultado.criadas.length,
+      reused: resultado.reaproveitadas.length,
       failed: resultado.errors.length,
     }
   );
-  return { imported: resultado.criadas.length, failed: resultado.errors.length };
+  return {
+    imported: resultado.criadas.length,
+    reused: resultado.reaproveitadas.length,
+    failed: resultado.errors.length,
+  };
 }
 
 /** Varre UM lote e grava o resultado. Roda solta, fora da requisição. */
@@ -882,7 +942,7 @@ router.post(
       );
     }
 
-    const { atualizado, criadas, errors } = await importarItens(
+    const { atualizado, criadas, errors, reaproveitadas } = await importarItens(
       row,
       items,
       req.admin ? req.admin.id : null
@@ -890,11 +950,13 @@ router.post(
     await audit(req, 'exam_import.import', 'exam_import', row.id, {
       requested: items.length,
       imported: criadas.length,
+      reused: reaproveitadas.length,
       failed: errors.length,
     });
 
     res.json({
       imported: criadas.length,
+      reused: reaproveitadas.length,
       total: items.length,
       failed: errors.length,
       errors,
