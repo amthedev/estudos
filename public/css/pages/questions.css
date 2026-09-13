@@ -329,3 +329,22 @@
     justify-content: center;
   }
 }
+
+/* Banco vazio no recorte filtrado: a IA elabora na hora (ver questions.js). */
+.qbank-generate {
+  margin-top: var(--s-4);
+  border-left: 3px solid var(--primary);
+}
+.qbank-generate-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+.qbank-generate-text {
+  color: var(--text-2);
+  margin: 0 0 var(--s-4);
+}

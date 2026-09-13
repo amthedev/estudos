@@ -381,6 +381,95 @@ async function generate({ subject, topic, lesson, exam, difficulty, targets, use
   });
 }
 
+/** Assuntos elegíveis para o recorte do simulado, dos mais cobrados para os menos. */
+async function fillableTopics({ examId, subjectId, topicId, filters = {} }) {
+  const params = [];
+  const add = (value) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  const where = ['t.active', 's.active'];
+  if (examId) where.push(`EXISTS (SELECT 1 FROM exam_topics et WHERE et.topic_id = t.id AND et.exam_id = ${add(examId)})`);
+  if (subjectId) where.push(`t.subject_id = ${add(subjectId)}`);
+  if (topicId) where.push(`t.id = ${add(topicId)}`);
+  if (Array.isArray(filters.subject_ids) && filters.subject_ids.length) {
+    where.push(`t.subject_id = ANY(${add(filters.subject_ids)}::uuid[])`);
+  }
+  if (Array.isArray(filters.topic_ids) && filters.topic_ids.length) {
+    where.push(`t.id = ANY(${add(filters.topic_ids)}::uuid[])`);
+  }
+
+  // O peso do assunto na prova mora em exam_topics; sem prova no recorte, a
+  // ordem do conteúdo programático é o melhor critério disponível.
+  const pesoJoin = examId
+    ? `LEFT JOIN exam_topics w ON w.topic_id = t.id AND w.exam_id = ${add(examId)}`
+    : '';
+  const ordem = examId ? 'w.weight DESC NULLS LAST, s.sort_order, t.sort_order, t.name' : 's.sort_order, t.sort_order, t.name';
+
+  return db.many(
+    `SELECT t.id, t.name, t.description, t.subject_id, s.name AS subject_name
+       FROM topics t
+       JOIN subjects s ON s.id = t.subject_id
+       ${pesoJoin}
+      WHERE ${where.join(' AND ')}
+      ORDER BY ${ordem}`,
+    params
+  );
+}
+
+/**
+ * Elabora questões novas para um recorte (prova, matéria ou assunto) e devolve
+ * o que entrou, no formato do pool: { id, subject_id, topic_id }.
+ *
+ * Serve a dois lugares: o simulado que o banco não fecha e o banco de questões
+ * do aluno quando o filtro dele não acha nada. O que muda entre os dois é só o
+ * teto, que quem chama decide.
+ */
+async function fillPool({ examId = null, subjectId = null, topicId = null, filters = {}, difficulty = 2, count, userId }) {
+  const teto = Math.max(0, Math.min(Number(count) || 0, 90));
+  if (teto <= 0) return [];
+
+  const topics = await fillableTopics({ examId, subjectId, topicId, filters });
+  if (!topics.length) return [];
+
+  const criadas = [];
+  // Espalha pelos assuntos em vez de esgotar um: é assim que uma prova se
+  // parece com uma prova.
+  for (const topic of topics) {
+    if (criadas.length >= teto) break;
+    const querAgora = Math.min(MAX_POR_CHAMADA, teto - criadas.length);
+    const subtopics = await db.many(
+      'SELECT id, name FROM subtopics WHERE topic_id = $1 AND active ORDER BY sort_order, name',
+      [topic.id]
+    );
+    const targets = Array.from({ length: querAgora }, (_, index) =>
+      subtopics.length
+        ? { subtopic_id: subtopics[index % subtopics.length].id, name: subtopics[index % subtopics.length].name }
+        : { subtopic_id: null, name: topic.name }
+    );
+
+    try {
+      const ids = await generate({
+        subject: { id: topic.subject_id, name: topic.subject_name },
+        topic: { id: topic.id, name: topic.name, description: topic.description },
+        lesson: null,
+        exam: null,
+        difficulty,
+        targets,
+        userId,
+      });
+      for (const id of ids) criadas.push({ id, subject_id: topic.subject_id, topic_id: topic.id });
+    } catch (err) {
+      // Falta de questão não pode virar tela vazia: quem chamou recebe o que
+      // deu para elaborar, e o motivo fica no log. Teto diário do aluno sobe.
+      if (err && err.code === 'ai_limit_reached' && !criadas.length) throw err;
+      console.warn(`[question-ai] não foi possível elaborar questões de ${topic.name}: ${err.message}`);
+      break;
+    }
+  }
+  return criadas;
+}
+
 module.exports = {
   DIFICULDADES,
   QUESTOES_POR_AULA,
@@ -395,4 +484,6 @@ module.exports = {
   buildQuestionsPrompt,
   normalizeGenerated,
   generate,
+  fillableTopics,
+  fillPool,
 };

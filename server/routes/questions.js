@@ -9,6 +9,8 @@
  *   GET  /api/questions/:id        → questão com alternativas (sem gabarito)
  *   POST /api/questions/:id/answer { option_id, context, context_id?, time_spent_sec? }
  *                                  → { is_correct, correct_option_id, resolution, explanation, attempt_id }
+ *   POST /api/questions/generate   { topic_id? , subject_id?, exam_id?, difficulty? }
+ *                                  elabora questões do recorte quando o banco não tem nenhuma
  *   POST /api/questions/:id/report { reason, comment? } → 201
  *                                  avisa que a questão tem problema (gabarito, enunciado, alternativas…)
  *
@@ -23,6 +25,8 @@ const { requireStudent } = require('../middleware/auth');
 const { requireAccess } = require('../middleware/access');
 const { parsePagination, paginate } = require('../utils/pagination');
 const questions = require('../services/questions');
+const questionAi = require('../services/question-ai');
+const { aiLimiter } = require('../middleware/rateLimit');
 
 router.use(requireStudent, requireAccess);
 
@@ -68,6 +72,27 @@ const reportSchema = z
     ),
   })
   .strict();
+
+/**
+ * Pedido de questões novas a partir do banco vazio.
+ *
+ * O combinado com o cliente: "a IA pega lá do banco de questões e, caso não
+ * tiver no banco, ela gera ela mesma". Aqui é o "ela gera": o aluno filtrou,
+ * não veio nada, e pede para a IA elaborar daquele recorte. O teto diário por
+ * aluno é o mesmo da prática pós-aula.
+ */
+const generateSchema = z
+  .object({
+    topic_id: optionalUuid,
+    subject_id: optionalUuid,
+    exam_id: optionalUuid,
+    difficulty: z.coerce.number().int().min(1).max(3).optional(),
+  })
+  .strict()
+  .refine((body) => body.topic_id || body.subject_id, {
+    message: 'Escolha ao menos uma matéria para a IA elaborar as questões.',
+    path: ['subject_id'],
+  });
 
 const answerSchema = z.object({
   option_id: uuid,
@@ -234,6 +259,38 @@ router.post(
       timeSpentSec: timeSpentSec ?? null,
     });
     res.status(201).json(result);
+  })
+);
+
+/** Quantas questões a IA elabora de uma vez para o banco do aluno. */
+const GERAR_POR_VEZ = 5;
+
+router.post(
+  '/generate',
+  aiLimiter,
+  validate({ body: generateSchema }),
+  wrap(async (req, res) => {
+    const { topic_id: topicId, subject_id: subjectId, exam_id: examId, difficulty } = req.valid.body;
+
+    const criadas = await questionAi.fillPool({
+      examId: examId || null,
+      subjectId: topicId ? null : subjectId || null,
+      topicId: topicId || null,
+      difficulty: questionAi.difficultyOf(difficulty),
+      count: GERAR_POR_VEZ,
+      userId: req.user.id,
+    });
+
+    if (!criadas.length) {
+      throw new AppError(
+        503,
+        'ai_unavailable',
+        'Não foi possível elaborar questões deste recorte agora. Tente outro assunto ou volte em instantes.'
+      );
+    }
+
+    const lista = await questions.getQuestionsByIds(criadas.map((q) => q.id));
+    res.status(201).json({ questions: lista, generated: lista.length });
   })
 );
 

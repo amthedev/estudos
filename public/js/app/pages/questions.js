@@ -10,7 +10,7 @@
 // Exporta `questionChips` e `answeredBadge`, reutilizados pelo caderno de erros.
 // =====================================================================
 import { api } from '../../core/api.js';
-import { html, raw, render, qs, on, debounce, modal, toast, pageHeader, emptyState, errorState, skeleton, badge } from '../../core/ui.js';
+import { html, raw, render, qs, on, debounce, modal, toast, setLoading, pageHeader, emptyState, errorState, skeleton, badge } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { mdToText } from '../../core/markdown.js';
 import { difficultyLabel, difficultyTone } from '../../core/format.js';
@@ -191,19 +191,66 @@ export default async function renderPage(ctx) {
     if (state.loading) return skeleton('list', 5);
     const result = state.result || { items: [], total: 0, page: 1, pages: 1 };
     if (!result.items.length) {
-      return emptyState({
-        icon: 'file-text',
-        title: 'Nenhuma questão encontrada',
-        text: hasFilters()
-          ? 'Nenhuma questão atende a esses filtros. Tente ampliar a busca.'
-          : 'Ainda não há questões publicadas na plataforma.',
-        action: hasFilters() ? { label: 'Limpar filtros', icon: 'rotate-ccw', variant: 'secondary', dataAction: 'clear' } : null,
-      });
+      // Filtro fechado num assunto ou numa matéria e nada no banco: em vez de
+      // uma tela morta, a IA elabora as questões daquele recorte na hora.
+      const podeGerar = Boolean(state.filters.topic_id || state.filters.subject_id);
+      return html`
+        ${emptyState({
+          icon: 'file-text',
+          title: 'Nenhuma questão encontrada',
+          text: hasFilters()
+            ? 'Nenhuma questão atende a esses filtros. Tente ampliar a busca.'
+            : 'Ainda não há questões publicadas na plataforma.',
+          action: hasFilters() ? { label: 'Limpar filtros', icon: 'rotate-ccw', variant: 'secondary', dataAction: 'clear' } : null,
+        })}
+        ${podeGerar
+          ? html`
+            <section class="card qbank-generate">
+              <div class="card-body">
+                <h3 class="qbank-generate-title">${icon('sparkles')}<span>Quer que a IA elabore agora?</span></h3>
+                <p class="qbank-generate-text">
+                  Ela escreve cinco questões deste recorte, com resolução comentada, e elas ficam no
+                  banco para os outros alunos também.
+                </p>
+                <button type="button" class="btn btn-primary" data-action="generate">
+                  ${icon('sparkles')}<span>Elaborar questões deste assunto</span>
+                </button>
+              </div>
+            </section>`
+          : ''}`;
     }
     return html`
       <div class="qbank-count">${result.total} ${result.total === 1 ? 'questão encontrada' : 'questões encontradas'}</div>
       <div class="qbank-list">${result.items.map((question, index) => questionItem(question, index))}</div>
       ${pager({ page: result.page, pages: result.pages, total: result.total, unit: 'questões' })}`;
+  }
+
+  /**
+   * Pede à IA as questões do recorte filtrado.
+   *
+   * É o "caso não tiver no banco de questões, ela gera ela mesma" do combinado.
+   * As questões ficam gravadas: quem filtrar o mesmo assunto depois já encontra,
+   * sem nova chamada.
+   */
+  async function gerarQuestoes(trigger) {
+    if (state.gerando) return;
+    state.gerando = true;
+    setLoading(trigger, true);
+    try {
+      const res = await api.post('/api/questions/generate', {
+        topic_id: state.filters.topic_id || undefined,
+        subject_id: state.filters.subject_id || undefined,
+        exam_id: state.filters.exam_id || undefined,
+        difficulty: state.filters.difficulty || undefined,
+      });
+      toast(`${res.generated} ${res.generated === 1 ? 'questão elaborada' : 'questões elaboradas'}.`, { type: 'success' });
+      await loadList();
+    } catch (err) {
+      toast((err && err.message) || 'Não foi possível elaborar as questões agora.', { type: 'error' });
+    } finally {
+      state.gerando = false;
+      setLoading(trigger, false);
+    }
   }
 
   function paintFilters() {
@@ -384,6 +431,7 @@ export default async function renderPage(ctx) {
         subtitle: `${items.length} ${items.length === 1 ? 'questão desta página' : 'questões desta página'}, na ordem da lista.`,
       });
     }),
+    on(el, 'click', '[data-action="generate"]', (event, trigger) => gerarQuestoes(trigger)),
     on(el, 'click', '[data-action="retry"]', () => loadList()),
     () => onSearch.cancel(),
     () => closeRunnerModal()
