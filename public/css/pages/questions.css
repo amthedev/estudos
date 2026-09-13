@@ -39,7 +39,12 @@
 }
 @media (max-width: 1023px) {
   .qbank-page {
-    grid-template-columns: 1fr;
+    /* minmax(0, 1fr) deixa a coluna encolher abaixo da largura intrínseca
+       de etiquetas longas, sem empurrar a página para fora da tela. */
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .qbank-page > * {
+    min-width: 0;
   }
   .qbank-filters {
     position: static;
@@ -79,6 +84,14 @@
 }
 .qbank-chips {
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.qbank-chips .chip {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .qbank-chip-subject {
   color: var(--subject-color, var(--primary-2));
