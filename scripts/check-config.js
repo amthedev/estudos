@@ -70,6 +70,18 @@ function env(nome) {
   return valor;
 }
 
+function toBool(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') return ['1', 'true', 'sim', 'yes', 'on'].includes(value.trim().toLowerCase());
+  return Boolean(value);
+}
+
+function findPendingMigrations(files, appliedNames) {
+  const applied = new Set(appliedNames || []);
+  return (files || []).filter((file) => !applied.has(file));
+}
+
 async function main() {
   console.log('');
   console.log(forte('Foco de Elite — conferência de configuração'));
@@ -85,6 +97,7 @@ async function main() {
   }
 
   const db = require('../server/db/pool');
+  const { listMigrationFiles } = require('../server/db/migrate');
   console.log(cinza(`ambiente: ${config.env} · versão ${config.version}`));
 
   // -------------------------------------------------------------- essencial
@@ -109,11 +122,19 @@ async function main() {
       if (!pendentes.total) {
         item(FALTA, 'Migrations', 'rode: npm run migrate');
       } else {
-        const aplicadas = await db.one('SELECT count(*)::int AS total FROM schema_migrations');
+        const aplicadas = await db.many('SELECT name FROM schema_migrations ORDER BY name');
+        const faltantes = findPendingMigrations(
+          listMigrationFiles(),
+          aplicadas.map((migration) => migration.name)
+        );
         const tabelas = await db.one(
           `SELECT count(*)::int AS total FROM information_schema.tables WHERE table_schema = 'public'`
         );
-        item(OK, 'Migrations', `${aplicadas.total} aplicada(s), ${tabelas.total} tabelas`);
+        if (faltantes.length) {
+          item(FALTA, 'Migrations', `${faltantes.length} pendente(s): ${faltantes.join(', ')} — rode: npm run migrate`);
+        } else {
+          item(OK, 'Migrations', `${aplicadas.length} aplicada(s), ${tabelas.total} tabelas`);
+        }
       }
 
       const conteudo = await db.one(
@@ -186,6 +207,15 @@ async function main() {
   // -------------------------------------------------------------- pagamento
   secao('Cobrança das assinaturas');
   const provedor = env('PAYMENT_PROVIDER') || 'asaas';
+  let exigeAssinatura = config.requireSubscription;
+  if (bancoOk) {
+    try {
+      const salvo = await db.one(`SELECT value FROM settings WHERE key = 'require_subscription'`);
+      if (salvo) exigeAssinatura = toBool(salvo.value);
+    } catch (err) {
+      item(FALTA, 'Configuração da assinatura', `não foi possível ler o banco: ${err.message}`);
+    }
+  }
   if (env('ASAAS_API_KEY')) {
     const ambiente = env('ASAAS_ENV') === 'sandbox' ? 'sandbox (teste)' : 'produção';
     item(OK, 'Asaas', `chave ${mascarar(process.env.ASAAS_API_KEY)} · ${ambiente}`);
@@ -195,12 +225,11 @@ async function main() {
       item(OK, 'Webhook do Asaas', `aponte para ${config.appUrl}/api/billing/webhook`);
     }
   } else {
-    const exige = config.requireSubscription;
     item(
-      exige ? FALTA : AVISO,
+      exigeAssinatura ? FALTA : AVISO,
       'Nenhum meio de cobrança',
-      exige
-        ? 'REQUIRE_SUBSCRIPTION está ligado: nenhum aluno conseguirá acessar'
+      exigeAssinatura
+        ? 'a assinatura está obrigatória: nenhum aluno novo conseguirá acessar sem pagamento ou liberação manual'
         : `assinatura desligada, todo aluno tem acesso (provedor: ${provedor})`
     );
   }
@@ -256,12 +285,16 @@ async function main() {
   process.exit(bloqueios ? 1 : 0);
 }
 
-main().catch(async (err) => {
-  console.error(vermelho(`\nNão foi possível conferir: ${err.message}\n`));
-  try {
-    await require('../server/db/pool').closePool();
-  } catch {
-    // o pool pode nem ter sido aberto
-  }
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(async (err) => {
+    console.error(vermelho(`\nNão foi possível conferir: ${err.message}\n`));
+    try {
+      await require('../server/db/pool').closePool();
+    } catch {
+      // o pool pode nem ter sido aberto
+    }
+    process.exit(1);
+  });
+}
+
+module.exports = { main, findPendingMigrations, toBool };

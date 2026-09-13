@@ -2,7 +2,7 @@
 // /app/perfil — dados pessoais, prova e metas, rotina de estudos, troca de
 // senha, situação da assinatura e saída da conta.
 // Consome GET /api/auth/me, PUT /api/profile, PUT /api/profile/password,
-// GET /api/exams, /api/subjects e /api/billing/status.
+// GET /api/exams, /api/exams/:id/subjects e /api/billing/status.
 // =====================================================================
 import { api } from '../../core/api.js';
 import { store } from '../../core/store.js';
@@ -32,13 +32,16 @@ export default async function renderPage(ctx) {
   renderTo(ctx.el, skeleton('page'));
 
   try {
-    const [session, examList, subjectList] = await Promise.all([
+    const [session, examList] = await Promise.all([
       api.get('/api/auth/me'),
       api.get('/api/exams').catch(() => []),
-      api.get('/api/subjects', { query: { all: 1 } }).catch(() => []),
     ]);
     me = session;
     exams = Array.isArray(examList) ? examList : [];
+    const examId = session && session.profile ? session.profile.exam_id : null;
+    const subjectList = examId
+      ? await api.get(`/api/exams/${encodeURIComponent(examId)}/subjects`).catch(() => [])
+      : [];
     subjects = Array.isArray(subjectList) ? subjectList : [];
   } catch (err) {
     renderTo(
