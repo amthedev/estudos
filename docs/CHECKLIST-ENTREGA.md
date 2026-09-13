@@ -98,11 +98,14 @@ que **já está pronto e entregue**.
 - [x] Botão "Não consegui estudar hoje", que redistribui o que ficou pendente pelos próximos dias
 - [x] Matérias → assuntos → subassuntos → aulas, com progresso em cada nível
 - [x] Aula com player do vídeo hospedado pela plataforma, resumo, anotações com salvamento automático, provas em que o assunto cai e botão de concluir
-- [x] Cinco questões do assunto logo após a conclusão da aula, com resposta comentada imediata
+- [x] "Pratique agora" depois da aula: o aluno escolhe o nível (fácil, média ou difícil) e recebe três questões, uma de cada assunto da aula, com resposta comentada imediata
+- [x] Questão elaborada na hora pela inteligência artificial quando o banco não tem nada daquele assunto no nível pedido — e guardada para os próximos alunos
+- [x] Botão "Reportar problema" na questão, que abre uma fila de conferência no painel
 - [x] Banco de questões com filtros por matéria, assunto, subassunto, ano, banca e dificuldade
 - [x] Caderno de erros automático, com filtros e modo de refazer
 - [x] Revisões espaçadas em 1, 7 e 30 dias, com cinco questões cada, entrando sozinhas no cronograma
-- [x] Simulados da prova inteira, por matéria, por assunto ou personalizados, com cronômetro e resultado por área
+- [x] Simulados: escolha da prova (ENEM, Barro Branco ou outro vestibular) e do formato — completo (80 questões em 4 h), mini (20 em 1 h), por matéria, por assunto ou personalizado — com cronômetro e resultado por área
+- [x] Complemento por IA quando o banco não fecha a conta, com teto configurável, e aviso ao aluno quando o simulado sai menor que o pedido
 - [x] Provas anteriores organizadas por prova e por ano
 - [x] Tutor com IA, com resposta em tempo real e contexto da aula ou da questão
 - [x] Redação: escolha ou geração de tema, escrita, envio e correção por critério, com histórico de evolução
@@ -123,6 +126,8 @@ que **já está pronto e entregue**.
 - [x] Conteúdo: árvore de área → matéria → assunto → subassunto, com criação, edição e reordenação
 - [x] Aulas: envio do arquivo do vídeo (uma a uma ou várias de uma vez), duração lida do próprio arquivo, resumo e vínculo com várias provas de uma vez
 - [x] Questões: cadastro completo com alternativas, resolução e explicação; importação e exportação em CSV com validação linha a linha
+- [x] Ler prova em PDF: o texto é lido no navegador, a prova é varrida em lotes, o gabarito oficial colado manda na resposta, e as questões são conferidas antes de entrar no banco — também aceita o texto colado, para prova que não está em PDF
+- [x] Fila de conferência das questões elaboradas pela IA: filtros por origem e por situação, avisos dos alunos e destaque automático para questão com taxa de acerto absurdamente baixa
 - [x] Provas anteriores
 - [x] Vestibulares: dados da prova, data, matérias com pesos e assuntos cobrados
 - [x] Simulados: modelos configuráveis

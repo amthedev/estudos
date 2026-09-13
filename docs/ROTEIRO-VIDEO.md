@@ -82,23 +82,25 @@ o que fazer.
 
 ---
 
-### 5. Aula, conclusão e as cinco questões (3:00 – 4:15)
+### 5. Aula, conclusão e as três questões (3:00 – 4:15)
 
 **O que fazer:** entrar na aula pelo botão, mostrar o player, o resumo, a caixa de anotações e a lista
-"onde cai". Concluir a aula. Resolver as cinco questões que aparecem — **acerte algumas e erre uma de
-propósito**.
+"onde cai". Concluir a aula. Clicar em **Pratique agora**, escolher o nível e resolver as três
+questões — **acerte algumas e erre uma de propósito**.
 
 **Frases-guia:**
 * "O vídeo está hospedado na própria plataforma, enviado por você pelo painel."
 * "Ao lado, o resumo da aula e as provas em que o assunto cai."
 * "Concluí a aula. Repare no que aconteceu: o progresso subiu e a revisão foi agendada
   automaticamente."
-* "E logo em seguida vêm as cinco questões daquele assunto, como você pediu."
+* "Agora o aluno escolhe o nível: fácil, média ou difícil."
+* "E vêm três questões, uma de cada assunto da aula, como você pediu."
 * "Respondi: mostra na hora se acertou, qual era a alternativa certa e a resolução comentada."
 * "Vou errar esta de propósito, para você ver o que acontece."
 
-**Destaque:** o retorno imediato com resolução, e o fato de as cinco questões serem daquele assunto, e
-não aleatórias.
+**Destaque:** o aluno escolhe o nível; são três questões, uma por assunto da aula, e não questões
+aleatórias. Quando o banco não tem questão daquele assunto naquele nível, ela é elaborada na hora e
+fica guardada para os próximos alunos.
 
 ---
 

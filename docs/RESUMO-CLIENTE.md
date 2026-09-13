@@ -100,18 +100,27 @@ Ao lado do vídeo há um campo de anotações que **salva sozinho** enquanto o a
 Todas as anotações se acumulam em "Meus Resumos", filtráveis por matéria, assunto e data. Na reta
 final, é o material de revisão dele, escrito por ele mesmo.
 
-## 9. As cinco questões depois da aula
+## 9. As três questões depois da aula
 
-Assim que a aula é concluída, aparecem cinco questões daquele assunto. Não são aleatórias: o sistema
-prioriza o subassunto da aula e evita repetir questões que ele acabou de responder.
+Ao terminar a aula, o aluno clica em **Pratique agora** e escolhe o nível: fácil, média ou difícil.
+Recebe três questões, **uma de cada assunto da aula**, e não questões soltas do mesmo tema.
+
+As questões saem primeiro do banco. Quando o banco não tem nada daquele assunto no nível escolhido,
+a inteligência artificial elabora na hora — e a questão fica guardada, então o próximo aluno na mesma
+aula já a encontra pronta.
 
 A cada resposta ele vê na hora se acertou ou errou, qual era a alternativa correta, a resolução
-comentada e a explicação. E há um botão para levar aquela dúvida direto ao tutor.
+comentada e a explicação. Há um botão para levar a dúvida direto ao tutor e outro para **reportar
+problema**, caso a questão tenha algo errado — esses avisos viram uma fila de conferência no painel.
 
 ## 10. Banco de questões
 
-Além das cinco da aula, existe o banco completo, com filtros por matéria, assunto, subassunto, ano,
+Além das três da aula, existe o banco completo, com filtros por matéria, assunto, subassunto, ano,
 banca e dificuldade. O aluno pode montar a própria sessão de treino a qualquer momento.
+
+O banco é alimentado de três formas: uma questão por vez pelo painel, em lote por planilha, ou
+**lendo a prova em PDF** — você cola o gabarito oficial, escolhe o arquivo, e a plataforma transcreve
+as questões e separa por assunto para você conferir antes de publicar.
 
 ## 11. Caderno de erros
 
@@ -149,9 +158,17 @@ separando as de hoje, as atrasadas e as próximas.
 
 ## 14. Simulados
 
-Ele pode montar simulado da prova inteira, de uma matéria só, de um assunto específico ou personalizado
-(escolhendo quantidade de questões e tempo). Roda com cronômetro, navegação livre entre as questões e
-marcação do que já respondeu, como na prova de verdade.
+Ele escolhe a prova que quer simular — ENEM, Academia do Barro Branco ou outro vestibular — e o
+formato: **simulado completo** (80 questões em 4 horas), **mini simulado** (20 questões em 1 hora) ou
+do jeito dele, dizendo quantas questões e quanto tempo. Também pode montar por matéria ou por um
+assunto específico.
+
+Roda com cronômetro, navegação livre entre as questões e marcação do que já respondeu, como na prova
+de verdade.
+
+Quando o banco não tem questões suficientes para o recorte pedido, a inteligência artificial completa
+até um teto que você regula no painel — e, se ainda assim faltar, o simulado avisa o aluno na abertura
+em vez de sair menor em silêncio.
 
 No fim, o resultado traz a nota, o desempenho por área e por matéria em gráficos e a lista do que
 errou. O resultado também realimenta o cronograma.
