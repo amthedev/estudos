@@ -42,9 +42,9 @@ const { AppError } = require('../middleware/errors');
  * respondia, a resposta era paga, e a conexão já tinha caído. Enunciado de
  * ENEM é longo (texto de apoio, citação), então é a SAÍDA que manda no tempo.
  */
-const BATCH_CHARS = 3_500;
+const BATCH_CHARS = 3_000;
 /** Teto absoluto: sem marca de questão no texto, o lote não pode crescer sem fim. */
-const BATCH_MAX_CHARS = 6_000;
+const BATCH_MAX_CHARS = 5_000;
 /**
  * Prazo da chamada.
  *
@@ -56,10 +56,20 @@ const BATCH_MAX_CHARS = 6_000;
  * para a fila sem nada gravado, depois de já ter sido pago.
  */
 const TIMEOUT_MS = 240_000;
-const MAX_TOKENS = 2200;
-const RETRY_MAX_TOKENS = 4400;
+/**
+ * Teto da resposta.
+ *
+ * Apertei isto quando a varredura corria dentro da requisição e precisava
+ * caber antes da borda desistir. Com o trabalho solto, o limite virou o
+ * problema: questão do ENEM tem texto de apoio, citação e cinco alternativas,
+ * e três delas transcritas passam com folga de 2.200 tokens. O resultado,
+ * medido em produção, foi "a resposta da IA foi cortada antes de terminar" —
+ * a transcrição inteira paga e jogada fora por falta de espaço para terminar.
+ */
+const MAX_TOKENS = 5000;
+const RETRY_MAX_TOKENS = 10_000;
 /** Teto de questões por lote, para a resposta não crescer além do prazo. */
-const MAX_QUESTOES_POR_LOTE = 3;
+const MAX_QUESTOES_POR_LOTE = 2;
 /** Texto de prova maior que isto quase certamente não é uma prova. */
 const MAX_DOCUMENT_CHARS = 4_000_000;
 
