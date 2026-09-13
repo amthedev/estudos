@@ -42,9 +42,9 @@ const { AppError } = require('../middleware/errors');
  * respondia, a resposta era paga, e a conexão já tinha caído. Enunciado de
  * ENEM é longo (texto de apoio, citação), então é a SAÍDA que manda no tempo.
  */
-const BATCH_CHARS = 3_000;
+const BATCH_CHARS = 8_000;
 /** Teto absoluto: sem marca de questão no texto, o lote não pode crescer sem fim. */
-const BATCH_MAX_CHARS = 5_000;
+const BATCH_MAX_CHARS = 12_000;
 /**
  * Prazo da chamada.
  *
@@ -55,7 +55,7 @@ const BATCH_MAX_CHARS = 5_000;
  * modelo era interrompido no meio de trechos legítimos — e o trecho voltava
  * para a fila sem nada gravado, depois de já ter sido pago.
  */
-const TIMEOUT_MS = 240_000;
+const TIMEOUT_MS = 420_000;
 /**
  * Teto da resposta.
  *
@@ -66,10 +66,10 @@ const TIMEOUT_MS = 240_000;
  * medido em produção, foi "a resposta da IA foi cortada antes de terminar" —
  * a transcrição inteira paga e jogada fora por falta de espaço para terminar.
  */
-const MAX_TOKENS = 5000;
-const RETRY_MAX_TOKENS = 10_000;
+const MAX_TOKENS = 6000;
+const RETRY_MAX_TOKENS = 12_000;
 /** Teto de questões por lote, para a resposta não crescer além do prazo. */
-const MAX_QUESTOES_POR_LOTE = 2;
+const MAX_QUESTOES_POR_LOTE = 6;
 /** Texto de prova maior que isto quase certamente não é uma prova. */
 const MAX_DOCUMENT_CHARS = 4_000_000;
 
