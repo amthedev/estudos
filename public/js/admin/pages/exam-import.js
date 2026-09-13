@@ -408,14 +408,15 @@ async function lerTodasAsProvas() {
     message:
       `Cada prova é lida e varrida inteira, o que consome a inteligência artificial da plataforma. ` +
       (semGabarito
-        ? `${semGabarito} delas não têm gabarito oficial cadastrado — nessas, as respostas saem marcadas para você conferir uma a uma. `
+        ? `${semGabarito} delas não têm gabarito oficial cadastrado — nessas, as questões ficam esperando você conferir antes de irem para o banco. `
         : 'Todas têm gabarito oficial cadastrado. ') +
+      'As questões conferidas pelo gabarito entram no banco sozinhas. ' +
       'Dá para parar a qualquer momento; o que já entrou fica.',
     confirmText: 'Ler todas',
   });
   if (!ok) return;
 
-  state.lote = { total: pendentes.length, feitas: 0, encontradas: 0, falhas: 0, atual: '', parar: false, terminou: false };
+  state.lote = { total: pendentes.length, feitas: 0, encontradas: 0, noBanco: 0, aConferir: 0, falhas: 0, atual: '', parar: false, terminou: false };
   state.busy = true;
   paint();
 
@@ -438,9 +439,10 @@ async function lerTodasAsProvas() {
   state.busy = false;
   await loadList();
   toast(
-    `${state.lote.feitas} ${state.lote.feitas === 1 ? 'prova lida' : 'provas lidas'}, ` +
-      `${state.lote.encontradas} ${state.lote.encontradas === 1 ? 'questão encontrada' : 'questões encontradas'}.`,
-    { type: 'success' }
+    `${pluralize(state.lote.feitas, 'prova lida', 'provas lidas')}, ` +
+      `${pluralize(state.lote.noBanco, 'questão no banco', 'questões no banco')}` +
+      (state.lote.aConferir ? `, ${pluralize(state.lote.aConferir, 'esperando conferência', 'esperando conferência')}.` : '.'),
+    { type: state.lote.noBanco ? 'success' : 'warning' }
   );
 }
 
@@ -474,6 +476,19 @@ async function lerProvaInteira(prova) {
   }
   const final = await api.get(`/api/admin/exam-imports/${criada.id}`);
   state.lote.encontradas += Number(final.found_count) || 0;
+
+  // Ler não é o mesmo que estar no banco. Quem manda 25 provas de uma vez não
+  // vai abrir prova por prova para marcar as caixinhas — e o banco continuaria
+  // vazio depois de toda a leitura, que foi exatamente o que aconteceu.
+  // Vão sozinhas as que a banca já respondeu no gabarito oficial; as outras
+  // ficam esperando conferência, e o aviso do fim diz quantas são.
+  const pendentes = (final.items || []).filter((item) => item.status === 'pendente');
+  const comGabarito = pendentes.filter((item) => item.payload && item.payload.answer_from_key).length;
+  state.lote.aConferir += pendentes.length - comGabarito;
+  if (comGabarito) {
+    const res = await api.post(`/api/admin/exam-imports/${criada.id}/import`, { com_gabarito: true });
+    state.lote.noBanco += Number(res.imported) || 0;
+  }
 }
 
 // ---------------------------------------------------------------------

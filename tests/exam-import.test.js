@@ -660,4 +660,66 @@ describe('Leitura de prova pelo painel', () => {
     const sumiu = await admin.agent.get(`/api/admin/exam-imports/${criada.body.id}`);
     assert.equal(sumiu.status, 404);
   });
+
+  // -------------------------------------------------------------------------
+  describe('Mandar para o banco as que o gabarito oficial já respondeu', () => {
+    /**
+     * Ler não é o mesmo que estar no banco, e essa diferença custou caro: o
+     * cliente leu as provas, viu "questões encontradas", foi conferir na tela do
+     * aluno e não havia nada. Marcar caixinha por caixinha em 25 provas de 90
+     * questões não é opção, então quem tem gabarito oficial entra sozinha.
+     */
+    let leitura;
+
+    before(async () => {
+      const criada = await admin.agent.post('/api/admin/exam-imports', {
+        exam_id: exam.id,
+        title: 'Prova com gabarito oficial',
+        year: 2024,
+        answer_key: '1-A 2-B', // a 3 fica de fora de propósito
+      });
+      assert.equal(criada.status, 201, JSON.stringify(criada.body));
+      leitura = criada.body;
+      await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/text`, { chunk: fakeExam(3), done: true });
+      await varrerAteOFim(admin, leitura.id);
+    });
+
+    it('a varredura separa quem veio do gabarito de quem é palpite da IA', async () => {
+      const res = await admin.agent.get(`/api/admin/exam-imports/${leitura.id}`);
+      const pendentes = res.body.items.filter((i) => i.status === 'pendente');
+      assert.equal(pendentes.length, 3);
+      const comGabarito = pendentes.filter((i) => i.payload && i.payload.answer_from_key);
+      assert.equal(comGabarito.length, 2, 'só as duas que estavam no gabarito oficial');
+    });
+
+    it('com_gabarito manda só essas para o banco, sem escolher uma a uma', async () => {
+      const res = await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/import`, { com_gabarito: true });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.imported, 2, `falhas: ${JSON.stringify(res.body.errors)}`);
+
+      const depois = await admin.agent.get(`/api/admin/exam-imports/${leitura.id}`);
+      const sobrou = depois.body.items.filter((i) => i.status === 'pendente');
+      assert.equal(sobrou.length, 1, 'a questão sem gabarito continua esperando conferência');
+      assert.ok(!sobrou[0].payload.answer_from_key, 'e é justamente a que a IA respondeu sozinha');
+    });
+
+    it('repetir não duplica: as que já entraram não voltam', async () => {
+      const res = await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/import`, { com_gabarito: true });
+      assert.equal(res.status, 400, 'não sobrou nenhuma conferida pelo gabarito');
+      assert.match(res.body.error.message, /gabarito oficial/);
+    });
+
+    it('pedir as duas formas de uma vez é recusado', async () => {
+      const res = await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/import`, {
+        com_gabarito: true,
+        item_ids: ['00000000-0000-0000-0000-000000000000'],
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it('e sem nenhuma das duas também', async () => {
+      const res = await admin.agent.post(`/api/admin/exam-imports/${leitura.id}/import`, {});
+      assert.equal(res.status, 400);
+    });
+  });
 });

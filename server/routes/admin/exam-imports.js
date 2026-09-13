@@ -10,7 +10,9 @@
  *   POST   /api/admin/exam-imports/:id/sweep    varre UM lote e devolve o que encontrou + o progresso
  *   GET    /api/admin/exam-imports/:id          leitura + itens encontrados
  *   PATCH  /api/admin/exam-imports/:id/items/:itemId  corrige matéria, assunto, gabarito ou dificuldade
- *   POST   /api/admin/exam-imports/:id/import   { item_ids } → manda para o banco de questões
+ *   POST   /api/admin/exam-imports/:id/import   { item_ids } → manda as escolhidas para o banco
+ *                                              { com_gabarito: true } → manda todas as que a
+ *                                              banca já respondeu no gabarito oficial
  *   DELETE /api/admin/exam-imports/:id
  *   GET    /api/admin/exam-imports/provas                 provas anteriores com PDF, para escolher
  *   GET    /api/admin/exam-imports/provas/:id/arquivo/prova|gabarito
@@ -87,9 +89,26 @@ const itemBody = z
   .strict()
   .refine((body) => Object.keys(body).length > 0, 'Nada para alterar.');
 
+/**
+ * O que mandar para o banco: uma escolha explícita, ou todas as conferidas
+ * pelo gabarito oficial.
+ *
+ * `com_gabarito` existe porque ler a prova não é o mesmo que ter a questão no
+ * banco, e quem lê 25 provas de uma vez não vai marcar 2.000 caixinhas. Quando
+ * a resposta veio do gabarito publicado pela banca, não há o que conferir — a
+ * alternativa correta não é palpite da inteligência artificial. As demais
+ * continuam esperando alguém olhar.
+ */
 const importBody = z
-  .object({ item_ids: z.array(uuid).min(1, 'Escolha ao menos uma questão.').max(300) })
-  .strict();
+  .object({
+    item_ids: z.array(uuid).min(1, 'Escolha ao menos uma questão.').max(300).optional(),
+    com_gabarito: z.literal(true).optional(),
+  })
+  .strict()
+  .refine(
+    (body) => Boolean(body.item_ids) !== Boolean(body.com_gabarito),
+    'Escolha as questões ou peça as que têm gabarito oficial — não os dois.'
+  );
 
 // ---------------------------------------------------------------------------
 // Leitura
@@ -538,13 +557,29 @@ router.post(
   validate({ params: idParams, body: importBody }),
   wrap(async (req, res) => {
     const row = await loadImport(req.valid.params.id);
-    const items = await db.many(
-      `SELECT id, number, payload FROM exam_import_items
-        WHERE import_id = $1 AND id = ANY($2::uuid[]) AND status = 'pendente'
-        ORDER BY number NULLS LAST`,
-      [row.id, req.valid.body.item_ids]
-    );
-    if (!items.length) throw new AppError(400, 'validation_error', 'Nenhuma questão pendente entre as escolhidas.');
+    const items = req.valid.body.com_gabarito
+      ? await db.many(
+          `SELECT id, number, payload FROM exam_import_items
+            WHERE import_id = $1 AND status = 'pendente'
+              AND coalesce((payload->>'answer_from_key')::boolean, false)
+            ORDER BY number NULLS LAST`,
+          [row.id]
+        )
+      : await db.many(
+          `SELECT id, number, payload FROM exam_import_items
+            WHERE import_id = $1 AND id = ANY($2::uuid[]) AND status = 'pendente'
+            ORDER BY number NULLS LAST`,
+          [row.id, req.valid.body.item_ids]
+        );
+    if (!items.length) {
+      throw new AppError(
+        400,
+        'validation_error',
+        req.valid.body.com_gabarito
+          ? 'Nenhuma questão desta prova teve a resposta confirmada pelo gabarito oficial.'
+          : 'Nenhuma questão pendente entre as escolhidas.'
+      );
+    }
 
     const maps = await loadSlugMaps();
     const errors = [];
