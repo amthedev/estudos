@@ -514,8 +514,8 @@ async function loadAttemptQuestions(questionIds, { withAnswers = false } = {}) {
                 FROM question_options o WHERE o.question_id = q.id
             ), '[]'::json) AS options
        FROM questions q
-       JOIN subjects s ON s.id = q.subject_id
-       JOIN topics t ON t.id = q.topic_id
+       LEFT JOIN subjects s ON s.id = q.subject_id
+       LEFT JOIN topics t ON t.id = q.topic_id
       WHERE q.id = ANY($1::uuid[])`,
     [questionIds]
   );

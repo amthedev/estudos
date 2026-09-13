@@ -165,6 +165,8 @@ router.get(
               i.chars_total, i.chars_read, i.found_count, i.imported_count, i.last_number,
               i.error_message, i.created_at, i.updated_at,
               (i.document_text IS NOT NULL AND i.document_text <> '') AS has_text,
+              (SELECT count(*)::int FROM exam_import_items it
+                WHERE it.import_id = i.id AND it.status = 'pendente') AS pending_count,
               e.short_name AS exam_short_name
          FROM exam_imports i
          LEFT JOIN exams e ON e.id = i.exam_id

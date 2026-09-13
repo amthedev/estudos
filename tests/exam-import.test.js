@@ -703,6 +703,25 @@ describe('Leitura de prova pelo painel', () => {
     assert.equal(estado.status, 'extraindo', 'varredura recente continua intocada');
   });
 
+  it('recusada ou importada não conta como "fora do banco" na lista', async () => {
+    const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Com recusa', exam_id: exam.id });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: fakeExam(3), done: true });
+    await varrerAteOFim(admin, criada.body.id);
+
+    const antes = await admin.agent.get('/api/admin/exam-imports');
+    const naListaAntes = antes.body.items.find((i) => i.id === criada.body.id);
+    assert.equal(naListaAntes.pending_count, 3, 'as três começam pendentes');
+
+    // recusa uma
+    const detalhe = await admin.agent.get(`/api/admin/exam-imports/${criada.body.id}`);
+    const primeira = detalhe.body.items[0];
+    await admin.agent.patch(`/api/admin/exam-imports/${criada.body.id}/items/${primeira.id}`, { status: 'recusada' });
+
+    const depois = await admin.agent.get('/api/admin/exam-imports');
+    const naListaDepois = depois.body.items.find((i) => i.id === criada.body.id);
+    assert.equal(naListaDepois.pending_count, 2, 'a recusada sai da conta de "fora do banco"');
+  });
+
   it('a lista informa has_text sem carregar o texto inteiro', async () => {
     const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Com texto', exam_id: exam.id });
     await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: fakeExam(1), done: true });

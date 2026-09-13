@@ -547,9 +547,9 @@ function listView() {
                       <td class="nowrap">${fmtNumber(job.found_count)}</td>
                       <td class="nowrap">
                         ${fmtNumber(job.imported_count)}
-                        ${job.found_count > job.imported_count
+                        ${job.pending_count > 0
                           ? html`<span class="xim-row-sub xim-row-warn"
-                              >${fmtNumber(job.found_count - job.imported_count)} fora do banco</span
+                              >${fmtNumber(job.pending_count)} fora do banco</span
                             >`
                           : ''}
                       </td>

@@ -197,3 +197,36 @@ describe('Disponibilidade informada ao aluno', () => {
     assert.equal(res.body.defaults.ai_fill.max, 10, 'a tela precisa saber se pode contar com a IA');
   });
 });
+
+describe('Resultado do simulado não perde questão ao final', () => {
+  it('todas as questões entram no total e na nota ao finalizar', async () => {
+    await settings.setSetting('simulado_ai_questions_max', 0);
+    const res = await aluno.agent.post('/api/simulados/attempts', {
+      type: 'topic',
+      topic_id: topics[0].id,
+      question_count: 4,
+      duration_min: 10,
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const attemptId = res.body.id;
+    const perguntas = res.body.questions;
+    assert.equal(perguntas.length, 4);
+
+    // responde todas e finaliza normalmente
+    for (const q of perguntas) {
+      await aluno.agent.patch(`/api/simulados/attempts/${attemptId}/answers`, {
+        question_id: q.id,
+        option_id: q.options[0].id,
+      });
+    }
+
+    const fim = await aluno.agent.post(`/api/simulados/attempts/${attemptId}/finish`, {});
+    assert.equal(fim.status, 200, JSON.stringify(fim.body));
+    // O total do resultado tem que bater com as questões do simulado. O LEFT
+    // JOIN em loadAttemptQuestions garante que nenhuma questão suma da contagem
+    // por causa de um vínculo de matéria/assunto ausente — antes era INNER JOIN
+    // e uma questão sem a linha correspondente era descartada em silêncio.
+    const somaContagem = fim.body.correct_count + fim.body.wrong_count + fim.body.blank_count;
+    assert.equal(somaContagem, 4, `as 4 questões têm que aparecer no resultado, veio ${somaContagem}`);
+  });
+});
