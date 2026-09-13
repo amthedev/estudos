@@ -363,6 +363,84 @@ router.post(
 // ---------------------------------------------------------------------------
 // Varredura, um lote por requisição
 // ---------------------------------------------------------------------------
+/**
+ * Varreduras em andamento, por leitura.
+ *
+ * A varredura de um trecho leva de 60 a 90 segundos — mais do que a borda da
+ * hospedagem deixa uma requisição HTTP durar, e segurar a requisição aberta
+ * fazia a plataforma derrubar o processo no meio, perdendo o trabalho que já
+ * tinha sido pago à IA. Então a rota DISPARA o trabalho e responde na hora; a
+ * tela acompanha pelo estado da leitura, que mora no banco.
+ *
+ * O mapa serve para dois cliques seguidos não varrerem o mesmo trecho duas
+ * vezes. Ele vive na memória de propósito: se o processo reiniciar, o mapa some
+ * junto com o trabalho, e o bootstrap destrava a leitura que ficou em
+ * "extraindo".
+ */
+const emAndamento = new Map();
+
+/** Varre UM lote e grava o resultado. Roda solta, fora da requisição. */
+async function varrerUmLote(row, adminId) {
+  const batch = examImport.nextBatch(row.document_text, Number(row.chars_read) || 0);
+  if (!batch) {
+    await db.query(`UPDATE exam_imports SET status = 'concluida' WHERE id = $1`, [row.id]);
+    return;
+  }
+
+  let encontradas;
+  try {
+    encontradas = await examImport.extract({
+      batch,
+      exam: row.exam_id ? { id: row.exam_id, name: row.exam_name, board: row.exam_board } : null,
+      year: row.year,
+      board: row.board,
+      answerKey: row.answer_key || null,
+      userId: adminId,
+    });
+  } catch (err) {
+    // O cursor NÃO anda: o próximo "Continuar" tenta o mesmo trecho de novo.
+    await db.query(`UPDATE exam_imports SET status = 'pronta', error_message = $2 WHERE id = $1`, [
+      row.id,
+      String(err && err.message ? err.message : err).slice(0, 500),
+    ]);
+    return;
+  }
+
+  // Questão repetida acontece de dois jeitos: entre lotes, quando um começa
+  // onde o anterior terminou, e DENTRO do mesmo lote, quando o modelo
+  // transcreve a mesma questão duas vezes.
+  const jaVistos = new Set(
+    (await db.many('SELECT number FROM exam_import_items WHERE import_id = $1 AND number IS NOT NULL', [row.id])).map(
+      (item) => item.number
+    )
+  );
+  const novas = [];
+  for (const item of encontradas) {
+    if (item.number !== null) {
+      if (jaVistos.has(item.number)) continue;
+      jaVistos.add(item.number);
+    }
+    novas.push(item);
+  }
+
+  for (const item of novas) {
+    await db.query(`INSERT INTO exam_import_items (import_id, number, payload) VALUES ($1, $2, $3::jsonb)`, [
+      row.id,
+      item.number,
+      JSON.stringify(item),
+    ]);
+  }
+
+  const fim = batch.end >= String(row.document_text).length;
+  await db.query(
+    `UPDATE exam_imports
+        SET chars_read = $2, found_count = found_count + $3, last_number = coalesce($4, last_number),
+            status = CASE WHEN $5 THEN 'concluida' ELSE 'pronta' END
+      WHERE id = $1`,
+    [row.id, batch.end, novas.length, batch.last_number, fim]
+  );
+}
+
 router.post(
   '/:id/sweep',
   aiLimiter,
@@ -372,92 +450,43 @@ router.post(
     if (!row.document_text) {
       throw new AppError(409, 'conflict', 'Envie o texto da prova antes de varrer.');
     }
-
-    const batch = examImport.nextBatch(row.document_text, Number(row.chars_read) || 0);
-    if (!batch) {
-      const concluida = await db.one(
-        `UPDATE exam_imports SET status = 'concluida' WHERE id = $1 RETURNING *`,
-        [row.id]
-      );
-      return res.json({ ...serialize(concluida, { counts: await itemCounts(row.id) }), done: true, found: 0, items: [] });
+    if (row.chars_read >= String(row.document_text).length) {
+      const concluida = await db.one(`UPDATE exam_imports SET status = 'concluida' WHERE id = $1 RETURNING *`, [row.id]);
+      return res.json({ ...serialize(concluida, { counts: await itemCounts(row.id) }), done: true, running: false });
     }
 
-    // Marca que está trabalhando, guardando a hora: se o processo reiniciar no
-    // meio (a hospedagem reinicia sozinha), a leitura não pode ficar presa
-    // nesse estado para sempre — a próxima varredura retoma.
-    await db.query(
-      `UPDATE exam_imports SET status = 'extraindo', error_message = NULL, updated_at = now() WHERE id = $1`,
-      [row.id]
-    );
-
-    let encontradas;
-    try {
-      encontradas = await examImport.extract({
-        batch,
-        exam: row.exam_id ? { id: row.exam_id, name: row.exam_name, board: row.exam_board } : null,
-        year: row.year,
-        board: row.board,
-        answerKey: row.answer_key || null,
-        userId: req.admin ? req.admin.id : null,
-      });
-    } catch (err) {
-      // O cursor NÃO anda: o próximo "Continuar" tenta o mesmo trecho de novo.
-      await db.query(`UPDATE exam_imports SET status = 'pronta', error_message = $2 WHERE id = $1`, [
-        row.id,
-        String(err && err.message ? err.message : err).slice(0, 500),
-      ]);
-      throw err;
+    if (!emAndamento.has(row.id)) {
+      // A marca entra no mapa SEM await pelo meio: com uma espera entre o
+      // "já está rodando?" e o "marquei que está", dois cliques ao mesmo tempo
+      // passavam os dois pela porta e o mesmo trecho era varrido — e pago —
+      // duas vezes.
+      const adminId = req.admin ? req.admin.id : null;
+      const trabalho = (async () => {
+        await db.query(
+          `UPDATE exam_imports SET status = 'extraindo', error_message = NULL, updated_at = now() WHERE id = $1`,
+          [row.id]
+        );
+        await varrerUmLote(row, adminId);
+      })()
+        .catch((err) => {
+          console.error(`[exam-imports] varredura de ${row.id} falhou: ${err.message}`);
+          return db
+            .query(`UPDATE exam_imports SET status = 'pronta', error_message = $2 WHERE id = $1`, [
+              row.id,
+              String(err && err.message ? err.message : err).slice(0, 500),
+            ])
+            .catch(() => {});
+        })
+        .finally(() => emAndamento.delete(row.id));
+      emAndamento.set(row.id, trabalho);
     }
 
-    // Questão repetida acontece de dois jeitos: entre lotes, quando um começa
-    // onde o anterior terminou, e DENTRO do mesmo lote, quando o modelo
-    // transcreve a mesma questão duas vezes. Uma varredura de prova real
-    // trouxe as duas coisas.
-    const jaVistos = new Set(
-      (await db.many('SELECT number FROM exam_import_items WHERE import_id = $1 AND number IS NOT NULL', [row.id])).map(
-        (item) => item.number
-      )
-    );
-    const novas = [];
-    for (const item of encontradas) {
-      if (item.number !== null) {
-        if (jaVistos.has(item.number)) continue;
-        jaVistos.add(item.number);
-      }
-      novas.push(item);
-    }
-
-    for (const item of novas) {
-      await db.query(
-        `INSERT INTO exam_import_items (import_id, number, payload) VALUES ($1, $2, $3::jsonb)`,
-        [row.id, item.number, JSON.stringify(item)]
-      );
-    }
-
-    const fim = batch.end >= String(row.document_text).length;
-    const atualizado = await db.one(
-      `UPDATE exam_imports
-          SET chars_read  = $2,
-              found_count = found_count + $3,
-              last_number = coalesce($4, last_number),
-              status      = CASE WHEN $5 THEN 'concluida' ELSE 'pronta' END
-        WHERE id = $1
-        RETURNING *`,
-      [row.id, batch.end, novas.length, batch.last_number, fim]
-    );
-
-    const items = await db.many(
-      `SELECT id, number, payload, status, question_id, error_message
-         FROM exam_import_items WHERE import_id = $1
-        ORDER BY number NULLS LAST, created_at`,
-      [row.id]
-    );
-
-    res.json({
-      ...serialize(atualizado, { counts: await itemCounts(row.id) }),
-      done: fim,
-      found: novas.length,
-      items,
+    // Responde na hora: o trabalho segue solto e a tela acompanha pelo estado.
+    const atual = await loadImport(row.id);
+    res.status(202).json({
+      ...serialize(atual, { counts: await itemCounts(row.id) }),
+      done: false,
+      running: true,
     });
   })
 );

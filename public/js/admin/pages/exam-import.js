@@ -463,18 +463,17 @@ async function lerProvaInteira(prova) {
     await api.post(`/api/admin/exam-imports/${criada.id}/text`, { chunk, done: index === partes.length - 1 });
   }
 
-  let done = false;
+  let continua = true;
   let voltas = 0;
-  let encontradas = 0;
-  while (!done && voltas < 60 && !state.lote.parar) {
+  while (continua && voltas < 60 && !state.lote.parar) {
     voltas += 1;
-    const passo = await api.post(`/api/admin/exam-imports/${criada.id}/sweep`, {});
-    done = passo.done;
-    encontradas = Number(passo.found_count) || 0;
-    state.lote.atual = `${prova.title} — ${passo.percent}% · ${encontradas} questões`;
+    continua = await sweepOnce(criada.id);
+    const atual = await api.get(`/api/admin/exam-imports/${criada.id}`);
+    state.lote.atual = `${prova.title} — ${atual.percent}% · ${atual.found_count} questões`;
     paint();
   }
-  state.lote.encontradas += encontradas;
+  const final = await api.get(`/api/admin/exam-imports/${criada.id}`);
+  state.lote.encontradas += Number(final.found_count) || 0;
 }
 
 // ---------------------------------------------------------------------
@@ -817,11 +816,45 @@ async function useTypedText(trigger) {
   }
 }
 
-/** Uma passada. Devolve true quando ainda há texto pela frente. */
-async function sweepOnce() {
-  const resultado = await api.post(`/api/admin/exam-imports/${state.current.id}/sweep`, {});
-  state.current = { ...state.current, ...resultado };
-  return !resultado.done;
+/**
+ * Uma passada: dispara a varredura e acompanha até ela terminar.
+ *
+ * O servidor responde na hora e faz o trabalho solto — um trecho leva de 60 a
+ * 90 segundos, mais do que a borda da hospedagem deixa uma requisição durar.
+ * Segurar a requisição aberta fazia o processo ser derrubado no meio, perdendo
+ * o que já tinha sido pago à IA.
+ *
+ * @returns {Promise<boolean>} true quando ainda há texto pela frente
+ */
+async function sweepOnce(importId = null) {
+  const id = importId || state.current.id;
+  const disparo = await api.post(`/api/admin/exam-imports/${id}/sweep`, {});
+  if (disparo.done) {
+    if (!importId) state.current = { ...state.current, ...disparo };
+    return false;
+  }
+
+  // Acompanha pelo estado da leitura: enquanto estiver "extraindo", alguém está
+  // trabalhando nela.
+  for (let tentativa = 0; tentativa < 90; tentativa += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    let atual;
+    try {
+      atual = await api.get(`/api/admin/exam-imports/${id}`);
+    } catch (err) {
+      // A aplicação pode ter reiniciado; a próxima volta reencontra o estado.
+      continue;
+    }
+    if (!importId) {
+      state.current = { ...state.current, ...atual };
+      paint();
+    }
+    if (atual.status !== 'extraindo') {
+      if (atual.error_message) throw new Error(atual.error_message);
+      return atual.status !== 'concluida';
+    }
+  }
+  throw new Error('A varredura deste trecho demorou mais que o esperado. Tente continuar de onde parou.');
 }
 
 async function sweep({ all = false } = {}) {

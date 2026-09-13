@@ -40,6 +40,33 @@ function fakeExam(total, { from = 1 } = {}) {
   return partes.join('\n');
 }
 
+/**
+ * Varre até o fim como a tela faz: dispara e acompanha.
+ *
+ * A rota responde na hora e faz o trabalho solto — um trecho de prova leva mais
+ * do que a borda da hospedagem deixa uma requisição durar.
+ * @returns {Promise<object>} a leitura no estado final
+ */
+async function varrerAteOFim(admin, id, { maxLotes = 30 } = {}) {
+  for (let lote = 0; lote < maxLotes; lote += 1) {
+    const disparo = await admin.agent.post(`/api/admin/exam-imports/${id}/sweep`, {});
+    if (disparo.status !== 200 && disparo.status !== 202) {
+      throw new Error(`varredura recusada (${disparo.status}): ${JSON.stringify(disparo.body)}`);
+    }
+    if (disparo.body.done) break;
+
+    let parou = false;
+    for (let espera = 0; espera < 120 && !parou; espera += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const atual = await admin.agent.get(`/api/admin/exam-imports/${id}`);
+      if (atual.body.status !== 'extraindo') parou = true;
+    }
+    if (!parou) throw new Error('a varredura não terminou a tempo');
+  }
+  const final = await admin.agent.get(`/api/admin/exam-imports/${id}`);
+  return final.body;
+}
+
 describe('Recorte da prova em lotes', () => {
   it('encontra o número de cada questão', () => {
     const marcas = examImport.questionMarks(fakeExam(4));
@@ -224,18 +251,8 @@ describe('Leitura de prova pelo painel', () => {
     assert.equal(res.body.chars_total, prova.length, 'os pedaços foram emendados na ordem');
     assert.equal(res.body.status, 'pronta');
 
-    // Varre até o fim, um lote por requisição.
-    let done = false;
-    let voltas = 0;
-    let ultimo = null;
-    while (!done && voltas < 20) {
-      voltas += 1;
-      const sweep = await admin.agent.post(`/api/admin/exam-imports/${id}/sweep`, {});
-      assert.equal(sweep.status, 200, JSON.stringify(sweep.body));
-      done = sweep.body.done;
-      ultimo = sweep.body;
-    }
-    assert.equal(done, true, 'a varredura tem que terminar');
+    // Varre até o fim: a rota dispara e a tela acompanha.
+    const ultimo = await varrerAteOFim(admin, id);
     assert.equal(ultimo.status, 'concluida');
     assert.equal(ultimo.percent, 100);
 
@@ -323,16 +340,10 @@ describe('Leitura de prova pelo painel', () => {
 
     // Um lote termina no começo da questão seguinte, então a última questão
     // do texto só entra na passada final — por isso a varredura vai até o fim.
-    let done = false;
-    let sweep = null;
-    for (let volta = 0; volta < 10 && !done; volta += 1) {
-      sweep = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
-      assert.equal(sweep.status, 200, JSON.stringify(sweep.body));
-      done = sweep.body.done;
-    }
-    assert.equal(done, true);
-    assert.equal(sweep.body.items.length, 3, 'as questões saem do texto colado como sairiam do PDF');
-    assert.equal(sweep.body.items[0].payload.correct, 'B', 'o gabarito colado continua mandando');
+    const final = await varrerAteOFim(admin, criada.body.id);
+    assert.equal(final.status, 'concluida');
+    assert.equal(final.items.length, 3, 'as questões saem do texto colado como sairiam do PDF');
+    assert.equal(final.items[0].payload.correct, 'B', 'o gabarito colado continua mandando');
   });
 
   it('lista as provas anteriores que já têm PDF, para não reenviar o arquivo', async () => {
@@ -403,6 +414,41 @@ describe('Leitura de prova pelo painel', () => {
     assert.ok(linha.leituras >= 1, 'o painel mostra que esta prova já foi lida');
   });
 
+  it('a varredura responde na hora e trabalha por fora', async () => {
+    // Segurar a requisição aberta por 90 segundos fazia a hospedagem derrubar o
+    // processo no meio — perdendo o trecho que já tinha sido pago à IA.
+    const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Resposta imediata', exam_id: exam.id });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: fakeExam(6), done: true });
+
+    const t0 = Date.now();
+    const disparo = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
+    const ms = Date.now() - t0;
+
+    assert.equal(disparo.status, 202, 'aceita o trabalho, não entrega o resultado');
+    assert.equal(disparo.body.running, true);
+    assert.ok(ms < 1000, `a resposta levou ${ms}ms; ela não pode esperar a IA`);
+
+    const final = await varrerAteOFim(admin, criada.body.id);
+    assert.equal(final.status, 'concluida');
+    assert.ok(final.found_count > 0, 'e o trabalho acontece de verdade');
+  });
+
+  it('dois cliques seguidos não varrem o mesmo trecho duas vezes', async () => {
+    const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Clique duplo', exam_id: exam.id });
+    await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/text`, { chunk: fakeExam(8), done: true });
+
+    const [a, b] = await Promise.all([
+      admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {}),
+      admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {}),
+    ]);
+    assert.ok([200, 202].includes(a.status));
+    assert.ok([200, 202].includes(b.status));
+
+    const final = await varrerAteOFim(admin, criada.body.id);
+    const numeros = final.items.map((i) => i.number).filter((n) => n != null);
+    assert.equal(new Set(numeros).size, numeros.length, `repetiu: ${numeros.join(', ')}`);
+  });
+
   it('varrer sem texto avisa, em vez de estourar', async () => {
     const criada = await admin.agent.post('/api/admin/exam-imports', { title: 'Prova vazia' });
     const res = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
@@ -436,17 +482,11 @@ describe('Leitura de prova pelo painel', () => {
       chunk: fakeExam(4),
       done: true,
     });
-    let done = false;
-    let ultimo = null;
-    for (let volta = 0; volta < 10 && !done; volta += 1) {
-      ultimo = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
-      assert.equal(ultimo.status, 200, JSON.stringify(ultimo.body));
-      done = ultimo.body.done;
-    }
-    assert.equal(done, true);
+    const ultimo = await varrerAteOFim(admin, criada.body.id);
+    assert.equal(ultimo.status, 'concluida');
 
     // 3. As questões conferidas vão para o banco.
-    const pendentes = ultimo.body.items.filter((i) => i.status === 'pendente');
+    const pendentes = ultimo.items.filter((i) => i.status === 'pendente');
     assert.ok(pendentes.length >= 3, `encontrou ${pendentes.length} questões`);
     const importadas = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/import`, {
       item_ids: pendentes.map((i) => i.id),
@@ -536,16 +576,10 @@ describe('Leitura de prova pelo painel', () => {
       done: true,
     });
 
-    let done = false;
-    let ultimo = null;
-    for (let volta = 0; volta < 12 && !done; volta += 1) {
-      ultimo = await admin.agent.post(`/api/admin/exam-imports/${criada.body.id}/sweep`, {});
-      assert.equal(ultimo.status, 200, JSON.stringify(ultimo.body));
-      done = ultimo.body.done;
-    }
-    assert.equal(done, true);
+    const ultimo = await varrerAteOFim(admin, criada.body.id);
+    assert.equal(ultimo.status, 'concluida');
 
-    const numeros = ultimo.body.items.map((i) => i.number).filter((n) => n != null);
+    const numeros = ultimo.items.map((i) => i.number).filter((n) => n != null);
     assert.equal(new Set(numeros).size, numeros.length, `números repetidos: ${numeros.join(', ')}`);
   });
 
