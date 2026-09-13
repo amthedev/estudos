@@ -653,13 +653,27 @@ async function submitEssay({ skipConfirm = false } = {}) {
   paint();
 
   try {
-    const corrected = await api.post(`/api/essays/${encodeURIComponent(state.essay.id)}/submit`, {});
+    // O envio pode voltar já corrigido (correção rápida) ou "em correção" (202),
+    // e nesse caso a correção segue no servidor — a tela acompanha pelo estado,
+    // em vez de segurar a conexão aberta, que a borda cortaria.
+    let resultado = await api.post(`/api/essays/${encodeURIComponent(state.essay.id)}/submit`, {});
     if (!state || state.token !== token) return;
+    if (resultado && resultado.status === 'submitted') {
+      resultado = (await aguardarCorrecao(state.essay.id, token)) || resultado;
+      if (!state || state.token !== token) return;
+    }
     stopWaitingMessages();
     state.submitting = false;
+    if (resultado && resultado.status === 'failed') {
+      state.submitError = new ApiError({ message: resultado.error_message || 'A correção não foi concluída. Envie novamente.' });
+      paint();
+      return;
+    }
+    // Corrigida, ou ainda em correção após a espera: a tela de detalhe assume o
+    // acompanhamento e oferece reenvio se travar.
     state.leaving = true;
-    toast('Correção concluída.', { type: 'success' });
-    state.navigate(`/app/redacao/${corrected.id}`);
+    if (resultado && resultado.status === 'corrected') toast('Correção concluída.', { type: 'success' });
+    state.navigate(`/app/redacao/${state.essay.id}`);
   } catch (err) {
     if (!state || state.token !== token) return;
     stopWaitingMessages();
@@ -667,6 +681,26 @@ async function submitEssay({ skipConfirm = false } = {}) {
     state.submitError = err instanceof ApiError ? err : new ApiError({ message: 'Erro inesperado.' });
     paint();
   }
+}
+
+/**
+ * Acompanha a correção pelo estado da redação até sair de "submitted", até o
+ * teto de tentativas, ou até o aluno trocar de tela (o token muda).
+ */
+async function aguardarCorrecao(id, token, { tentativas = 60, intervaloMs = 3000 } = {}) {
+  for (let i = 0; i < tentativas; i += 1) {
+    await new Promise((r) => setTimeout(r, intervaloMs));
+    if (!state || state.token !== token) return null;
+    let atual;
+    try {
+      atual = await api.get(`/api/essays/${encodeURIComponent(id)}`);
+    } catch {
+      continue;
+    }
+    if (!state || state.token !== token) return null;
+    if (atual && atual.status !== 'submitted') return atual;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------

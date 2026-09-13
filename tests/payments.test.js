@@ -848,9 +848,14 @@ describe('Pagamentos: Asaas, checkout e webhooks', () => {
       const total = await ctx.db.one('SELECT count(*)::int AS total FROM subscriptions WHERE user_id = $1', [student.user.id]);
       assert.equal(total.total, 1, 'não pode nascer uma segunda assinatura');
       const depois = await ctx.db.one('SELECT current_period_end FROM subscriptions WHERE user_id = $1', [student.user.id]);
-      assert.ok(
-        new Date(depois.current_period_end).getTime() >= new Date(primeiro.current_period_end).getTime(),
-        'o acesso não pode encolher'
+      // Igual, não só "não encolheu": o CHECKOUT_PAID já concedeu o período e o
+      // pagamento seguinte é a MESMA cobrança. Somar de novo dobrava o acesso
+      // (6 meses viravam 12) e passava por um assert de ">=". Aqui tem que ser
+      // exatamente o mesmo fim de período.
+      assert.equal(
+        new Date(depois.current_period_end).getTime(),
+        new Date(primeiro.current_period_end).getTime(),
+        'a mesma cobrança do Pix não pode somar outro período'
       );
     });
 

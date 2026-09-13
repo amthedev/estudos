@@ -427,6 +427,7 @@ describe('IA: Tutor e Redação', () => {
       const essay = res.body;
 
       assert.equal(essay.status, 'corrected');
+      assert.equal(essay.correcting, false, 'correção rápida volta pronta, sem ficar "em correção"');
       assert.equal(essay.max_score, 1000);
       assert.ok(essay.corrected_at, 'corrected_at deve ser gravado');
       assert.ok(essay.model, 'o modelo usado deve ser gravado');

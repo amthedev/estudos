@@ -28,6 +28,49 @@ const { aiLimiter } = require('../middleware/rateLimit');
 const { TIMEZONE } = require('../utils/dates');
 
 const MAX_CONTENT_CHARS = essays.MAX_CONTENT_CHARS;
+/** Quanto o /submit espera pela correção antes de responder 202 e soltar. */
+const GRACA_DE_CORRECAO_MS = 12_000;
+
+/**
+ * Correções em andamento neste processo, por id de redação → a Promise da
+ * correção.
+ *
+ * Texto longo leva até três minutos para corrigir (o teto foi subido de
+ * propósito para não cortar a resposta). Só que a borda — o Cloudflare — corta
+ * a conexão perto de 100s: segurar a requisição até o fim devolvia erro de rede
+ * ao aluno com a redação presa em "submitted". Então a correção roda SOLTA, e a
+ * tela acompanha pelo estado (GET /:id), como já faz a leitura de prova.
+ *
+ * O mapa guarda a Promise para (a) não disparar duas correções da mesma redação
+ * e (b) deixar o /submit esperar um instante curto por ela: quando a correção é
+ * rápida — o caso do mock nos testes, e de textos curtos — a resposta já sai
+ * pronta; quando é longa, o /submit responde 202 e não segura a conexão.
+ * Uma correção órfã de reinício é retomada no próximo envio e destravada no
+ * boot pelo bootstrap.
+ */
+const correcoesEmCurso = new Map();
+
+function iniciarCorrecao(essayId) {
+  if (correcoesEmCurso.has(essayId)) return correcoesEmCurso.get(essayId);
+  const promessa = essays
+    .correctEssay(essayId, { timeoutMs: essays.CORRECTION_TIMEOUT_MS })
+    .catch((err) => {
+      // correctEssay já grava status 'failed'; aqui é o log e o sinal para o /submit.
+      console.error(`[essays] correção de ${essayId} falhou: ${err && err.message ? err.message : err}`);
+      return { falhou: true };
+    })
+    .finally(() => correcoesEmCurso.delete(essayId));
+  correcoesEmCurso.set(essayId, promessa);
+  return promessa;
+}
+
+/** Espera a correção no máximo `ms`; devolve true se ela terminou a tempo. */
+async function correcaoTerminaEm(promessa, ms) {
+  let acabou = false;
+  const marca = promessa.then(() => { acabou = true; });
+  await Promise.race([marca, new Promise((r) => setTimeout(r, ms))]);
+  return acabou;
+}
 const MAX_THEMES = 60;
 const MAX_ESSAYS = 100;
 const MAX_EVOLUTION = 60;
@@ -375,12 +418,20 @@ router.post(
       [essay.id, req.user.id]
     );
 
-    // correção síncrona; em caso de falha o serviço marca status 'failed' e relança 503 ai_unavailable
-    await essays.correctEssay(essay.id, { timeoutMs: essays.CORRECTION_TIMEOUT_MS });
+    // A correção roda solta. Espera-se por ela só um instante: correção rápida
+    // (texto curto, ou o mock dos testes) já volta pronta; correção longa
+    // responde 202 e a tela acompanha por GET /:id, sem a borda cortar a
+    // conexão no meio.
+    const promessa = iniciarCorrecao(essay.id);
+    await correcaoTerminaEm(promessa, GRACA_DE_CORRECAO_MS);
 
-    const corrected = await findEssayFull(req.user.id, essay.id);
-    const set = await essays.getCriteriaSet(corrected.exam_id);
-    res.json({ ...corrected, criteria_set: publicCriteriaSet(set) });
+    const atual = await findEssayFull(req.user.id, essay.id);
+    if (atual.status === 'failed') {
+      throw new AppError(503, 'ai_unavailable', atual.error_message || 'O serviço de correção está indisponível. Tente novamente em instantes.');
+    }
+    const set = await essays.getCriteriaSet(atual.exam_id);
+    const corpo = { ...atual, criteria_set: publicCriteriaSet(set) };
+    return res.status(atual.status === 'corrected' ? 200 : 202).json({ ...corpo, correcting: atual.status === 'submitted' });
   })
 );
 

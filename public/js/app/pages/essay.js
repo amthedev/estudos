@@ -228,7 +228,7 @@ function submittedView(essay) {
     <section class="card ess-state" role="status" aria-live="polite">
       <span class="spinner spinner-lg" aria-hidden="true"></span>
       <h2 class="ess-state-title">Sua redação está em correção</h2>
-      <p class="ess-state-text">A análise completa costuma levar menos de dois minutos. Atualize em instantes para ver o resultado.</p>
+      <p class="ess-state-text">A análise completa costuma levar menos de dois minutos. A tela atualiza sozinha assim que ficar pronta.</p>
       <button type="button" class="btn btn-secondary" data-action="reload-essay">${icon('refresh-cw')}<span>Atualizar</span></button>
     </section>`;
 }
@@ -342,6 +342,36 @@ async function load() {
   }
   state.loading = false;
   paint();
+  acompanharCorrecao();
+}
+
+/**
+ * Enquanto a redação está "submitted", rebusca o estado sozinha, sem o aluno
+ * precisar clicar em "Atualizar". Para ao sair desse estado, ao trocar de tela,
+ * ou após um teto de tentativas (aí a tela já oferece reenviar). Uma por vez.
+ */
+function acompanharCorrecao() {
+  if (!state || !state.essay || state.essay.status !== 'submitted') {
+    if (state && state.pollTimer) { clearTimeout(state.pollTimer); state.pollTimer = null; }
+    return;
+  }
+  if (state.pollTimer || (state.pollCount || 0) >= 40) return;
+  const token = state.token;
+  state.pollTimer = setTimeout(async () => {
+    if (!state || state.token !== token) return;
+    state.pollTimer = null;
+    state.pollCount = (state.pollCount || 0) + 1;
+    try {
+      const essay = await api.get(`/api/essays/${encodeURIComponent(state.id)}`);
+      if (!state || state.token !== token) return;
+      const mudou = essay.status !== state.essay.status;
+      state.essay = essay;
+      if (mudou) paint();
+    } catch {
+      // uma falha de rede pontual não interrompe o acompanhamento
+    }
+    acompanharCorrecao();
+  }, 3000);
 }
 
 async function resubmit(button) {
@@ -426,6 +456,7 @@ export default async function renderEssay(ctx) {
 
 export function unmount() {
   if (!state) return;
+  if (state.pollTimer) clearTimeout(state.pollTimer);
   state.off.forEach((off) => {
     if (typeof off === 'function') off();
   });
