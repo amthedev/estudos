@@ -83,6 +83,31 @@ describe('Recorte da prova em lotes', () => {
     assert.equal(cursor, prova.length, 'a varredura tem que chegar ao fim do texto');
   });
 
+  it('nenhuma questão fica para trás entre um lote e outro', () => {
+    // O teto de questões por lote existe porque a resposta do modelo tem
+    // tamanho limitado. Se o corte do texto ignorasse esse teto, as questões
+    // excedentes ficariam no lote e sumiriam quando o cursor passasse por elas.
+    const prova = fakeExam(12);
+    const vistas = [];
+    let cursor = 0;
+    for (let volta = 0; volta < 30 && cursor < prova.length; volta += 1) {
+      const lote = examImport.nextBatch(prova, cursor);
+      if (!lote) break;
+      const numeros = examImport.questionMarks(lote.text).map((m) => m.number);
+      assert.ok(
+        numeros.length <= examImport.MAX_QUESTOES_POR_LOTE,
+        `lote com ${numeros.length} questões, acima do teto de ${examImport.MAX_QUESTOES_POR_LOTE}`
+      );
+      vistas.push(...numeros);
+      cursor = lote.end;
+    }
+    assert.deepEqual(
+      vistas,
+      Array.from({ length: 12 }, (_, i) => i + 1),
+      'a varredura precisa cobrir todas as questões, na ordem e sem repetir'
+    );
+  });
+
   it('texto sem marca de questão ainda anda, em vez de travar', () => {
     const texto = 'a'.repeat(50_000);
     const lote = examImport.nextBatch(texto, 0);

@@ -38,6 +38,7 @@ const { nullableFileRef } = require('../../utils/validators');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const uploads = require('../../services/uploads');
 const examImport = require('../../services/exam-import');
 const { buildImportRow, loadSlugMaps, insertQuestion, RowError } = require('./questions');
@@ -267,7 +268,10 @@ router.get(
       if (!alvo.startsWith(uploads.UPLOADS_DIR) || !fs.existsSync(alvo)) {
         throw new AppError(404, 'not_found', 'O arquivo desta prova não foi encontrado no servidor.');
       }
-      return fs.createReadStream(alvo).pipe(res);
+      // pipeline e não pipe: `pipe` não repassa erro, e um erro de stream sem
+      // tratamento derruba o processo inteiro — é o que acontecia quando o
+      // navegador desistia no meio do download.
+      return pipeline(fs.createReadStream(alvo), res).catch(() => {});
     }
     if (!/^https?:\/\//i.test(url)) {
       throw new AppError(409, 'conflict', 'O endereço do PDF desta prova não é um arquivo que a plataforma consiga abrir.');
@@ -296,7 +300,9 @@ router.get(
 
     const tamanho = resposta.headers.get('content-length');
     if (tamanho) res.setHeader('Content-Length', tamanho);
-    Readable.fromWeb(resposta.body).pipe(res);
+    // Mesmo motivo do caminho de disco: cliente que desiste no meio não pode
+    // virar erro de stream sem dono.
+    await pipeline(Readable.fromWeb(resposta.body), res).catch(() => {});
   })
 );
 
@@ -376,7 +382,13 @@ router.post(
       return res.json({ ...serialize(concluida, { counts: await itemCounts(row.id) }), done: true, found: 0, items: [] });
     }
 
-    await db.query(`UPDATE exam_imports SET status = 'extraindo', error_message = NULL WHERE id = $1`, [row.id]);
+    // Marca que está trabalhando, guardando a hora: se o processo reiniciar no
+    // meio (a hospedagem reinicia sozinha), a leitura não pode ficar presa
+    // nesse estado para sempre — a próxima varredura retoma.
+    await db.query(
+      `UPDATE exam_imports SET status = 'extraindo', error_message = NULL, updated_at = now() WHERE id = $1`,
+      [row.id]
+    );
 
     let encontradas;
     try {

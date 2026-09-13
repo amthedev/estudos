@@ -33,13 +33,27 @@ const ai = require('./ai');
 const { getSetting } = require('./settings');
 const { AppError } = require('../middleware/errors');
 
-/** Tamanho alvo de um lote de texto. Cerca de 10 questões de prova. */
-const BATCH_CHARS = 12_000;
+/**
+ * Tamanho alvo de um lote de texto. Cerca de cinco questões de prova.
+ *
+ * Medido em produção com a prova do ENEM: um lote de 12 mil caracteres gastava
+ * 17,8 mil tokens e passava de 100 segundos — mais do que a borda da hospedagem
+ * deixa uma requisição durar. O resultado era o pior possível: o modelo
+ * respondia, a resposta era paga, e a conexão já tinha caído. Enunciado de
+ * ENEM é longo (texto de apoio, citação), então é a SAÍDA que manda no tempo.
+ */
+const BATCH_CHARS = 6_000;
 /** Teto absoluto: sem marca de questão no texto, o lote não pode crescer sem fim. */
-const BATCH_MAX_CHARS = 18_000;
-const TIMEOUT_MS = 120_000;
-const MAX_TOKENS = 6000;
-const RETRY_MAX_TOKENS = 10_000;
+const BATCH_MAX_CHARS = 9_000;
+/**
+ * Prazo da chamada. Fica abaixo do tempo que a borda aguenta de propósito:
+ * é melhor o servidor desistir e explicar do que a conexão morrer sem resposta.
+ */
+const TIMEOUT_MS = 80_000;
+const MAX_TOKENS = 3500;
+const RETRY_MAX_TOKENS = 7000;
+/** Teto de questões por lote, para a resposta não crescer além do prazo. */
+const MAX_QUESTOES_POR_LOTE = 6;
 /** Texto de prova maior que isto quase certamente não é uma prova. */
 const MAX_DOCUMENT_CHARS = 4_000_000;
 
@@ -93,10 +107,13 @@ function nextBatch(document, cursor = 0) {
     };
   }
 
-  // Última marca que ainda cabe no lote; pelo menos uma questão inteira sai.
+  // O lote termina na primeira marca que estoura o tamanho alvo OU que passa do
+  // teto de questões — o que vier primeiro. O teto de questões importa tanto
+  // quanto o de caracteres: a resposta do modelo é limitada em questões, e sem
+  // cortar aqui as excedentes ficariam para trás quando o cursor avançasse.
   let corte = marks[marks.length - 1].index;
   for (let i = 1; i < marks.length; i += 1) {
-    if (marks[i].index > BATCH_CHARS) {
+    if (marks[i].index > BATCH_CHARS || i >= MAX_QUESTOES_POR_LOTE) {
       corte = marks[i].index;
       break;
     }
@@ -196,6 +213,7 @@ function buildExtractPrompt({ batch, exam, year, board, catalog, answerKey }) {
   lines.push('}');
   lines.push('');
   lines.push('Regras obrigatórias:');
+  lines.push(`- Transcreva no máximo ${MAX_QUESTOES_POR_LOTE} questões. Se houver mais no trecho, transcreva as primeiras e pare.`);
   lines.push('- "number" é o número da questão na prova, como aparece no texto.');
   lines.push('- Alternativas de A a E, no texto original. Questão com menos de duas alternativas: omita.');
   lines.push('- "answer_source": "gabarito" quando a letra veio da lista acima; "deduzida" quando você teve que resolver.');
@@ -312,7 +330,10 @@ async function extract({ batch, exam, year, board, answerKey, userId }) {
   }
 
   const brutas = Array.isArray(result.data && result.data.questions) ? result.data.questions : [];
-  return brutas.map((raw) => normalizeExtracted(raw, { answerKey, exam, year, board })).filter(Boolean);
+  return brutas
+    .slice(0, MAX_QUESTOES_POR_LOTE)
+    .map((raw) => normalizeExtracted(raw, { answerKey, exam, year, board }))
+    .filter(Boolean);
 }
 
 /**
@@ -370,6 +391,8 @@ module.exports = {
   BATCH_CHARS,
   BATCH_MAX_CHARS,
   MAX_DOCUMENT_CHARS,
+  MAX_QUESTOES_POR_LOTE,
+  TIMEOUT_MS,
   LETRAS,
   questionMarks,
   nextBatch,
