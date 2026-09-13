@@ -28,9 +28,18 @@ const { getSetting } = require('./settings');
 const { AppError } = require('../middleware/errors');
 const { TIMEZONE } = require('../utils/dates');
 
-/** Uma questão de múltipla escolha com resolução custa perto de 500 tokens de saída. */
-const MAX_TOKENS_POR_QUESTAO = 700;
-const MAX_TOKENS_MINIMO = 1500;
+/**
+ * Quanto custa, em tokens de saída, uma questão com resolução.
+ *
+ * Os 700 anteriores eram um chute otimista. Medido com o modelo em produção,
+ * três questões de Porcentagem no formato do ENEM — enunciado com contexto,
+ * cinco alternativas, resolução passo a passo e explicação dos distratores —
+ * gastam de 1800 a 2700 tokens. Com o teto antigo, o JSON era cortado no meio
+ * e a geração inteira era descartada: o aluno pedia questão nova e recebia
+ * "não foi possível elaborar", sempre.
+ */
+const MAX_TOKENS_POR_QUESTAO = 1400;
+const MAX_TOKENS_MINIMO = 4000;
 const MAX_TOKENS_TETO = 12_000;
 const TIMEOUT_MS = 120_000;
 /**

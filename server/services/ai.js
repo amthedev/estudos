@@ -246,7 +246,14 @@ async function chat({
     // modelo vem com raciocínio ligado por padrão; pedir esforço "minimal"
     // ainda reservava parte do max_tokens para pensamento oculto e fez lotes
     // legítimos terminarem com finish_reason=length antes de fechar o JSON.
-    const pensaMais = feature === 'essay' || feature === 'questions';
+    // Corrigir redação pede raciocínio: a nota por competência depende de julgar
+    // o texto, não de copiá-lo. Elaborar questão TAMBÉM pediria, mas não cabe:
+    // medido com o modelo em produção, três questões com raciocínio ligado
+    // estouram 9 mil tokens de saída sem fechar o JSON, e a geração inteira é
+    // descartada. Sem raciocínio, as mesmas três saem completas e válidas em
+    // menos de 3 mil. Uma questão entregue vale mais que uma questão perfeita
+    // que nunca chega.
+    const pensaMais = feature === 'essay';
     params.reasoning = pensaMais ? { effort: 'low', exclude: true } : { enabled: false, exclude: true };
   }
   if (responseFormat) params.response_format = responseFormat;
