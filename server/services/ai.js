@@ -222,10 +222,11 @@ async function chat({
 
   const params = { model: resolvedModel, messages, temperature, max_tokens: maxTokens };
   if (resolvedModel === 'qwen/qwen3.8-flash') {
-    // Distrator plausível e resolução passo a passo não saem com esforço
-    // mínimo — elaborar questão e transcrever prova pedem o mesmo que a
-    // correção de redação.
-    const pensaMais = feature === 'essay' || feature === 'questions' || feature === 'exam_import';
+    // Elaborar questão pede raciocínio: distrator plausível e resolução passo a
+    // passo não saem com esforço mínimo. TRANSCREVER prova não — é cópia, e
+    // ligar o raciocínio ali só fez a chamada passar de 80 segundos e estourar
+    // o prazo, pagando tokens de pensamento para copiar texto.
+    const pensaMais = feature === 'essay' || feature === 'questions';
     params.reasoning = { effort: pensaMais ? 'low' : 'minimal', exclude: true };
   }
   if (responseFormat) params.response_format = responseFormat;

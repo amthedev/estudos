@@ -54,6 +54,7 @@ const settingsBody = z
     require_subscription: z.boolean().optional(),
     openrouter_model: z.string().trim().min(3).max(120).optional(),
     openrouter_essay_model: z.string().trim().min(3).max(120).optional(),
+    openrouter_extract_model: z.preprocess((v) => (v === '' ? '' : v), z.string().trim().max(120).optional()),
     openrouter_monthly_token_limit: z.coerce.number().int().min(0, 'Use 0 para não limitar.').max(1_000_000_000).optional(),
     tutor_system_prompt: z.string().trim().min(40, 'O prompt do tutor precisa ser mais detalhado.').max(8000).optional(),
     review_intervals: reviewIntervals.optional(),

@@ -42,18 +42,18 @@ const { AppError } = require('../middleware/errors');
  * respondia, a resposta era paga, e a conexão já tinha caído. Enunciado de
  * ENEM é longo (texto de apoio, citação), então é a SAÍDA que manda no tempo.
  */
-const BATCH_CHARS = 6_000;
+const BATCH_CHARS = 4_500;
 /** Teto absoluto: sem marca de questão no texto, o lote não pode crescer sem fim. */
-const BATCH_MAX_CHARS = 9_000;
+const BATCH_MAX_CHARS = 7_000;
 /**
  * Prazo da chamada. Fica abaixo do tempo que a borda aguenta de propósito:
  * é melhor o servidor desistir e explicar do que a conexão morrer sem resposta.
  */
 const TIMEOUT_MS = 80_000;
-const MAX_TOKENS = 3500;
-const RETRY_MAX_TOKENS = 7000;
+const MAX_TOKENS = 2800;
+const RETRY_MAX_TOKENS = 5600;
 /** Teto de questões por lote, para a resposta não crescer além do prazo. */
-const MAX_QUESTOES_POR_LOTE = 6;
+const MAX_QUESTOES_POR_LOTE = 4;
 /** Texto de prova maior que isto quase certamente não é uma prova. */
 const MAX_DOCUMENT_CHARS = 4_000_000;
 
@@ -290,7 +290,9 @@ function normalizeExtracted(raw, { answerKey, exam, year, board }) {
 async function extract({ batch, exam, year, board, answerKey, userId }) {
   const catalog = await taxonomy(exam ? exam.id : null);
   const { messages } = buildExtractPrompt({ batch: batch.text, exam, year, board, catalog, answerKey });
-  const model = (await getSetting('openrouter_model')) || undefined;
+  // Transcrição aceita um modelo mais simples e rápido que o do tutor. Fica
+  // configurável porque é aqui que o tempo de cada lote se decide.
+  const model = (await getSetting('openrouter_extract_model')) || (await getSetting('openrouter_model')) || undefined;
 
   // Cada tentativa com o próprio relógio: um controlador só para as duas faz a
   // retentativa nascer abortada (ver services/essay.js).
