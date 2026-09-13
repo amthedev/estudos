@@ -43,6 +43,7 @@ router.get(
                 coalesce(sum(completion_tokens), 0)::int AS completion_tokens,
                 count(*)::int AS requests,
                 count(*) FILTER (WHERE status = 'error')::int AS errors,
+                count(*) FILTER (WHERE status = 'aborted')::int AS aborted,
                 coalesce(round(avg(latency_ms)), 0)::int AS avg_latency_ms
            FROM ai_usage
           WHERE (created_at AT TIME ZONE $1)::date >= $2`,
@@ -62,7 +63,8 @@ router.get(
         `SELECT feature,
                 count(*)::int AS requests,
                 coalesce(sum(total_tokens), 0)::int AS tokens,
-                count(*) FILTER (WHERE status = 'error')::int AS errors
+                count(*) FILTER (WHERE status = 'error')::int AS errors,
+                count(*) FILTER (WHERE status = 'aborted')::int AS aborted
            FROM ai_usage
           WHERE (created_at AT TIME ZONE $1)::date >= $2
           GROUP BY feature ORDER BY tokens DESC, feature`,

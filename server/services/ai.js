@@ -26,6 +26,8 @@ const { getSetting } = require('./settings');
 const { AppError } = require('../middleware/errors');
 const { TIMEZONE } = require('../utils/dates');
 
+/** Situações que o registro de uso aceita (ver migration 212). */
+const STATUS_DE_USO = new Set(['ok', 'error', 'aborted']);
 const FEATURES = new Set(['tutor', 'essay', 'essay_theme', 'questions', 'exam_import', 'other']);
 const DEFAULT_TIMEOUT_MS = 90_000;
 const UNAVAILABLE_MESSAGE = 'O Tutor IA ainda não foi ativado pela equipe.';
@@ -119,11 +121,26 @@ function messagesText(messages) {
   return (messages || []).map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content || ''))).join('\n');
 }
 
+/**
+ * Consumo de uma chamada, com estimativa quando o provedor não informa.
+ *
+ * O cuidado com `null` aqui não é preciosismo: `Number(null)` é ZERO, não NaN.
+ * Escrito como `Number(usage && usage.prompt_tokens)`, o caso "o provedor não
+ * mandou consumo" virava zero válido, a estimativa nunca rodava, e a chamada
+ * era gravada com consumo nulo — o teto mensal de tokens, que existe para
+ * segurar custo, contava essas chamadas como se fossem de graça.
+ */
+function numeroInformado(valor) {
+  if (valor === null || valor === undefined) return null;
+  const n = Number(valor);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function normalizeUsage(usage, messages, content) {
-  const prompt = Number(usage && usage.prompt_tokens);
-  const completion = Number(usage && usage.completion_tokens);
-  const promptTokens = Number.isFinite(prompt) && prompt >= 0 ? prompt : estimateTokens(messagesText(messages));
-  const completionTokens = Number.isFinite(completion) && completion >= 0 ? completion : content ? estimateTokens(content) : 0;
+  const prompt = numeroInformado(usage && usage.prompt_tokens);
+  const completion = numeroInformado(usage && usage.completion_tokens);
+  const promptTokens = prompt === null ? estimateTokens(messagesText(messages)) : prompt;
+  const completionTokens = completion === null ? (content ? estimateTokens(content) : 0) : completion;
   const total = Number(usage && usage.total_tokens);
   return {
     prompt_tokens: promptTokens,
@@ -147,7 +164,9 @@ async function recordUsage({ userId = null, feature = 'other', model = null, usa
         u.prompt_tokens || 0,
         u.completion_tokens || 0,
         u.total_tokens || 0,
-        status === 'error' ? 'error' : 'ok',
+        // Achatar tudo que não era 'error' em 'ok' foi o que transformou seis
+        // chamadas canceladas em "6 chamadas, 0 erros" no painel.
+        STATUS_DE_USO.has(status) ? status : 'ok',
         error ? String(error).slice(0, 1000) : null,
         latencyMs === null ? null : Math.max(0, Math.round(latencyMs)),
       ]
@@ -283,7 +302,20 @@ async function chat({
   }
 
   const finalUsage = normalizeUsage(usage, messages, content);
-  await recordUsage({ userId, feature, model: usedModel, usage: finalUsage, status: 'ok', latencyMs: Date.now() - started });
+  // Chamada cancelada não é chamada bem-sucedida. Registrá-la como 'ok' fazia
+  // o painel dizer "6 chamadas, 48 mil tokens, 0 erros" enquanto nenhuma delas
+  // tinha devolvido um token — e mandou a investigação de uma falha real para
+  // a direção errada. Os tokens continuam contando: o prompt foi enviado e
+  // cobrado, mesmo sem resposta.
+  await recordUsage({
+    userId,
+    feature,
+    model: usedModel,
+    usage: finalUsage,
+    status: aborted ? 'aborted' : 'ok',
+    error: aborted ? 'Cancelada antes de responder (tempo esgotado ou quem pediu desistiu).' : null,
+    latencyMs: Date.now() - started,
+  });
   return {
     content,
     usage: finalUsage,

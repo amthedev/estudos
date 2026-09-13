@@ -89,6 +89,7 @@ async function many(text, params = []) {
  */
 async function tx(fn) {
   const client = await pool.connect();
+  let falhou = null;
   const wrapped = {
     query: (text, params) => client.query(text, params),
     one: async (text, params = []) => (await client.query(text, params)).rows[0] ?? null,
@@ -101,6 +102,7 @@ async function tx(fn) {
     await client.query('COMMIT');
     return result;
   } catch (err) {
+    falhou = err;
     try {
       await client.query('ROLLBACK');
     } catch (rollbackErr) {
@@ -108,7 +110,10 @@ async function tx(fn) {
     }
     throw err;
   } finally {
-    client.release();
+    // Devolver o erro junto faz o pg DESCARTAR esta conexão em vez de
+    // reaproveitá-la. Sem isso, uma conexão que quebrou no meio da transação
+    // voltava para o pool e o próximo a pegá-la herdava o problema.
+    client.release(falhou || undefined);
   }
 }
 
