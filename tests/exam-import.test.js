@@ -150,6 +150,80 @@ describe('Recorte da prova em lotes', () => {
     const prova = fakeExam(2);
     assert.equal(examImport.nextBatch(prova, prova.length), null);
   });
+
+  it('transcreve enunciado e alternativas sem pedir que a IA repita o PDF', () => {
+    const [question] = examImport.parseBatchQuestions(fakeExam(1));
+    assert.equal(question.number, 1);
+    assert.match(question.statement, /comerciante aplicou um desconto/);
+    assert.equal(question.A, 'Primeira alternativa.');
+    assert.equal(question.E, 'Quinta alternativa.');
+  });
+
+  it('entende as letras duplicadas dos cadernos ENEM 2022 e 2023', () => {
+    const question = examImport.parseQuestionBlock(
+      [
+        'A leitura do texto permite reconhecer a cantiga como patrimônio que',
+        'AA representa uma memória extinta.',
+        'BB exalta a rotina dos jovens.',
+        'CC preserva a ancestralidade pela tradição oral.',
+        'DD resgata palavras inteligíveis.',
+        'EE remonta à tristeza dos mais velhos.',
+      ].join('\n'),
+      6
+    );
+    assert.ok(question);
+    assert.equal(question.number, 6);
+    assert.equal(question.A, 'representa uma memória extinta.');
+    assert.equal(question.C, 'preserva a ancestralidade pela tradição oral.');
+  });
+
+  it('entende prova Vunesp/FGV cujo número e alternativas vêm entre parênteses', () => {
+    const prova = [
+      '01',
+      'Um texto de história com contexto suficiente para a questão.',
+      '(A) primeira alternativa.',
+      '(B) segunda alternativa.',
+      '(C) terceira alternativa.',
+      '(D) quarta alternativa.',
+      '(E) quinta alternativa.',
+      '02',
+      'Outro enunciado completo com mais de vinte caracteres.',
+      '(A) opção um.',
+      '(B) opção dois.',
+      '(C) opção três.',
+      '(D) opção quatro.',
+      '(E) opção cinco.',
+    ].join('\n');
+    const questions = examImport.parseBatchQuestions(prova);
+    assert.deepEqual(questions.map((item) => item.number), [1, 2]);
+    assert.equal(questions[1].D, 'opção quatro.');
+  });
+
+  it('não confunde o começo do enunciado com a alternativa A', () => {
+    const prova = [
+      'QUESTÃO 06',
+      'A autora conclui que as tecnologias de escrita',
+      'A evoluem para facilitar a vida cotidiana.',
+      'B alcançam diferentes realidades sociais.',
+      'C coexistem com outras já estabelecidas.',
+      'D promovem maior agilidade na comunicação.',
+      'E surgem nos contextos em que são necessárias.',
+    ].join('\n');
+    const [question] = examImport.parseBatchQuestions(prova);
+    assert.equal(question.statement, 'A autora conclui que as tecnologias de escrita');
+    assert.equal(question.A, 'evoluem para facilitar a vida cotidiana.');
+  });
+
+  it('o prompt compacto pede só classificação, não a transcrição de volta', () => {
+    const questions = examImport.parseBatchQuestions(fakeExam(2));
+    const catalog = [
+      { subject_slug: 'matematica', subject_name: 'Matemática', topic_slug: 'porcentagem', topic_name: 'Porcentagem' },
+    ];
+    const prompt = examImport.buildClassificationPrompt({ questions, catalog, exam: null, year: 2024 });
+    assert.match(prompt.user, /"classifications"/);
+    assert.doesNotMatch(prompt.user, /"statement"\s*:/);
+    assert.doesNotMatch(prompt.user, /"answer_source"/);
+  });
 });
 
 describe('Link do Google Drive', () => {

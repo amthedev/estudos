@@ -218,3 +218,95 @@ describe('Nada pode ser contado duas vezes', () => {
     assert.equal(registros.minutos, 20, 'um bloco de vinte minutos não pode virar quarenta');
   });
 });
+
+describe('Leitura da prova nao pode perder questao no meio do caminho', () => {
+  const examImport = require('../server/services/exam-import');
+
+  const catalogo = [
+    { subject_slug: 'matematica', subject_name: 'Matemática', topic_slug: 'porcentagem', topic_name: 'Porcentagem' },
+    { subject_slug: 'historia', subject_name: 'História', topic_slug: 'brasil-colonia', topic_name: 'Brasil Colônia' },
+  ];
+  const questoes = [
+    { number: 1, statement: 'Enunciado da primeira questao, com tamanho suficiente.', A: 'a', B: 'b', C: 'c', D: 'd', E: 'e' },
+    { number: 2, statement: 'Enunciado da segunda questao, com tamanho suficiente.', A: 'a', B: 'b', C: 'c', D: 'd', E: 'e' },
+    { number: 3, statement: 'Enunciado da terceira questao, com tamanho suficiente.', A: 'a', B: 'b', C: 'c', D: 'd', E: 'e' },
+  ];
+
+  it('modelo que pula itens nao apaga as questoes que ele pulou', () => {
+    // O modelo classificou só a primeira. As outras duas ja estavam
+    // transcritas: perde-las era transformar 80 questoes lidas em 36.
+    const saida = examImport.mergeClassifications(
+      questoes,
+      { classifications: [{ item: 1, subject_slug: 'matematica', topic_slug: 'porcentagem', difficulty: 2, correct: 'A' }] },
+      catalogo
+    );
+    assert.equal(saida.length, 3, 'as tres questoes precisam sobreviver');
+    assert.equal(saida[0].topic_slug, 'porcentagem');
+    assert.equal(saida[1].topic_slug, '', 'a nao classificada fica marcada, nao sumida');
+    assert.equal(saida[2].topic_slug, '');
+  });
+
+  it('assunto inventado pelo modelo tambem nao apaga a questao', () => {
+    const saida = examImport.mergeClassifications(
+      questoes.slice(0, 1),
+      { classifications: [{ item: 1, subject_slug: 'astrologia', topic_slug: 'signos', difficulty: 2 }] },
+      catalogo
+    );
+    assert.equal(saida.length, 1);
+    assert.equal(saida[0].topic_slug, '');
+    assert.equal(saida[0].statement, questoes[0].statement, 'o enunciado transcrito continua inteiro');
+  });
+
+  it('so a materia errada, com assunto certo, continua sendo corrigido sozinho', () => {
+    const saida = examImport.mergeClassifications(
+      questoes.slice(0, 1),
+      { classifications: [{ item: 1, subject_slug: 'historia', topic_slug: 'porcentagem', difficulty: 2 }] },
+      catalogo
+    );
+    assert.equal(saida[0].subject_slug, 'matematica');
+    assert.equal(saida[0].topic_slug, 'porcentagem');
+  });
+
+  it('questao sem resposta conhecida vira item de conferencia, nao lixo', () => {
+    const bruto = {
+      number: 7,
+      statement: 'Enunciado transcrito por inteiro, com mais de vinte caracteres.',
+      A: 'primeira', B: 'segunda', C: 'terceira', D: 'quarta', E: 'quinta',
+      subject_slug: 'matematica',
+      topic_slug: 'porcentagem',
+    };
+    const item = examImport.normalizeExtracted(bruto, { answerKey: null, exam: null, year: 2024, board: null });
+    assert.ok(item, 'sem gabarito e sem letra deduzida a questao era descartada inteira');
+    assert.equal(item.correct, '');
+    assert.equal(item.needs_answer, true);
+    assert.equal(item.answer_from_key, false);
+  });
+
+  it('gabarito oficial que nao cobre aquele numero cai na letra deduzida', () => {
+    const bruto = {
+      number: 12,
+      statement: 'Enunciado transcrito por inteiro, com mais de vinte caracteres.',
+      A: 'primeira', B: 'segunda', C: 'terceira', D: 'quarta', E: 'quinta',
+      correct: 'D',
+      subject_slug: 'matematica',
+      topic_slug: 'porcentagem',
+    };
+    const item = examImport.normalizeExtracted(bruto, { answerKey: { 1: 'A' }, exam: null, year: 2024, board: null });
+    assert.equal(item.correct, 'D');
+    assert.equal(item.answer_from_key, false, 'letra deduzida continua exigindo conferencia');
+  });
+
+  it('gabarito oficial continua mandando quando cobre o numero', () => {
+    const bruto = {
+      number: 1,
+      statement: 'Enunciado transcrito por inteiro, com mais de vinte caracteres.',
+      A: 'primeira', B: 'segunda', C: 'terceira', D: 'quarta', E: 'quinta',
+      correct: 'D',
+      subject_slug: 'matematica',
+      topic_slug: 'porcentagem',
+    };
+    const item = examImport.normalizeExtracted(bruto, { answerKey: { 1: 'B' }, exam: null, year: 2024, board: null });
+    assert.equal(item.correct, 'B');
+    assert.equal(item.answer_from_key, true);
+  });
+});

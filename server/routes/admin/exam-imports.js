@@ -579,6 +579,11 @@ async function itensConfirmadosPeloGabarito(importId) {
     `SELECT id, number, payload FROM exam_import_items
       WHERE import_id = $1 AND status = 'pendente'
         AND coalesce((payload->>'answer_from_key')::boolean, false)
+        -- Sem matéria e assunto a gravação falha e o item cairia em "Não
+        -- entraram", como se a questão tivesse se perdido. Ela fica esperando
+        -- conferência, que é onde o administrador escolhe o assunto pelo nome.
+        AND coalesce(payload->>'subject_slug', '') <> ''
+        AND coalesce(payload->>'topic_slug', '') <> ''
       ORDER BY number NULLS LAST`,
     [importId]
   );

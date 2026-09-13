@@ -537,6 +537,21 @@ function mockTheme(prompt) {
   };
 }
 
+/** Classificação compacta usada pelo importador depois que ele mesmo lê o PDF. */
+function mockExamClassifications(prompt) {
+  const items = [...String(prompt || '').matchAll(/^ITEM\s+(\d+)\s*\|/gm)].map((match) => Number(match[1]));
+  const pair = (prompt.match(/^- ([a-z0-9-]+) \/ ([a-z0-9-]+) —/m) || []);
+  return {
+    classifications: items.map((item) => ({
+      item,
+      subject_slug: pair[1] || 'matematica',
+      topic_slug: pair[2] || 'porcentagem',
+      difficulty: 2,
+      correct: 'C',
+    })),
+  };
+}
+
 /** Transcrição de simulação de um trecho de prova, no formato da importação. */
 function mockExamQuestions(prompt) {
   const trecho = (prompt.split('Trecho da prova:')[1] || '').replace(/^\s*---\s*/, '');
@@ -682,6 +697,7 @@ function createMockClient() {
           if (wantsJson) {
             if (/"grammar_errors"/.test(prompt)) content = JSON.stringify(mockCorrection(prompt));
             else if (/"support_texts"/.test(prompt)) content = JSON.stringify(mockTheme(prompt));
+            else if (/"classifications"/.test(prompt)) content = JSON.stringify(mockExamClassifications(prompt));
             else if (/"answer_source"/.test(prompt)) content = JSON.stringify(mockExamQuestions(prompt));
             else if (/"is_correct"/.test(prompt)) content = JSON.stringify(mockQuestions(prompt));
             else content = JSON.stringify({ answer: mockChatText(messages) });
