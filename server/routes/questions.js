@@ -145,10 +145,23 @@ function buildListQuery(userId, filters) {
     where.push(`(q.source_exam_id = ${p} OR EXISTS (SELECT 1 FROM question_exams qe WHERE qe.question_id = q.id AND qe.exam_id = ${p}))`);
   }
   if (filters.q) {
-    // busca textual sem acento; o ILIKE cobre termos que o dicionário não indexa (siglas, números)
+    // Busca textual sem acento; o ILIKE cobre termos que o dicionário não indexa
+    // (siglas, números).
+    //
+    // Os nomes da matéria, do assunto e do subassunto entram junto porque é
+    // assim que o aluno procura: ele digita "Porcentagem", não uma palavra que
+    // esteja dentro do enunciado. O índice de texto cobre só o enunciado, então
+    // procurar pelo assunto devolvia zero — exatamente o contrário do que a
+    // tela promete ao chamar o campo de "assunto, palavra do enunciado…".
     const term = add(filters.q);
     const pattern = add(likePattern(filters.q));
-    where.push(`(q.search_vector @@ plainto_tsquery('portuguese', fe_unaccent(${term})) OR fe_unaccent(q.statement) ILIKE fe_unaccent(${pattern}))`);
+    where.push(`(
+      q.search_vector @@ plainto_tsquery('portuguese', fe_unaccent(${term}))
+      OR fe_unaccent(q.statement) ILIKE fe_unaccent(${pattern})
+      OR fe_unaccent(s.name) ILIKE fe_unaccent(${pattern})
+      OR fe_unaccent(t.name) ILIKE fe_unaccent(${pattern})
+      OR fe_unaccent(st.name) ILIKE fe_unaccent(${pattern})
+    )`);
   }
   if (filters.status === 'answered') where.push('la.is_correct IS NOT NULL');
   else if (filters.status === 'unanswered') where.push('la.is_correct IS NULL');

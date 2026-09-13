@@ -231,6 +231,25 @@ describe('Cena 2 — as questões da prova no banco de questões', () => {
     assert.ok(res.body.total > 0, 'filtrar pelo assunto tem que trazer as questões dele');
   });
 
+  it('o aluno DIGITA o nome do assunto e acha — é a frase literal do pedido', async () => {
+    // "Aí o cara só pesquisa o assunto nas questões aí já aparece pra ele."
+    // O campo de busca da tela se oferece para isso, mas o índice de texto cobre
+    // só o enunciado: digitar o nome do assunto devolvia zero enquanto a questão
+    // estava lá, classificada nele.
+    const porAssunto = await aluno.agent.get(`/api/questions?q=${encodeURIComponent('Porcentagem')}`);
+    assert.equal(porAssunto.status, 200, JSON.stringify(porAssunto.body));
+    assert.ok(porAssunto.body.total > 0, 'digitar o nome do assunto tem que trazer as questões dele');
+
+    const porMateria = await aluno.agent.get(`/api/questions?q=${encodeURIComponent('Matemática')}`);
+    assert.ok(porMateria.body.total > 0, 'e o nome da matéria também');
+
+    const semAcento = await aluno.agent.get(`/api/questions?q=${encodeURIComponent('matematica')}`);
+    assert.ok(semAcento.body.total > 0, 'ninguém digita acento em campo de busca');
+
+    const inexistente = await aluno.agent.get(`/api/questions?q=${encodeURIComponent('Termodinâmica')}`);
+    assert.equal(inexistente.body.total, 0, 'e a busca continua filtrando, não devolve tudo');
+  });
+
   it('a questão importada aponta para a prova de origem', async () => {
     const q = await db.one(
       `SELECT source_exam_id FROM questions WHERE active ORDER BY created_at DESC LIMIT 1`
