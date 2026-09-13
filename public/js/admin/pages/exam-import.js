@@ -356,13 +356,149 @@ function reviewStep() {
 }
 
 // ---------------------------------------------------------------------
+// Carga de todas as provas
+// ---------------------------------------------------------------------
+
+/** Provas cadastradas que ainda não passaram pelo leitor. */
+function pendentesDeLeitura() {
+  return (state.provas || []).filter((p) => !p.leituras);
+}
+
+function loteView() {
+  const lote = state.lote;
+  if (!lote) return '';
+  const pct = lote.total ? Math.round((lote.feitas / lote.total) * 100) : 0;
+  return html`
+    <section class="card xim-lote" role="status" aria-live="polite">
+      <div class="card-body">
+        <h2 class="xim-step-title">
+          ${lote.parar ? icon('circle-x') : icon('fast-forward')}
+          <span>${lote.parar ? 'Parando após esta prova…' : 'Lendo as provas cadastradas'}</span>
+        </h2>
+        <div class="xim-progress">
+          ${progressBar(pct, { label: `${lote.feitas} de ${lote.total} provas`, showValue: true })}
+        </div>
+        <p class="xim-step-text">${lote.atual || '—'}</p>
+        <dl class="xim-stats">
+          <div><dt>Questões encontradas</dt><dd>${fmtNumber(lote.encontradas)}</dd></div>
+          <div><dt>Provas com problema</dt><dd>${fmtNumber(lote.falhas)}</dd></div>
+        </dl>
+        ${lote.terminou
+          ? html`<p class="xim-done">${icon('circle-check')}<span>Carga concluída. Confira as questões em cada leitura.</span></p>`
+          : html`<button type="button" class="btn btn-ghost" data-action="parar-lote">${icon('circle-x')}<span>Parar</span></button>`}
+      </div>
+    </section>`;
+}
+
+/**
+ * Lê todas as provas cadastradas que ainda não foram lidas.
+ *
+ * O leitor já existia, mas exigia repetir o mesmo caminho uma vez por prova —
+ * e ninguém faz isso vinte e cinco vezes. Aqui é uma operação só: para cada
+ * prova, lê o gabarito oficial, lê o PDF, varre até o fim e deixa tudo na fila
+ * de conferência.
+ */
+async function lerTodasAsProvas() {
+  const pendentes = pendentesDeLeitura();
+  if (!pendentes.length || state.busy) return;
+
+  const semGabarito = pendentes.filter((p) => !p.tem_gabarito).length;
+  const ok = await confirm({
+    title: `Ler ${pendentes.length} provas de uma vez?`,
+    message:
+      `Cada prova é lida e varrida inteira, o que consome a inteligência artificial da plataforma. ` +
+      (semGabarito
+        ? `${semGabarito} delas não têm gabarito oficial cadastrado — nessas, as respostas saem marcadas para você conferir uma a uma. `
+        : 'Todas têm gabarito oficial cadastrado. ') +
+      'Dá para parar a qualquer momento; o que já entrou fica.',
+    confirmText: 'Ler todas',
+  });
+  if (!ok) return;
+
+  state.lote = { total: pendentes.length, feitas: 0, encontradas: 0, falhas: 0, atual: '', parar: false, terminou: false };
+  state.busy = true;
+  paint();
+
+  for (const prova of pendentes) {
+    if (state.lote.parar) break;
+    state.lote.atual = `Lendo ${prova.title}…`;
+    paint();
+    try {
+      await lerProvaInteira(prova);
+    } catch (err) {
+      state.lote.falhas += 1;
+      console.error(`[ler prova] ${prova.title}: ${err.message}`);
+    }
+    state.lote.feitas += 1;
+    paint();
+  }
+
+  state.lote.terminou = true;
+  state.lote.atual = '';
+  state.busy = false;
+  await loadList();
+  toast(
+    `${state.lote.feitas} ${state.lote.feitas === 1 ? 'prova lida' : 'provas lidas'}, ` +
+      `${state.lote.encontradas} ${state.lote.encontradas === 1 ? 'questão encontrada' : 'questões encontradas'}.`,
+    { type: 'success' }
+  );
+}
+
+/** Uma prova, do gabarito à varredura completa. */
+async function lerProvaInteira(prova) {
+  const gabarito = prova.tem_gabarito ? await lerGabarito(prova.id) : null;
+
+  const criada = await api.post('/api/admin/exam-imports', {
+    title: prova.title,
+    past_exam_id: prova.id,
+    exam_id: prova.exam_id || undefined,
+    year: prova.year || undefined,
+    board: prova.board || undefined,
+    answer_key: gabarito || undefined,
+  });
+
+  const { text } = await extractPdfText(`/api/admin/exam-imports/provas/${prova.id}/arquivo/prova`);
+  const partes = splitForUpload(text);
+  for (const [index, chunk] of partes.entries()) {
+    await api.post(`/api/admin/exam-imports/${criada.id}/text`, { chunk, done: index === partes.length - 1 });
+  }
+
+  let done = false;
+  let voltas = 0;
+  let encontradas = 0;
+  while (!done && voltas < 60 && !state.lote.parar) {
+    voltas += 1;
+    const passo = await api.post(`/api/admin/exam-imports/${criada.id}/sweep`, {});
+    done = passo.done;
+    encontradas = Number(passo.found_count) || 0;
+    state.lote.atual = `${prova.title} — ${passo.percent}% · ${encontradas} questões`;
+    paint();
+  }
+  state.lote.encontradas += encontradas;
+}
+
+// ---------------------------------------------------------------------
 // Lista
 // ---------------------------------------------------------------------
 function listView() {
   const items = state.list || [];
   return html`
     <section class="card">
-      <div class="card-header"><h2 class="card-title">Leituras recentes</h2></div>
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Leituras recentes</h2>
+          ${pendentesDeLeitura().length
+            ? html`<p class="card-subtitle">
+                ${pluralize(pendentesDeLeitura().length, 'prova cadastrada ainda não foi lida', 'provas cadastradas ainda não foram lidas')}.
+              </p>`
+            : ''}
+        </div>
+        ${pendentesDeLeitura().length
+          ? html`<button type="button" class="btn btn-secondary" data-action="ler-todas" ${state.busy ? 'disabled' : ''}>
+              ${icon('fast-forward')}<span>Ler todas de uma vez</span>
+            </button>`
+          : ''}
+      </div>
       <div class="card-body">
         ${!items.length
           ? emptyState({ icon: 'file-search', title: 'Nenhuma prova lida ainda', text: 'Crie a primeira leitura acima.' })
@@ -418,7 +554,7 @@ function paint() {
   });
 
   if (!state.current) {
-    render(el, html`${header}${newImportForm()}${listView()}`);
+    render(el, html`${header}${loteView()}${newImportForm()}${listView()}`);
     return;
   }
 
@@ -514,15 +650,30 @@ async function createJob(trigger) {
   }
   setLoading(trigger, true);
   try {
+    const provaId = value('past_exam_id');
+    const prova = (state.provas || []).find((p) => p.id === provaId);
+    let gabarito = value('answer_key');
+    // Prova cadastrada com gabarito em PDF: lê dali em vez de exigir digitação.
+    if (!gabarito && prova && prova.tem_gabarito) {
+      state.busy = true;
+      state.busyText = 'Lendo o gabarito oficial…';
+      paint();
+      gabarito = (await lerGabarito(provaId)) || '';
+      state.busy = false;
+    }
+
     const criada = await api.post('/api/admin/exam-imports', {
       title,
-      past_exam_id: value('past_exam_id') || undefined,
+      past_exam_id: provaId || undefined,
       exam_id: value('exam_id') || undefined,
       year: value('year') || undefined,
       board: value('board') || undefined,
-      answer_key: value('answer_key') || undefined,
+      answer_key: gabarito || undefined,
     });
     state.current = { ...criada, items: [] };
+    if (criada.answer_key_count) {
+      toast(`Gabarito oficial lido: ${criada.answer_key_count} respostas.`, { type: 'success' });
+    }
     await loadList();
   } catch (err) {
     toast(err.message || 'Não foi possível criar a leitura.', { type: 'error' });
@@ -540,9 +691,28 @@ async function createJob(trigger) {
  */
 async function readFromPastExam() {
   if (state.busy || !state.current || !state.current.past_exam_id) return;
-  await lerTexto(`/api/admin/exam-imports/provas/${state.current.past_exam_id}/arquivo`, {
+  await lerTexto(`/api/admin/exam-imports/provas/${state.current.past_exam_id}/arquivo/prova`, {
     aoFalhar: 'Não foi possível abrir o PDF desta prova. Confira o arquivo em Provas anteriores.',
   });
+}
+
+/**
+ * Lê o gabarito oficial da prova, quando ela tem um PDF de gabarito cadastrado.
+ *
+ * É o que dispensa digitar o gabarito à mão — e sem gabarito a IA precisa
+ * RESOLVER cada questão para marcar a resposta, que é o passo em que ela erra.
+ * O texto vai cru para o servidor, que já sabe interpretá-lo.
+ *
+ * @returns {Promise<string|null>} o texto do gabarito, ou null quando não há
+ */
+async function lerGabarito(provaId) {
+  try {
+    const { text } = await extractPdfText(`/api/admin/exam-imports/provas/${provaId}/arquivo/gabarito`);
+    return text;
+  } catch (err) {
+    console.warn('[ler prova] gabarito não pôde ser lido:', err.message);
+    return null;
+  }
 }
 
 /** Lê o PDF no navegador, guarda o arquivo e sobe o texto em pedaços. */
@@ -732,6 +902,7 @@ export default async function renderPage(ctx) {
     busyText: '',
     readProgress: null,
     readError: null,
+    lote: null,
   };
   paint();
 
@@ -741,6 +912,11 @@ export default async function renderPage(ctx) {
     on(ctx.el, 'click', '[data-action="back"]', () => {
       state.current = null;
       state.readError = null;
+      paint();
+    }),
+    on(ctx.el, 'click', '[data-action="ler-todas"]', () => lerTodasAsProvas()),
+    on(ctx.el, 'click', '[data-action="parar-lote"]', () => {
+      if (state.lote) state.lote.parar = true;
       paint();
     }),
     on(ctx.el, 'click', '[data-action="read-exam"]', () => readFromPastExam()),

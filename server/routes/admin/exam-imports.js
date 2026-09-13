@@ -13,7 +13,8 @@
  *   POST   /api/admin/exam-imports/:id/import   { item_ids } → manda para o banco de questões
  *   DELETE /api/admin/exam-imports/:id
  *   GET    /api/admin/exam-imports/provas                 provas anteriores com PDF, para escolher
- *   GET    /api/admin/exam-imports/provas/:id/arquivo     entrega o PDF da prova pelo próprio domínio
+ *   GET    /api/admin/exam-imports/provas/:id/arquivo/prova|gabarito
+ *                                                        entrega o PDF pelo próprio domínio
  *
  * Por que em lotes: uma prova do ENEM tem 90 questões e o texto passa de 200
  * mil caracteres. Isso não cabe em uma chamada de IA nem em uma requisição
@@ -44,6 +45,7 @@ const { buildImportRow, loadSlugMaps, insertQuestion, RowError } = require('./qu
 const uuid = z.string().uuid();
 const idParams = z.object({ id: uuid });
 const itemParams = z.object({ id: uuid, itemId: uuid });
+const arquivoParams = z.object({ id: uuid, qual: z.enum(['prova', 'gabarito']) });
 const emptyToUndefined = (value) => (value === '' ? undefined : value);
 const emptyToNull = (value) => (typeof value === 'string' && value.trim() === '' ? null : value);
 const optionalUuid = z.preprocess(emptyToUndefined, uuid.optional());
@@ -220,6 +222,7 @@ router.get(
   wrap(async (req, res) => {
     const rows = await db.many(
       `SELECT p.id, p.title, p.year, p.day, p.board, p.pdf_url, p.exam_id,
+              (p.answer_key_url IS NOT NULL AND p.answer_key_url <> '') AS tem_gabarito,
               e.name AS exam_name, e.short_name AS exam_short_name, e.board AS exam_board,
               (SELECT count(*)::int FROM exam_imports i WHERE i.past_exam_id = p.id) AS leituras
          FROM past_exams p
@@ -241,13 +244,21 @@ router.get(
  * endereço que alguém tenha digitado.
  */
 router.get(
-  '/provas/:id/arquivo',
-  validate({ params: idParams }),
+  '/provas/:id/arquivo/:qual',
+  validate({ params: arquivoParams }),
   wrap(async (req, res) => {
-    const prova = await db.one('SELECT id, title, pdf_url FROM past_exams WHERE id = $1', [req.valid.params.id]);
-    if (!prova || !prova.pdf_url) throw new AppError(404, 'not_found', 'Esta prova não tem PDF cadastrado.');
+    const { id, qual } = req.valid.params;
+    const prova = await db.one('SELECT id, title, pdf_url, answer_key_url FROM past_exams WHERE id = $1', [id]);
+    const endereco = prova && (qual === 'gabarito' ? prova.answer_key_url : prova.pdf_url);
+    if (!endereco) {
+      throw new AppError(
+        404,
+        'not_found',
+        qual === 'gabarito' ? 'Esta prova não tem gabarito cadastrado.' : 'Esta prova não tem PDF cadastrado.'
+      );
+    }
 
-    const url = String(prova.pdf_url).trim();
+    const url = String(endereco).trim();
     res.setHeader('Content-Type', 'application/pdf');
 
     // Caminho interno: o arquivo está no disco da própria aplicação.

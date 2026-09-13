@@ -223,3 +223,9 @@
   flex-shrink: 0;
   margin-top: 2px;
 }
+
+/* Carga de todas as provas de uma vez. */
+.xim-lote {
+  margin-bottom: var(--s-5);
+  border-left: 3px solid var(--primary);
+}

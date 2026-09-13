@@ -312,7 +312,7 @@ describe('Leitura de prova pelo painel', () => {
     const prova = await db.one(
       `SELECT id FROM past_exams WHERE pdf_url IS NOT NULL ORDER BY created_at LIMIT 1`
     );
-    const res = await admin.agent.get(`/api/admin/exam-imports/provas/${prova.id}/arquivo`);
+    const res = await admin.agent.get(`/api/admin/exam-imports/provas/${prova.id}/arquivo/prova`);
     // O arquivo não existe no disco de teste: o que importa é que a rota
     // resolveu a prova e foi procurá-lo, em vez de aceitar um endereço de fora.
     assert.equal(res.status, 404);
@@ -321,14 +321,14 @@ describe('Leitura de prova pelo painel', () => {
 
   it('prova sem PDF cadastrado não tem arquivo para ler', async () => {
     const semPdf = await db.one(`SELECT id FROM past_exams WHERE pdf_url IS NULL LIMIT 1`);
-    const res = await admin.agent.get(`/api/admin/exam-imports/provas/${semPdf.id}/arquivo`);
+    const res = await admin.agent.get(`/api/admin/exam-imports/provas/${semPdf.id}/arquivo/prova`);
     assert.equal(res.status, 404);
     assert.match(res.body.error.message, /não tem PDF/i);
   });
 
   it('aluno não baixa prova pelo caminho do painel', async () => {
     const prova = await db.one(`SELECT id FROM past_exams WHERE pdf_url IS NOT NULL LIMIT 1`);
-    const res = await student.agent.get(`/api/admin/exam-imports/provas/${prova.id}/arquivo`);
+    const res = await student.agent.get(`/api/admin/exam-imports/provas/${prova.id}/arquivo/prova`);
     assert.ok([401, 403].includes(res.status), `respondeu ${res.status}`);
   });
 
@@ -430,6 +430,41 @@ describe('Leitura de prova pelo painel', () => {
     });
     assert.equal(resposta.status, 201, JSON.stringify(resposta.body));
     assert.equal(resposta.body.is_correct, true);
+  });
+
+  it('a lista de provas diz quais têm gabarito oficial, e serve o arquivo certo', async () => {
+    // Ler o gabarito do PDF cadastrado é o que dispensa digitar 90 respostas à
+    // mão — e sem gabarito a IA precisa RESOLVER cada questão para marcar a
+    // resposta, que é onde ela erra.
+    const comGabarito = await db.one(
+      `INSERT INTO past_exams (exam_id, year, title, pdf_url, answer_key_url)
+       VALUES ($1, 2021, 'Prova com gabarito', '/uploads/provas/p.pdf', '/uploads/provas/g.pdf')
+       RETURNING id`,
+      [exam.id]
+    );
+    const semGabarito = await db.one(
+      `INSERT INTO past_exams (exam_id, year, title, pdf_url)
+       VALUES ($1, 2020, 'Prova sem gabarito', '/uploads/provas/p2.pdf') RETURNING id`,
+      [exam.id]
+    );
+
+    const lista = await admin.agent.get('/api/admin/exam-imports/provas');
+    const com = lista.body.items.find((p) => p.id === comGabarito.id);
+    const sem = lista.body.items.find((p) => p.id === semGabarito.id);
+    assert.equal(com.tem_gabarito, true);
+    assert.equal(sem.tem_gabarito, false);
+
+    // O caminho do gabarito é separado do caminho da prova.
+    const gab = await admin.agent.get(`/api/admin/exam-imports/provas/${semGabarito.id}/arquivo/gabarito`);
+    assert.equal(gab.status, 404);
+    assert.match(gab.body.error.message, /gabarito/i);
+
+    const prova = await admin.agent.get(`/api/admin/exam-imports/provas/${semGabarito.id}/arquivo/prova`);
+    assert.equal(prova.status, 404, 'o arquivo não existe no disco de teste');
+    assert.doesNotMatch(prova.body.error.message, /gabarito/i, 'mas o erro é sobre a prova, não sobre o gabarito');
+
+    const invalido = await admin.agent.get(`/api/admin/exam-imports/provas/${semGabarito.id}/arquivo/outracoisa`);
+    assert.equal(invalido.status, 400, 'só prova ou gabarito');
   });
 
   it('questão repetida dentro do mesmo lote não entra duas vezes', async () => {
