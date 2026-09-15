@@ -243,6 +243,7 @@ function testimonialPreview(values = {}) {
   const role = (values.role || '').trim();
   const content = (values.content || '').trim();
   const image = (values.image_url || '').trim();
+  const video = (values.video_url || '').trim();
   const photo = (values.photo_url || '').trim();
   const exam = (state.data.exams || []).find((item) => item.id === values.exam_id);
   return html`
@@ -259,7 +260,8 @@ function testimonialPreview(values = {}) {
       ${stars(values.rating)}
       ${content ? html`<blockquote class="adl-card-quote">${content}</blockquote>` : ''}
       ${image ? html`<img class="adl-card-shot" src="${image}" alt="Print da conversa" loading="lazy">` : ''}
-      ${!content && !image ? html`<p class="hint">Escreva o depoimento ou informe a imagem do print para ver a prévia.</p>` : ''}
+      ${video ? html`<video class="adl-card-shot" src="${video}" controls preload="metadata"></video>` : ''}
+      ${!content && !image && !video ? html`<p class="hint">Escreva o depoimento, envie o vídeo ou informe a imagem do print para ver a prévia.</p>` : ''}
       ${exam ? html`<span class="adl-card-exam">${badge(exam.short_name || exam.name, 'blue')}</span>` : ''}
     </figure>`;
 }
@@ -284,8 +286,9 @@ function testimonialForm() {
           <div class="adl-grid">
             ${field({ name: 'name', label: 'Nome do aluno', value: current.name, width: 'half', required: true, maxlength: 120 })}
             ${field({ name: 'role', label: 'Papel', value: current.role, width: 'half', placeholder: 'Aprovada em Medicina', maxlength: 120 })}
-            ${field({ name: 'content', label: 'Depoimento em texto', value: current.content, type: 'textarea', rows: 5, maxlength: 4000, hint: 'Preencha o texto ou a imagem do print — pelo menos um dos dois.' })}
+            ${field({ name: 'content', label: 'Depoimento em texto', value: current.content, type: 'textarea', rows: 5, maxlength: 4000, hint: 'Texto, print ou vídeo — pelo menos um dos três.' })}
             ${field({ name: 'image_url', label: 'Print da conversa', value: current.image_url, placeholder: 'https://… ou envie a imagem', hint: 'Use quando o depoimento for uma captura de tela.', upload: 'depoimentos' })}
+            ${field({ name: 'video_url', label: 'Vídeo do depoimento', value: current.video_url, placeholder: 'https://… ou envie o vídeo', hint: 'Aluno falando em vídeo (MP4/MOV). Aparece separado dos prints na página inicial.', upload: 'depoimentos', uploadAccept: 'video' })}
             ${field({ name: 'photo_url', label: 'Foto do aluno', value: current.photo_url, placeholder: 'https://… ou envie a imagem', upload: 'depoimentos' })}
             ${field({ name: 'rating', label: 'Nota', value: current.rating ?? '', type: 'select', width: 'half', options: ratingOptions })}
             ${field({ name: 'exam_id', label: 'Prova relacionada', value: current.exam_id ?? '', type: 'select', width: 'half', options: examOptions })}
@@ -380,6 +383,7 @@ async function saveTestimonial(form) {
     role: values.role ?? '',
     content: values.content ?? '',
     image_url: values.image_url ?? '',
+    video_url: values.video_url ?? '',
     photo_url: values.photo_url ?? '',
     rating: values.rating ?? '',
     exam_id: values.exam_id ?? '',

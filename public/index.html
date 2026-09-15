@@ -175,6 +175,10 @@
           <div class="results-subhead"><h3 id="results-posts-title">Aprovados</h3><span>ENEM e Barro Branco</span></div>
           <div class="results-post-grid" id="results-posts"></div>
         </div>
+        <div class="results-block results-videos-block reveal" id="results-videos-block" aria-labelledby="results-videos-title" hidden>
+          <div class="results-subhead"><h3 id="results-videos-title">Quem estudou, conta</h3><span>Depoimentos em vídeo</span></div>
+          <div class="results-video-grid" id="results-videos"></div>
+        </div>
         <div class="results-block results-messages-block reveal" aria-labelledby="results-messages-title">
           <div class="results-subhead">
             <div><h3 id="results-messages-title">Mensagens recebidas</h3><span>De quem viveu a preparação</span></div>
@@ -240,6 +244,7 @@
     <button class="btn btn-icon media-viewer-close" type="button" data-media-close aria-label="Fechar imagem" title="Fechar"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-x"></use></svg></button>
     <figure>
       <img id="media-viewer-image" alt="">
+      <video id="media-viewer-video" controls playsinline preload="metadata" hidden></video>
       <figcaption id="media-viewer-caption"></figcaption>
     </figure>
   </dialog>

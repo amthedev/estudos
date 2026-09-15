@@ -220,25 +220,42 @@ function resultCard(item, type) {
     </button>`;
 }
 
+function videoCard(item) {
+  const name = item.name || 'Aluno Foco de Elite';
+  const role = item.role || item.exam_short_name || 'Depoimento';
+  return html`
+    <button class="result-card result-card-video" type="button"
+      data-media-video="${item.video_url}"
+      data-media-alt="Depoimento de ${name}: ${role}"
+      aria-label="Assistir ao depoimento de ${name}">
+      <span class="result-card-media">
+        <video src="${item.video_url}" preload="metadata" muted playsinline tabindex="-1"></video>
+        <span class="media-open media-play" aria-hidden="true">${icon('play')}</span>
+      </span>
+      <span class="result-card-copy"><strong>${name}</strong><span>${role}</span></span>
+    </button>`;
+}
+
 async function initResults() {
   const section = qs('#resultados');
   const postsEl = qs('#results-posts');
   const messagesEl = qs('#results-messages');
+  const videosEl = qs('#results-videos');
   if (!section || !postsEl || !messagesEl) return;
 
   let testimonials = [];
   try {
     const data = await api.get('/api/landing', { noRedirect: true, timeout: 8000 });
-    testimonials = Array.isArray(data && data.testimonials)
-      ? data.testimonials.filter((item) => item && item.image_url)
-      : [];
+    testimonials = Array.isArray(data && data.testimonials) ? data.testimonials : [];
   } catch (error) {
     console.info('[landing] resultados indisponíveis no momento', error && error.message);
   }
 
-  const posts = testimonials.filter((item) => item.image_url.includes('/results/posts/'));
-  const messages = testimonials.filter((item) => !item.image_url.includes('/results/posts/'));
-  if (!posts.length && !messages.length) {
+  const withImage = testimonials.filter((item) => item && item.image_url);
+  const videos = testimonials.filter((item) => item && item.video_url);
+  const posts = withImage.filter((item) => item.image_url.includes('/results/posts/'));
+  const messages = withImage.filter((item) => !item.image_url.includes('/results/posts/'));
+  if (!posts.length && !messages.length && !videos.length) {
     section.hidden = true;
     qsa('a[href="#resultados"]').forEach((link) => { link.hidden = true; });
     return;
@@ -246,8 +263,11 @@ async function initResults() {
 
   render(postsEl, posts.map((item) => resultCard(item, 'post')));
   render(messagesEl, messages.map((item) => resultCard(item, 'message')));
+  if (videosEl) render(videosEl, videos.map((item) => videoCard(item)));
   if (!posts.length) postsEl.closest('.results-block').hidden = true;
   if (!messages.length) messagesEl.closest('.results-block').hidden = true;
+  const videosBlock = qs('#results-videos-block');
+  if (videosBlock) videosBlock.hidden = !videos.length;
 
   const step = () => Math.min(messagesEl.clientWidth * 0.78, 760);
   qs('[data-results-prev]')?.addEventListener('click', () => messagesEl.scrollBy({ left: -step(), behavior: 'smooth' }));
@@ -258,18 +278,32 @@ async function initResults() {
 function initMediaViewer() {
   const dialog = qs('#media-viewer');
   const image = qs('#media-viewer-image');
+  const video = qs('#media-viewer-video');
   const caption = qs('#media-viewer-caption');
   if (!dialog || !image || !caption) return;
 
   document.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
-    const trigger = event.target.closest('[data-media-src]');
+    const trigger = event.target.closest('[data-media-src], [data-media-video]');
     if (!trigger) return;
-    const alt = trigger.dataset.mediaAlt || 'Imagem Foco de Elite';
-    image.src = trigger.dataset.mediaSrc;
-    image.alt = alt;
+    const alt = trigger.dataset.mediaAlt || 'Depoimento Foco de Elite';
+    const videoSrc = trigger.dataset.mediaVideo;
+
+    if (videoSrc && video) {
+      image.hidden = true;
+      image.removeAttribute('src');
+      video.hidden = false;
+      video.src = videoSrc;
+      video.currentTime = 0;
+    } else {
+      if (video) { video.hidden = true; video.removeAttribute('src'); }
+      image.hidden = false;
+      image.src = trigger.dataset.mediaSrc;
+      image.alt = alt;
+    }
     caption.textContent = alt;
     dialog.showModal();
+    if (videoSrc && video) video.play().catch(() => {});
   });
 
   qs('[data-media-close]', dialog)?.addEventListener('click', () => dialog.close());
@@ -279,6 +313,8 @@ function initMediaViewer() {
   dialog.addEventListener('close', () => {
     image.removeAttribute('src');
     image.alt = '';
+    if (video) { video.pause(); video.removeAttribute('src'); video.hidden = true; }
+    image.hidden = false;
     caption.textContent = '';
   });
 }

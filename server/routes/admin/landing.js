@@ -123,6 +123,7 @@ const testimonialBase = z
     role: text(120),
     content: text(4000),
     image_url: assetUrl,
+    video_url: assetUrl,
     photo_url: assetUrl,
     rating: z.preprocess(emptyToNull, z.coerce.number().int().min(1).max(5).nullable().optional()),
     exam_id: z.preprocess(emptyToNull, uuid.nullable().optional()),
@@ -173,14 +174,16 @@ async function nextSortOrder(table) {
   return Number(row.next) || 1;
 }
 
-/** Depoimento precisa de conteúdo: texto do depoimento ou print da conversa. */
+/** Depoimento precisa de conteúdo: texto, print da conversa ou vídeo. */
 function ensureTestimonialContent(record) {
   const hasText = typeof record.content === 'string' && record.content.trim() !== '';
   const hasImage = typeof record.image_url === 'string' && record.image_url.trim() !== '';
-  if (hasText || hasImage) return;
+  const hasVideo = typeof record.video_url === 'string' && record.video_url.trim() !== '';
+  if (hasText || hasImage || hasVideo) return;
   throw new AppError(400, 'validation_error', 'Verifique os campos informados.', [
-    { path: 'content', message: 'Escreva o depoimento ou informe a imagem do print da conversa.' },
-    { path: 'image_url', message: 'Escreva o depoimento ou informe a imagem do print da conversa.' },
+    { path: 'content', message: 'Escreva o depoimento, envie o vídeo ou informe a imagem do print da conversa.' },
+    { path: 'image_url', message: 'Escreva o depoimento, envie o vídeo ou informe a imagem do print da conversa.' },
+    { path: 'video_url', message: 'Escreva o depoimento, envie o vídeo ou informe a imagem do print da conversa.' },
   ]);
 }
 
@@ -194,7 +197,7 @@ async function ensureExam(examId) {
   }
 }
 
-const TESTIMONIAL_COLUMNS = `t.id, t.name, t.role, t.content, t.image_url, t.photo_url, t.rating, t.exam_id,
+const TESTIMONIAL_COLUMNS = `t.id, t.name, t.role, t.content, t.image_url, t.video_url, t.photo_url, t.rating, t.exam_id,
   t.sort_order, t.active, t.created_at, t.updated_at,
   e.short_name AS exam_short_name, e.name AS exam_name`;
 
@@ -347,7 +350,7 @@ router.delete(
 // ---------------------------------------------------------------------------
 // depoimentos
 // ---------------------------------------------------------------------------
-const TESTIMONIAL_FIELDS = ['name', 'role', 'content', 'image_url', 'photo_url', 'rating', 'exam_id', 'sort_order', 'active'];
+const TESTIMONIAL_FIELDS = ['name', 'role', 'content', 'image_url', 'video_url', 'photo_url', 'rating', 'exam_id', 'sort_order', 'active'];
 
 router.get(
   '/testimonials',
@@ -372,11 +375,11 @@ router.post(
 
     const order = body.sort_order ?? (await nextSortOrder('testimonials'));
     const created = await db.one(
-      `INSERT INTO testimonials (name, role, content, image_url, photo_url, rating, exam_id, sort_order, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      `INSERT INTO testimonials (name, role, content, image_url, video_url, photo_url, rating, exam_id, sort_order, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
-        body.name, body.role ?? null, body.content ?? null, body.image_url ?? null, body.photo_url ?? null,
-        body.rating ?? null, body.exam_id ?? null, order, body.active !== false,
+        body.name, body.role ?? null, body.content ?? null, body.image_url ?? null, body.video_url ?? null,
+        body.photo_url ?? null, body.rating ?? null, body.exam_id ?? null, order, body.active !== false,
       ]
     );
 
@@ -420,12 +423,13 @@ router.put(
     await ensureExam(next.exam_id ?? null);
 
     await db.query(
-      `UPDATE testimonials SET name = $1, role = $2, content = $3, image_url = $4, photo_url = $5,
-              rating = $6, exam_id = $7, sort_order = $8, active = $9
-        WHERE id = $10`,
+      `UPDATE testimonials SET name = $1, role = $2, content = $3, image_url = $4, video_url = $5, photo_url = $6,
+              rating = $7, exam_id = $8, sort_order = $9, active = $10
+        WHERE id = $11`,
       [
-        next.name, next.role ?? null, next.content ?? null, next.image_url ?? null, next.photo_url ?? null,
-        next.rating ?? null, next.exam_id ?? null, Number(next.sort_order) || 0, next.active !== false, id,
+        next.name, next.role ?? null, next.content ?? null, next.image_url ?? null, next.video_url ?? null,
+        next.photo_url ?? null, next.rating ?? null, next.exam_id ?? null, Number(next.sort_order) || 0,
+        next.active !== false, id,
       ]
     );
 

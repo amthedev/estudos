@@ -121,6 +121,29 @@ const testimonials = [
     image_url: '/assets/results/messages/depoimento-barro-branco-pedro.png',
     sort_order: 15,
   },
+  // Depoimentos em vídeo (aluno falando). Vídeos já enviados ao Blob; ficam na
+  // seção "Quem estudou, conta", separados dos prints. Sem nome de propósito.
+  {
+    name: 'Aluno Foco Elite',
+    role: 'Aluno aprovado · ENEM',
+    exam: 'enem',
+    video_url: 'https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/depoimentos/ENEM_DEP_f0fab9.mov',
+    sort_order: 16,
+  },
+  {
+    name: 'Aluno Foco Elite',
+    role: 'Aluno aprovado · ENEM',
+    exam: 'enem',
+    video_url: 'https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/depoimentos/ENEM_DEP_1_861ea2.mov',
+    sort_order: 17,
+  },
+  {
+    name: 'Aluno Foco Elite',
+    role: 'Aluno aprovado · Barro Branco',
+    exam: 'barro-branco',
+    video_url: 'https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/depoimentos/BARRO_BRANCO_b90ad6.mp4',
+    sort_order: 18,
+  },
 ];
 
 const enemYears = [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];

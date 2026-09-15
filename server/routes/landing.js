@@ -146,7 +146,7 @@ async function loadPayload() {
         ORDER BY sort_order ASC, price_cents ASC`
     ),
     db.many(
-      `SELECT t.id, t.name, t.role, t.content, t.image_url, t.photo_url, t.rating,
+      `SELECT t.id, t.name, t.role, t.content, t.image_url, t.video_url, t.photo_url, t.rating,
               e.short_name AS exam_short_name
          FROM testimonials t
          LEFT JOIN exams e ON e.id = t.exam_id

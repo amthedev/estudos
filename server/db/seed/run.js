@@ -432,19 +432,26 @@ async function seedLanding(client, ctx) {
 
 async function seedCuratedAssets(client, ctx) {
   for (const testimonial of data.curatedAssets.testimonials) {
-    const existing = await client.query('SELECT id FROM testimonials WHERE image_url = $1', [testimonial.image_url]);
+    // Depoimento em imagem dedup por image_url; em vídeo, por video_url.
+    const isVideo = Boolean(testimonial.video_url);
+    const existing = isVideo
+      ? await client.query('SELECT id FROM testimonials WHERE video_url = $1', [testimonial.video_url])
+      : await client.query('SELECT id FROM testimonials WHERE image_url = $1', [testimonial.image_url]);
     if (existing.rowCount) {
       ctx.summary.bump('testimonials', 'kept');
       continue;
     }
 
+    // Vídeo não tem nota de estrelas; só o print curado leva 5.
     await client.query(
-      `INSERT INTO testimonials (name, role, image_url, rating, exam_id, sort_order, active)
-       VALUES ($1, $2, $3, 5, $4, $5, true)`,
+      `INSERT INTO testimonials (name, role, image_url, video_url, rating, exam_id, sort_order, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
       [
         testimonial.name,
         testimonial.role,
-        testimonial.image_url,
+        testimonial.image_url ?? null,
+        testimonial.video_url ?? null,
+        isVideo ? null : 5,
         requireId(ctx.exams, testimonial.exam, 'Prova'),
         testimonial.sort_order,
       ]
