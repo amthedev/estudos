@@ -218,6 +218,9 @@ body { overflow-x: hidden; background: var(--ink); }
 .plan-price .amount { font-family: var(--font-data); font-size: 38px; font-weight: 700; line-height: 1; }
 .plan-price .period, .plan-equiv, .plan-desc { color: var(--text-2); font-size: 12px; }
 .plan-equiv { margin-top: 9px; color: var(--gold); font-weight: 700; }
+.plan-compare { margin-top: 26px; margin-bottom: -18px; color: var(--text-3); font-size: 12px; }
+.plan-compare s { color: var(--text-2); text-decoration-thickness: 1px; }
+.plan-installment { margin-top: 7px; color: var(--text-2); font-size: 12px; }
 .plan-desc { margin-top: 18px; line-height: 1.55; }
 .plan-features { display: grid; gap: 11px; margin: 25px 0px; }
 .plan-features li { display: flex; gap: 8px; color: var(--text-2); font-size: 12px; }

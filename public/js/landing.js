@@ -146,15 +146,23 @@ function planCard(plan) {
   const trial = Number(plan.trial_days) > 0 ? plan.trial_days : 0;
   const slug = plan.slug || plan.id || '';
   const badge = String(plan.badge || '').trim() || (plan.highlight ? 'Melhor oferta' : '');
+  // preço cheio riscado, só quando for maior que o preço cobrado
+  const compare = Number(plan.compare_price_cents) || 0;
+  const showCompare = compare > Number(plan.price_cents);
+  // parcelamento: divide o preço pelo número de cobranças do ciclo (6x, 12x)
+  const parcelas = plan.interval === 'year' ? 12 * count : count;
+  const installment = parcelas > 1 ? Math.round(Number(plan.price_cents) / parcelas) : null;
 
   return html`
     <article class="plan ${plan.highlight ? 'highlight' : ''}">
       ${badge ? html`<span class="badge badge-blue plan-flag">${badge}</span>` : ''}
       <div class="plan-name">${plan.name}</div>
+      ${showCompare ? html`<div class="plan-compare">de <s>${fmtMoney(compare)}</s> por</div>` : ''}
       <div class="plan-price">
         <span class="amount">${fmtMoney(plan.price_cents)}</span>
         <span class="period">por ${period}</span>
       </div>
+      ${installment ? html`<div class="plan-installment">ou ${parcelas}x de ${fmtMoney(installment)}</div>` : ''}
       ${monthly ? html`<div class="plan-equiv">Equivale a ${fmtMoney(monthly)} por mês</div>` : ''}
       ${trial ? html`<div class="plan-equiv">24h grátis com cartão</div>` : ''}
       ${features.length

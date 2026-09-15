@@ -25,9 +25,38 @@
 const db = require('../server/db/pool');
 const { runMigrations } = require('../server/db/migrate');
 const { runSeed } = require('../server/db/seed/run');
+const { getSetting, setSetting } = require('../server/services/settings');
 
 function log(mensagem) {
   console.log(`[bootstrap] ${mensagem}`);
+}
+
+/**
+ * Ajustes de dados que precisam rodar UMA vez em produção, onde não há
+ * terminal. Cada um trava numa flag em settings: aplicado uma vez, os boots
+ * seguintes pulam — assim um ajuste manual pelo painel não é desfeito depois.
+ *
+ * Para um ajuste novo, use uma chave nova (nunca reaproveite): é a chave que
+ * garante o "uma vez só".
+ */
+const AJUSTES_UNICOS = [
+  {
+    // Tabela de preços de setembro/2026: mensal 39,90, semestral 209,40,
+    // anual 358,80, com preço "de" para o riscado na landing. Planos não são
+    // sobrescritos no boot normal; este passo aplica a tabela nova uma vez.
+    flag: 'bootstrap_precos_2026_09_aplicado',
+    descricao: 'tabela de preços 2026-09',
+    run: () => runSeed({ quiet: true, forcePlans: true }),
+  },
+];
+
+async function aplicarAjustesUnicos() {
+  for (const ajuste of AJUSTES_UNICOS) {
+    if (await getSetting(ajuste.flag)) continue;
+    log(`ajuste único: ${ajuste.descricao}…`);
+    await ajuste.run();
+    await setSetting(ajuste.flag, new Date().toISOString());
+  }
 }
 
 async function main() {
@@ -36,6 +65,8 @@ async function main() {
 
   log('garantindo o conteúdo base…');
   await runSeed({ quiet: true });
+
+  await aplicarAjustesUnicos();
 
   // Leitura de prova interrompida por um reinício fica marcada como "extraindo"
   // para sempre, e a tela não explica nada. Quem sobe agora sabe que ninguém
