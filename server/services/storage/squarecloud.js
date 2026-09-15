@@ -27,6 +27,21 @@ const config = require('../../config');
 
 const BASE = 'https://blob.squarecloud.app/v1/objects';
 
+/**
+ * Endereço público de leitura dos objetos. É um domínio DIFERENTE do da API:
+ * a API (blob.squarecloud.app) exige a chave da conta e devolve 403 para o
+ * navegador do aluno, então uma foto salva com aquele endereço aparecia no
+ * cadastro e sumia para o aluno. O conteúdo público mora em
+ * public-blob.squarecloud.dev/<id>, onde <id> é a chave do objeto.
+ */
+const PUBLIC_BASE = 'https://public-blob.squarecloud.dev';
+
+/** URL pública a partir da chave (id) do objeto. */
+function publicUrl(id) {
+  const key = String(id || '').replace(/^\/+/, '');
+  return key ? `${PUBLIC_BASE}/${key}` : '';
+}
+
 /** Acima disso o envio precisa ser em partes. */
 const SINGLE_MAX = 100 * 1024 * 1024;
 /**
@@ -148,7 +163,7 @@ async function putSingle(buffer, { name, prefix, filename, contentType }) {
   if (prefix) query.set('prefix', prefix);
 
   const response = await call(`${BASE}?${query}`, { method: 'POST', body: form });
-  return { id: response.id, url: response.url, bytes: response.size ?? buffer.length };
+  return { id: response.id, url: publicUrl(response.id), bytes: response.size ?? buffer.length };
 }
 
 /**
@@ -186,7 +201,7 @@ async function putChunked(buffer, { name, prefix, filename }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ upload: token }),
     });
-    return { id: done.id, url: done.url, bytes: done.size ?? buffer.length };
+    return { id: done.id, url: publicUrl(done.id), bytes: done.size ?? buffer.length };
   } catch (err) {
     // aborta o envio pendente para não deixar partes órfãs consumindo cota
     await call(`${BASE}/chunked`, {
@@ -306,7 +321,7 @@ async function putStream(source, { filename, folder, contentType, extension } = 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ upload: token }),
     });
-    return { url: done.url, key: done.id, bytes: done.size ?? bytes, reused: false };
+    return { url: publicUrl(done.id), key: done.id, bytes: done.size ?? bytes, reused: false };
   } catch (err) {
     if (token) {
       // aborta o envio pendente para não deixar partes órfãs ocupando cota
@@ -404,6 +419,8 @@ module.exports = {
   stats,
   remove,
   list,
+  publicUrl,
+  PUBLIC_BASE,
   PREFIX,
   SINGLE_MAX,
   MAX_OBJECT,
