@@ -214,6 +214,41 @@ describe('Recorte da prova em lotes', () => {
     assert.equal(question.A, 'evoluem para facilitar a vida cotidiana.');
   });
 
+  it('puxa o texto de apoio que no PDF vem antes do "QUESTÃO XX"', () => {
+    // Em linguagens o texto que a pergunta interpreta fica ACIMA do marcador da
+    // questão. O parser tem que colar esse texto no enunciado, senão a questão
+    // chega ao aluno solta, sem o texto em que se baseia.
+    const prova = [
+      'QUESTÃO 04',
+      'Este é o enunciado da questão quatro, com contexto suficiente para ser respondida.',
+      'A primeira alternativa da quatro.',
+      'B segunda alternativa da quatro.',
+      'C terceira alternativa da quatro.',
+      'D quarta alternativa da quatro.',
+      'E quinta alternativa da quatro.',
+      '',
+      'Mais valia a vida em barganha do que a morte por vaidade.',
+      'O texto acima defende uma visão sobre a coragem e a covardia.',
+      '',
+      'QUESTÃO 05',
+      'De acordo com o texto lido, o autor argumenta que',
+      'A a vaidade justifica o sacrifício.',
+      'B a vida vale mais que a honra vazia.',
+      'C a barganha é sempre desonrosa.',
+      'D a morte redime a covardia.',
+      'E a coragem exige vaidade.',
+    ].join('\n');
+    const questions = examImport.parseBatchQuestions(prova);
+    const cinco = questions.find((q) => q.number === 5);
+    assert.ok(cinco, 'a questão 5 tem que ser encontrada');
+    assert.match(cinco.statement, /Mais valia a vida em barganha/, 'o texto de apoio entrou no enunciado');
+    assert.match(cinco.statement, /o autor argumenta que$/, 'a pergunta continua no fim do enunciado');
+    assert.equal(cinco.B, 'a vida vale mais que a honra vazia.');
+    // O texto de apoio da 5 não pode vazar para o enunciado da 4.
+    const quatro = questions.find((q) => q.number === 4);
+    assert.doesNotMatch(quatro.statement, /Mais valia a vida/, 'o apoio da 5 não vaza para a 4');
+  });
+
   it('o prompt compacto pede só classificação, não a transcrição de volta', () => {
     const questions = examImport.parseBatchQuestions(fakeExam(2));
     const catalog = [

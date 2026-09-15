@@ -121,7 +121,21 @@ function alternativeSequence(lines) {
       sequence[letter] = candidates[cursor];
       cursor -= 1;
     }
-    if (complete) return sequence;
+    if (complete) {
+      // Onde a alternativa E termina. O texto de apoio da próxima questão vem
+      // no PDF logo depois da E, separado por uma linha em branco. Sem essa
+      // separação (questão sem texto de apoio adiante), a E vai até o fim do
+      // bloco — o mesmo que o parser sempre fez.
+      let fim = lines.length;
+      for (let i = sequence.E.index + 1; i < lines.length; i += 1) {
+        if (!String(lines[i]).trim()) {
+          fim = i;
+          break;
+        }
+      }
+      sequence.E.end = fim;
+      return sequence;
+    }
   }
   return null;
 }
@@ -175,11 +189,16 @@ function parseQuestionBlock(block, number = null) {
   for (let index = 0; index < LETRAS.length; index += 1) {
     const letter = LETRAS[index];
     const marker = sequence[letter];
-    const next = index + 1 < LETRAS.length ? sequence[LETRAS[index + 1]].index : lines.length;
+    const next = index + 1 < LETRAS.length ? sequence[LETRAS[index + 1]].index : sequence.E.end;
     const option = joinPdfLines([marker.text, ...lines.slice(marker.index + 1, next)]);
     if (!option) return null;
     parsed[letter] = option;
   }
+  // O que vem DEPOIS da alternativa E não pertence a esta questão: em prova de
+  // linguagens é o texto de apoio (poema, trecho, tirinha) da PRÓXIMA questão,
+  // que no PDF fica acima do "QUESTÃO XX" seguinte. parseBatchQuestions cola
+  // esse trecho no enunciado da questão a que ele se refere.
+  parsed.trailer = joinPdfLines(lines.slice(sequence.E.end));
   return parsed;
 }
 
@@ -229,11 +248,26 @@ function parseBatchQuestions(batch) {
   const source = String(batch || '');
   const marks = questionMarks(source);
   const questions = [];
+  // Texto de apoio que sobrou depois da alternativa E da questão anterior: no
+  // PDF ele fica acima do "QUESTÃO XX" seguinte, então pertence a esta questão.
+  // O que vem antes da primeira marca é o apoio da primeira questão do lote.
+  let apoioPendente = marks.length ? joinPdfLines(source.slice(0, marks[0].index).split(/\r?\n/)) : '';
   for (let index = 0; index < marks.length; index += 1) {
     const mark = marks[index];
     const end = index + 1 < marks.length ? marks[index + 1].index : source.length;
     const parsed = parseQuestionBlock(source.slice(mark.header_end, end), mark.number);
-    if (parsed) questions.push(parsed);
+    if (parsed) {
+      const trailer = parsed.trailer || '';
+      delete parsed.trailer;
+      if (apoioPendente) parsed.statement = `${apoioPendente}\n\n${parsed.statement}`;
+      apoioPendente = trailer;
+      questions.push(parsed);
+    } else {
+      // Bloco sem alternativas completas (só texto de apoio, ou questão que
+      // veio partida): guarda o trecho para a próxima questão em vez de perdê-lo.
+      const orfao = joinPdfLines(source.slice(mark.header_end, end).split(/\r?\n/));
+      if (orfao) apoioPendente = apoioPendente ? `${apoioPendente}\n\n${orfao}` : orfao;
+    }
   }
   return questions;
 }
