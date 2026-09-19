@@ -264,6 +264,26 @@ function applyText(el, value) {
   if (text) el.textContent = text;
 }
 
+// Título com destaque: os títulos das seções deixam a última palavra dentro de
+// um <span>, que o CSS pinta com a cor de acento. Ao trazer o texto do banco,
+// recriamos esse <span> para não perder o destaque — via DOM, sem HTML cru.
+function applyTitle(el, value) {
+  if (!el) return;
+  const text = value == null ? '' : String(value).trim();
+  if (!text) return;
+  // sem <span> no HTML original, é um título simples: troca só o texto
+  if (!el.querySelector('span')) {
+    el.textContent = text;
+    return;
+  }
+  const parts = text.split(/\s+/);
+  const last = parts.pop();
+  el.textContent = parts.length ? `${parts.join(' ')} ` : '';
+  const span = document.createElement('span');
+  span.textContent = last;
+  el.appendChild(span);
+}
+
 // Textos editáveis dos blocos: só sobrescreve o que o Admin preencheu,
 // mantendo estrutura, imagens e destaques do HTML quando o banco está vazio.
 function initContent(data) {
@@ -273,7 +293,9 @@ function initContent(data) {
     const block = blocks[section.dataset.block];
     if (!block) return;
     qsa('[data-block-field]', section).forEach((el) => {
-      applyText(el, block[el.dataset.blockField]);
+      const field = el.dataset.blockField;
+      if (field === 'title') applyTitle(el, block.title);
+      else applyText(el, block[field]);
     });
   });
 }
