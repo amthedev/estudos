@@ -244,6 +244,53 @@ function videoCard(item) {
     </button>`;
 }
 
+// Uma única leitura de /api/landing, compartilhada por resultados, textos e FAQ.
+let landingPayload = null;
+async function loadLanding() {
+  if (landingPayload) return landingPayload;
+  landingPayload = api.get('/api/landing', { noRedirect: true, timeout: 8000 })
+    .catch((error) => {
+      console.info('[landing] conteúdo indisponível no momento', error && error.message);
+      return null;
+    });
+  return landingPayload;
+}
+
+// Aplica um texto do banco a um elemento, só quando o valor existe.
+// Preserva o HTML estático (fallback) quando o campo vier vazio.
+function applyText(el, value) {
+  if (!el) return;
+  const text = value == null ? '' : String(value).trim();
+  if (text) el.textContent = text;
+}
+
+// Textos editáveis dos blocos: só sobrescreve o que o Admin preencheu,
+// mantendo estrutura, imagens e destaques do HTML quando o banco está vazio.
+function initContent(data) {
+  const blocks = data && data.blocks ? data.blocks : null;
+  if (!blocks) return;
+  qsa('[data-block]').forEach((section) => {
+    const block = blocks[section.dataset.block];
+    if (!block) return;
+    qsa('[data-block-field]', section).forEach((el) => {
+      applyText(el, block[el.dataset.blockField]);
+    });
+  });
+}
+
+// Perguntas frequentes: quando o banco traz ao menos uma, a lista inteira
+// passa a vir dele; sem nenhuma, o HTML estático permanece.
+function initFaqs(data) {
+  const list = qs('#faq-list');
+  const faqs = data && Array.isArray(data.faqs) ? data.faqs : [];
+  if (!list || !faqs.length) return;
+  render(list, faqs.map((faq) => html`
+    <details class="faq-item">
+      <summary><span>${faq.question}</span>${icon('plus')}</summary>
+      <div class="faq-answer">${String(faq.answer || '').split(/\n{2,}/).map((p) => html`<p>${p}</p>`)}</div>
+    </details>`));
+}
+
 async function initResults() {
   const section = qs('#resultados');
   const postsEl = qs('#results-posts');
@@ -251,13 +298,8 @@ async function initResults() {
   const videosEl = qs('#results-videos');
   if (!section || !postsEl || !messagesEl) return;
 
-  let testimonials = [];
-  try {
-    const data = await api.get('/api/landing', { noRedirect: true, timeout: 8000 });
-    testimonials = Array.isArray(data && data.testimonials) ? data.testimonials : [];
-  } catch (error) {
-    console.info('[landing] resultados indisponíveis no momento', error && error.message);
-  }
+  const data = await loadLanding();
+  const testimonials = Array.isArray(data && data.testimonials) ? data.testimonials : [];
 
   const withImage = testimonials.filter((item) => item && item.image_url);
   const videos = testimonials.filter((item) => item && item.video_url);
@@ -371,3 +413,7 @@ initYear();
 observeReveal(qsa('.reveal'));
 initPlans();
 initResults();
+loadLanding().then((data) => {
+  initContent(data);
+  initFaqs(data);
+});
