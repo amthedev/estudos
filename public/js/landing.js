@@ -264,28 +264,50 @@ function applyText(el, value) {
   if (text) el.textContent = text;
 }
 
+// Onde começa o destaque automático, seguindo o padrão do designer: a última
+// frase do título (o que vem depois do último ponto final) e, quando o título é
+// uma frase só, a última palavra. Devolve o índice onde o trecho realçado começa.
+function highlightStart(text) {
+  // última frase: procura um ". " seguido de mais texto
+  const sentence = text.match(/\.\s+(?=\S)/g);
+  if (sentence) {
+    const idx = text.lastIndexOf('. ');
+    if (idx >= 0 && idx + 2 < text.length) return idx + 2;
+  }
+  // frase única: última palavra
+  const space = text.replace(/\s+$/, '').lastIndexOf(' ');
+  return space >= 0 ? space + 1 : 0;
+}
+
 // Título com destaque: nos títulos das seções o designer pinta uma parte com a
-// cor de acento (um <span>). Como o texto vem do banco, o trecho a destacar é
-// marcado com *asteriscos* no painel — "Tudo para *avançar.*". Sem asteriscos,
-// o título fica inteiro, sem chutar qual palavra colorir. Montado via DOM.
+// cor de acento (um <span>). O padrão é automático — o final do título ganha a
+// cor da seção, como no modelo do designer. Para ajustar à mão, o painel pode
+// marcar o trecho com *asteriscos* ("Tudo para *avançar.*"), que tem prioridade.
+// Montado via DOM (sem HTML cru).
 function applyTitle(el, value) {
   if (!el) return;
   const text = value == null ? '' : String(value).trim();
   if (!text) return;
 
   el.textContent = '';
-  // divide mantendo os trechos *marcados*; ímpares do split são o destaque
-  const segments = text.split(/\*([^*]+)\*/);
-  segments.forEach((segment, index) => {
-    if (!segment) return;
-    if (index % 2 === 1) {
-      const span = document.createElement('span');
-      span.textContent = segment;
-      el.appendChild(span);
-    } else {
-      el.appendChild(document.createTextNode(segment));
-    }
-  });
+  const addText = (t) => t && el.appendChild(document.createTextNode(t));
+  const addSpan = (t) => {
+    if (!t) return;
+    const span = document.createElement('span');
+    span.textContent = t;
+    el.appendChild(span);
+  };
+
+  if (text.includes('*')) {
+    // override manual: destaca só o que está entre asteriscos
+    text.split(/\*([^*]+)\*/).forEach((seg, i) => (i % 2 === 1 ? addSpan(seg) : addText(seg)));
+    return;
+  }
+
+  // padrão automático: realça o final do título
+  const start = highlightStart(text);
+  addText(text.slice(0, start));
+  addSpan(text.slice(start));
 }
 
 // Textos editáveis dos blocos: só sobrescreve o que o Admin preencheu,
