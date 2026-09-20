@@ -264,24 +264,28 @@ function applyText(el, value) {
   if (text) el.textContent = text;
 }
 
-// Título com destaque: os títulos das seções deixam a última palavra dentro de
-// um <span>, que o CSS pinta com a cor de acento. Ao trazer o texto do banco,
-// recriamos esse <span> para não perder o destaque — via DOM, sem HTML cru.
+// Título com destaque: nos títulos das seções o designer pinta uma parte com a
+// cor de acento (um <span>). Como o texto vem do banco, o trecho a destacar é
+// marcado com *asteriscos* no painel — "Tudo para *avançar.*". Sem asteriscos,
+// o título fica inteiro, sem chutar qual palavra colorir. Montado via DOM.
 function applyTitle(el, value) {
   if (!el) return;
   const text = value == null ? '' : String(value).trim();
   if (!text) return;
-  // sem <span> no HTML original, é um título simples: troca só o texto
-  if (!el.querySelector('span')) {
-    el.textContent = text;
-    return;
-  }
-  const parts = text.split(/\s+/);
-  const last = parts.pop();
-  el.textContent = parts.length ? `${parts.join(' ')} ` : '';
-  const span = document.createElement('span');
-  span.textContent = last;
-  el.appendChild(span);
+
+  el.textContent = '';
+  // divide mantendo os trechos *marcados*; ímpares do split são o destaque
+  const segments = text.split(/\*([^*]+)\*/);
+  segments.forEach((segment, index) => {
+    if (!segment) return;
+    if (index % 2 === 1) {
+      const span = document.createElement('span');
+      span.textContent = segment;
+      el.appendChild(span);
+    } else {
+      el.appendChild(document.createTextNode(segment));
+    }
+  });
 }
 
 // Textos editáveis dos blocos: só sobrescreve o que o Admin preencheu,
