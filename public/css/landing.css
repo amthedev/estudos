@@ -119,6 +119,18 @@ body { overflow-x: hidden; background: var(--ink); }
 .media-open { position: absolute; top: 10px; right: 10px; z-index: 3; width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: rgba(4, 11, 20, 0.78); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 50%; opacity: 0; transform: translateY(5px); transition: opacity 220ms, transform 220ms, background 220ms; backdrop-filter: blur(10px); }
 .media-open .icon { width: 16px; height: 16px; padding: 0; color: inherit; background: none; border: 0; border-radius: 0; }
 [data-media-src]:hover .media-open, [data-media-src]:focus-visible .media-open { opacity: 1; transform: translateY(0); }
+.platform-tour { --section-accent: var(--gold-strong); background: var(--ink); border-bottom: 1px solid var(--border-2); }
+.tour-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.tour-card { min-width: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; color: inherit; text-align: left; appearance: none; cursor: pointer; background: #0d1b2c; border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2); transition: transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 300ms, box-shadow 300ms; }
+.tour-card:hover, .tour-card:focus-visible { border-color: rgba(242, 198, 77, 0.66); box-shadow: 0 20px 42px rgba(0, 0, 0, 0.3); transform: translateY(-6px); outline: none; }
+.tour-card-media { position: relative; display: block; overflow: hidden; aspect-ratio: 16 / 10; background: #030811; }
+.tour-card-media img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top center; transition: transform 650ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 300ms; }
+.tour-card:hover .tour-card-media img { transform: scale(1.04); filter: saturate(1.08) contrast(1.03); }
+.tour-card-copy { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px 16px; }
+.tour-card-copy strong { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: #fff; }
+.tour-card-copy span { color: var(--text-3, #9fb0c6); font-size: 12.5px; line-height: 1.45; }
+@media (max-width: 900px) { .tour-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .tour-grid { grid-template-columns: 1fr; } }
 .exams-section { --section-accent: var(--gold-strong); background: var(--ink); border-bottom: 1px solid var(--border-2); }
 .exams-showcase { display: grid; grid-template-columns: minmax(0px, 0.9fr) minmax(400px, 1.1fr); align-items: stretch; gap: 22px; }
 .exam-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }

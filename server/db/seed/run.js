@@ -521,6 +521,41 @@ async function seedCuratedAssets(client, ctx) {
 
 
 /**
+ * "Por dentro da plataforma": as telas mostradas na landing. Dedup por image_url;
+ * quando a imagem já existe, sincroniza título/legenda/ordem para permitir ajustes
+ * pelo re-seed sem duplicar linhas.
+ */
+async function seedPlatformTour(client, ctx) {
+  const tour = data.curatedAssets.platformTour || [];
+  for (const shot of tour) {
+    const existing = await client.query(
+      'SELECT id, title, caption, sort_order FROM platform_tour WHERE image_url = $1',
+      [shot.image_url]
+    );
+    if (existing.rowCount) {
+      const row = existing.rows[0];
+      if (row.title !== shot.title || row.caption !== (shot.caption ?? null) || row.sort_order !== shot.sort_order) {
+        await client.query(
+          'UPDATE platform_tour SET title = $2, caption = $3, sort_order = $4 WHERE id = $1',
+          [row.id, shot.title, shot.caption ?? null, shot.sort_order]
+        );
+        ctx.summary.bump('platform_tour', 'synced');
+      } else {
+        ctx.summary.bump('platform_tour', 'kept');
+      }
+      continue;
+    }
+    await client.query(
+      `INSERT INTO platform_tour (title, caption, image_url, sort_order, active)
+       VALUES ($1, $2, $3, $4, true)`,
+      [shot.title, shot.caption ?? null, shot.image_url, shot.sort_order]
+    );
+    ctx.summary.bump('platform_tour', 'created');
+  }
+}
+
+
+/**
  * Planos de estudo: a sequência de aulas de cada prova. Recriar o plano apaga
  * os itens antigos, então só acontece com --force-study-plans; do contrário o
  * seed apenas cria o que ainda não existe, preservando o que o admin editou.
@@ -831,6 +866,7 @@ async function runSeed(options = {}) {
     say('[seed]   planos');              await seedPlans(client, ctx);
     say('[seed]   página inicial');     await seedLanding(client, ctx);
     say('[seed]   acervo de provas e resultados'); await seedCuratedAssets(client, ctx);
+    say('[seed]   por dentro da plataforma'); await seedPlatformTour(client, ctx);
     say('[seed]   planos de estudo');   await seedStudyPlans(client, ctx);
   });
 

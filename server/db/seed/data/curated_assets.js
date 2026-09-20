@@ -237,4 +237,22 @@ pastExams.push(
   }
 );
 
-module.exports = { testimonials, pastExams };
+// "Por dentro da plataforma": telas reais para o visitante ver antes de comprar.
+// As imagens ficam em public/assets/platform-tour (servidas estaticamente); se um
+// dia forem publicadas no Blob, o manifest de curated_asset_urls cobre via publishedUrl.
+const platformTour = [
+  { title: 'Início', caption: 'Seu painel com plano do dia, progresso e próximas atividades.', image_url: publishedUrl('/assets/platform-tour/inicio.webp'), sort_order: 1 },
+  { title: 'Videoaulas', caption: 'Aulas por matéria, no seu ritmo, com continuação de onde parou.', image_url: publishedUrl('/assets/platform-tour/videoaulas.webp'), sort_order: 2 },
+  { title: 'Cronograma', caption: 'Plano de estudos personalizado, semana a semana.', image_url: publishedUrl('/assets/platform-tour/cronograma.webp'), sort_order: 3 },
+  { title: 'Banco de questões', caption: 'Milhares de questões com filtros e desempenho ao vivo.', image_url: publishedUrl('/assets/platform-tour/questoes.webp'), sort_order: 4 },
+  { title: 'Simulados', caption: 'ENEM, Barro Branco e por matéria, em condições reais.', image_url: publishedUrl('/assets/platform-tour/simulados.webp'), sort_order: 5 },
+  { title: 'Provas anteriores', caption: 'Resolva provas reais e acompanhe sua evolução.', image_url: publishedUrl('/assets/platform-tour/provas-anteriores.webp'), sort_order: 6 },
+  { title: 'Redação', caption: 'Tema da semana, textos de apoio e envio corrigido pelos critérios do ENEM.', image_url: publishedUrl('/assets/platform-tour/redacao.webp'), sort_order: 7 },
+  { title: 'Resumos', caption: 'Conteúdo objetivo para revisar e fixar o que importa.', image_url: publishedUrl('/assets/platform-tour/resumos.webp'), sort_order: 8 },
+  { title: 'Anotações', caption: 'Seus cadernos por matéria, com tags e revisão.', image_url: publishedUrl('/assets/platform-tour/anotacoes.webp'), sort_order: 9 },
+  { title: 'Desempenho', caption: 'Evolução, pontos fortes e o que precisa revisar.', image_url: publishedUrl('/assets/platform-tour/desempenho.webp'), sort_order: 10 },
+  { title: 'Professores', caption: 'Aulas particulares para tirar dúvidas quando precisar.', image_url: publishedUrl('/assets/platform-tour/professores.webp'), sort_order: 11 },
+  { title: 'Escolha sua prova', caption: 'Selecione o objetivo e receba um plano sob medida.', image_url: publishedUrl('/assets/platform-tour/escolha-prova.webp'), sort_order: 12 },
+];
+
+module.exports = { testimonials, pastExams, platformTour };

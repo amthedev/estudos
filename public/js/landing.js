@@ -300,6 +300,42 @@ function initContent(data) {
   });
 }
 
+// "Por dentro da plataforma": grade de telas reais. Clique abre a imagem grande
+// no visualizador (o mesmo media-viewer dos depoimentos). Sem imagens, a seção
+// e o link do menu ficam ocultos.
+function tourCard(shot) {
+  const title = shot.title || 'Tela da plataforma';
+  const caption = shot.caption || '';
+  return html`
+    <button class="tour-card reveal" type="button"
+      data-media-src="${shot.image_url}"
+      data-media-alt="${title}${caption ? ` — ${caption}` : ''}"
+      aria-label="Ampliar tela: ${title}">
+      <span class="tour-card-media">
+        <img src="${shot.image_url}" alt="Tela de ${title} da plataforma" loading="lazy" decoding="async">
+        <span class="media-open" aria-hidden="true">${icon('maximize-2')}</span>
+      </span>
+      <span class="tour-card-copy"><strong>${title}</strong>${caption ? html`<span>${caption}</span>` : ''}</span>
+    </button>`;
+}
+
+function initTour(data) {
+  const section = qs('#por-dentro');
+  const grid = qs('#tour-grid');
+  const shots = data && Array.isArray(data.platform_tour) ? data.platform_tour : [];
+  if (!section || !grid) return;
+  if (!shots.length) {
+    section.hidden = true;
+    qsa('[data-tour-link]').forEach((link) => { link.hidden = true; });
+    return;
+  }
+  render(grid, shots.map(tourCard));
+  section.hidden = false;
+  qsa('[data-tour-link]').forEach((link) => { link.hidden = false; });
+  observeReveal(qsa('.tour-card', grid));
+  window.dispatchEvent(new Event('landing:layout'));
+}
+
 // Perguntas frequentes: quando o banco traz ao menos uma, a lista inteira
 // passa a vir dele; sem nenhuma, o HTML estático permanece.
 function initFaqs(data) {
@@ -437,5 +473,6 @@ initPlans();
 initResults();
 loadLanding().then((data) => {
   initContent(data);
+  initTour(data);
   initFaqs(data);
 });

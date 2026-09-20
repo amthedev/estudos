@@ -126,7 +126,7 @@ function applyPlansMarker(text, plansText) {
 // leitura do banco
 // ---------------------------------------------------------------------------
 async function loadPayload() {
-  const [blockRows, examRows, planRows, testimonialRows, faqRows, brand] = await Promise.all([
+  const [blockRows, examRows, planRows, testimonialRows, faqRows, tourRows, brand] = await Promise.all([
     db.many(
       `SELECT key, eyebrow, title, subtitle, body, items, cta_label, cta_href, image_url, sort_order
          FROM landing_blocks
@@ -158,6 +158,12 @@ async function loadPayload() {
          FROM faqs
         WHERE active = true
         ORDER BY sort_order ASC, created_at ASC`
+    ),
+    db.many(
+      `SELECT id, title, caption, image_url
+         FROM platform_tour
+        WHERE active = true
+        ORDER BY sort_order ASC, id ASC`
     ),
     settings.getMany(['brand_name', 'support_email']),
   ]);
@@ -191,6 +197,7 @@ async function loadPayload() {
       question: row.question,
       answer: applyPlansMarker(row.answer, plansText),
     })),
+    platform_tour: tourRows,
     brand: {
       name: brand.brand_name,
       support_email: brand.support_email,
