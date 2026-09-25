@@ -335,7 +335,7 @@ router.use(requireStudent);
 router.get(
   '/status',
   wrap(async (req, res) => {
-    const info = await ai.status();
+    const info = await ai.status(req.user && req.user.id);
     res.json({
       available: Boolean(info.configured) && !info.limit_reached,
       configured: Boolean(info.configured),
@@ -439,7 +439,7 @@ router.post(
     if (!conversation) throw new AppError(404, 'not_found', 'Conversa não encontrada.');
 
     // Verificações que podem virar erro HTTP normal precisam acontecer ANTES de abrir o stream.
-    await ai.assertAvailable();
+    await ai.assertAvailable(req.user.id);
 
     const content = req.valid.body.content;
     const previous = await db.one(

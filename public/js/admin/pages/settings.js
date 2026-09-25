@@ -10,7 +10,7 @@
 import { api } from '../../core/api.js';
 import {
   html, render, toast, qs, qsa, on, setLoading,
-  pageHeader, errorState, skeleton, badge, progressBar, alertBox,
+  pageHeader, errorState, skeleton, badge, alertBox,
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { fmtNumber, fmtDateTime, fmtRelative } from '../../core/format.js';
@@ -82,7 +82,6 @@ function openrouterAside() {
   const openrouter = (state.integrations && state.integrations.openrouter) || {};
   const used = Number(openrouter.month_tokens) || 0;
   const limit = Number(openrouter.limit) || 0;
-  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const statusBadge = openrouter.mock
     ? badge('Modo de simulação', 'orange', { icon: 'wand-sparkles' })
     : openrouter.configured
@@ -97,14 +96,12 @@ function openrouterAside() {
       <dl class="kv aset-kv">
         <dt>Consumo do mês</dt>
         <dd>${num(used)} tokens em ${num(openrouter.month_requests)} chamadas</dd>
-        <dt>Limite mensal</dt>
-        <dd>${limit > 0 ? `${num(limit)} tokens` : 'Sem limite definido'}</dd>
+        <dt>Cota por aluno</dt>
+        <dd>${limit > 0 ? `${num(limit)} tokens por mês` : 'Sem cota definida'}</dd>
         ${openrouter.last_error
           ? html`<dt>Último erro</dt><dd class="text-danger" title="${fmtDateTime(openrouter.last_error.at)}">${openrouter.last_error.message} · ${fmtRelative(openrouter.last_error.at)}</dd>`
           : ''}
       </dl>
-      ${limit > 0 ? progressBar(pct, { color: pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : '', label: 'Uso do limite mensal' }) : ''}
-      ${openrouter.limit_reached ? alertBox({ type: 'warning', title: 'Limite mensal atingido', text: 'As funções de IA ficam indisponíveis para os alunos até a virada do mês ou o aumento do limite.' }) : ''}
       ${alertBox({
         type: 'info',
         title: 'A chave do OpenRouter fica no servidor',
@@ -280,7 +277,7 @@ function mountForms() {
       placeholder: 'deixe vazio para usar o modelo do tutor',
       hint: 'Ler prova é transcrição, não raciocínio: um modelo mais rápido termina cada trecho dentro do tempo da requisição.',
     },
-    { key: 'openrouter_monthly_token_limit', label: 'Limite mensal de tokens', type: 'number', min: 0, integer: true, hint: 'Use 0 para não limitar. Ao atingir o limite, as funções de IA pausam até o mês seguinte.' },
+    { key: 'ai_student_monthly_token_limit', label: 'Cota mensal de tokens por aluno', type: 'number', min: 0, integer: true, hint: 'Cada aluno tem a sua cota; quem passar dela fica sem IA até o mês seguinte, sem afetar os outros. A equipe não tem cota. 3 milhões cobrem com folga um aluno que usa todo dia. Use 0 para não limitar.' },
     {
       key: 'simulado_ai_questions_max',
       label: 'Questões por IA em um simulado',
@@ -295,7 +292,7 @@ function mountForms() {
       openrouter_model: s.openrouter_model || '',
       openrouter_essay_model: s.openrouter_essay_model || '',
       openrouter_extract_model: s.openrouter_extract_model || '',
-      openrouter_monthly_token_limit: Number(s.openrouter_monthly_token_limit) || 0,
+      ai_student_monthly_token_limit: Number(s.ai_student_monthly_token_limit) || 0,
       simulado_ai_questions_max: Number(s.simulado_ai_questions_max) || 0,
     },
     submitLabel: 'Salvar OpenRouter',
@@ -304,7 +301,7 @@ function mountForms() {
         openrouter_model: values.openrouter_model,
         openrouter_essay_model: values.openrouter_essay_model,
         openrouter_extract_model: values.openrouter_extract_model || '',
-        openrouter_monthly_token_limit: Number(values.openrouter_monthly_token_limit) || 0,
+        ai_student_monthly_token_limit: Number(values.ai_student_monthly_token_limit) || 0,
         simulado_ai_questions_max: Number(values.simulado_ai_questions_max) || 0,
       }, 'Configurações do OpenRouter salvas.');
       await refreshIntegrations();

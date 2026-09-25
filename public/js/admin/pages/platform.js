@@ -8,7 +8,7 @@
 import { api } from '../../core/api.js';
 import {
   html, render, toast, modal, qs, on,
-  pageHeader, emptyState, errorState, skeleton, statCard, badge, progressBar,
+  pageHeader, emptyState, errorState, skeleton, statCard, badge,
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { fmtNumber, fmtDateShort, fmtDateTime, fmtRelative, fmtMinutes, fmtCompact } from '../../core/format.js';
@@ -108,17 +108,15 @@ function aiSection() {
   const totals = usage.totals || {};
   const limit = Number(usage.limit) || 0;
   const monthTokens = Number(usage.month_tokens) || 0;
-  const pct = limit > 0 ? Math.min(100, Math.round((monthTokens / limit) * 100)) : 0;
   const features = usage.by_feature || [];
   const users = usage.top_users || [];
   return html`
     <section class="grid grid-4 aplat-ai-stats">
       ${statCard({ label: 'Tokens em 30 dias', value: fmtCompact(totals.tokens), hint: `${num(totals.requests)} chamadas`, icon: 'sparkles' })}
-      ${statCard({ label: 'Tokens no mês', value: fmtCompact(monthTokens), hint: limit > 0 ? `de ${fmtCompact(limit)} permitidos` : 'sem limite definido', icon: 'gauge', tone: usage.limit_reached ? 'red' : 'blue' })}
+      ${statCard({ label: 'Tokens no mês', value: fmtCompact(monthTokens), hint: limit > 0 ? `cota de ${fmtCompact(limit)} por aluno` : 'sem cota por aluno', icon: 'gauge' })}
       ${statCard({ label: 'Erros de IA', value: num(totals.errors), icon: 'triangle-alert', tone: Number(totals.errors) ? 'orange' : 'gray' })}
       ${statCard({ label: 'Latência média', value: `${num(totals.avg_latency_ms)} ms`, icon: 'timer' })}
     </section>
-    ${limit > 0 ? html`<div class="card aplat-limit"><div class="card-body">${progressBar(pct, { color: pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : '', label: 'Uso do limite mensal de tokens' })}</div></div>` : ''}
     <section class="card">
       <div class="card-header">
         <h2 class="card-title">${icon('chart-column')}<span>Consumo de IA por dia</span></h2>

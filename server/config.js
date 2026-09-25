@@ -81,7 +81,8 @@ const envSchema = z.object({
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   OPENROUTER_MODEL: z.string().default('qwen/qwen3.8-flash'),
   OPENROUTER_ESSAY_MODEL: z.string().default('qwen/qwen3.8-flash'),
-  OPENROUTER_MONTHLY_TOKEN_LIMIT: z.coerce.number().int().nonnegative().default(5_000_000),
+  // cota mensal de tokens de IA por aluno (0 = sem limite); não existe teto global
+  AI_STUDENT_MONTHLY_TOKEN_LIMIT: z.coerce.number().int().nonnegative().default(3_000_000),
 
   REQUIRE_SUBSCRIPTION: boolFromEnv(true),
 
@@ -347,7 +348,7 @@ const config = deepFreeze({
     baseUrl: env.OPENROUTER_BASE_URL.replace(/\/+$/, ''),
     model: env.OPENROUTER_MODEL,
     essayModel: env.OPENROUTER_ESSAY_MODEL,
-    monthlyTokenLimit: env.OPENROUTER_MONTHLY_TOKEN_LIMIT,
+    studentMonthlyTokenLimit: env.AI_STUDENT_MONTHLY_TOKEN_LIMIT,
     enabled: Boolean(env.OPENROUTER_API_KEY),
   },
 

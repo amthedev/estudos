@@ -5,16 +5,17 @@
  *
  *   const ai = require('../services/ai');
  *   ai.isConfigured()                       → true quando há OPENROUTER_API_KEY (ou cliente de simulação)
- *   await ai.assertAvailable()              → lança 503 ai_unavailable se não configurada ou limite mensal atingido
+ *   await ai.assertAvailable(userId)        → lança 503 ai_unavailable se não configurada ou se o aluno esgotou a cota do mês
  *   await ai.chat({ messages, model, stream, temperature, maxTokens, userId, feature, onDelta, signal })
  *       → { content, usage: { prompt_tokens, completion_tokens, total_tokens }, model, latency_ms, aborted }
  *   await ai.json({ messages, retryMaxTokens, ... })
  *       → idem + `data` (resposta interpretada como JSON; repete uma vez se vier cortada)
- *   await ai.status()                       → { configured, mock, model, essay_model, month_tokens, month_requests, limit, limit_reached, last_error }
+ *   await ai.status(userId)                 → { configured, mock, model, essay_model, month_tokens, month_requests, limit, limit_reached, last_error }
  *
- * Toda chamada registra uma linha em ai_usage (tokens, modelo, latência, status) e respeita o limite mensal
- * de tokens definido na configuração `openrouter_monthly_token_limit` (0 = sem limite). Ao exceder o limite,
- * a chamada é recusada com AppError 503 ai_unavailable 'Limite mensal de uso da IA atingido'.
+ * Toda chamada registra uma linha em ai_usage (tokens, modelo, latência, status) e respeita a cota mensal
+ * de tokens POR ALUNO da configuração `ai_student_monthly_token_limit` (0 = sem limite). O aluno que passa
+ * da cota recebe AppError 503 ai_unavailable 'Limite mensal de uso da IA atingido'; os outros seguem normais.
+ * Equipe e chamadas internas (userId nulo) não têm cota.
  *
  * Simulação (OPENROUTER_MOCK=1, ou NODE_ENV=test sem chave): um cliente falso e determinístico responde em
  * português de forma plausível — inclusive em streaming e com JSON válido para a correção de redação —
@@ -97,19 +98,49 @@ async function monthUsage() {
   return { tokens: Number(row ? row.tokens : 0) || 0, requests: Number(row ? row.requests : 0) || 0 };
 }
 
-async function monthlyLimit() {
-  const value = Number(await getSetting('openrouter_monthly_token_limit'));
+/**
+ * Limite mensal de tokens POR ALUNO (0 = sem limite).
+ *
+ * Antes o limite era um só para a plataforma inteira: com dois ou três alunos
+ * engajados o teto era atingido e a IA desligava para todo mundo até o mês
+ * virar — um aluno usando muito tirava o tutor dos outros. Agora cada aluno
+ * tem a sua cota, e quem passar dela não afeta ninguém.
+ */
+async function studentMonthlyLimit() {
+  const value = Number(await getSetting('ai_student_monthly_token_limit'));
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
-/** Lança 503 quando a IA não está configurada ou o limite mensal foi atingido. */
-async function assertAvailable() {
+/** Tokens gastos pelo aluno no mês corrente (fuso da plataforma). */
+async function userMonthUsage(userId) {
+  const row = await db.one(
+    `SELECT coalesce(sum(total_tokens), 0)::bigint AS tokens
+       FROM ai_usage
+      WHERE user_id = $1
+        AND created_at >= (date_trunc('month', now() AT TIME ZONE $2) AT TIME ZONE $2)`,
+    [userId, TIMEZONE]
+  );
+  return Number(row ? row.tokens : 0) || 0;
+}
+
+/**
+ * O aluno já passou da cota do mês? Sem aluno (chamada interna) ou com
+ * usuário da equipe, nunca: ler prova e montar banco de questões não podem
+ * parar por causa de cota de aluno.
+ */
+async function studentLimitReached(userId) {
+  if (!userId) return false;
+  const limit = await studentMonthlyLimit();
+  if (!limit) return false;
+  const user = await db.one('SELECT role FROM users WHERE id = $1', [userId]);
+  if (!user || user.role === 'admin') return false;
+  return (await userMonthUsage(userId)) >= limit;
+}
+
+/** Lança 503 quando a IA não está configurada ou o aluno atingiu a cota do mês. */
+async function assertAvailable(userId = null) {
   if (!isConfigured()) throw new AppError(503, 'ai_unavailable', UNAVAILABLE_MESSAGE);
-  const limit = await monthlyLimit();
-  if (limit > 0) {
-    const { tokens } = await monthUsage();
-    if (tokens >= limit) throw new AppError(503, 'ai_unavailable', LIMIT_MESSAGE);
-  }
+  if (await studentLimitReached(userId)) throw new AppError(503, 'ai_unavailable', LIMIT_MESSAGE);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +268,7 @@ async function chat({
 } = {}) {
   if (!Array.isArray(messages) || messages.length === 0) throw new Error('ai.chat: "messages" é obrigatório.');
 
-  await assertAvailable();
+  await assertAvailable(userId);
   const client = getClient();
   const resolvedModel = model || (await getSetting('openrouter_model')) || config.openrouter.model;
   const started = Date.now();
@@ -439,11 +470,17 @@ async function json(options = {}) {
   throw new AppError(503, 'ai_unavailable', 'A IA não conseguiu concluir a resposta. Tente novamente.');
 }
 
-/** Situação da integração para o painel e para o front (sem expor segredos). */
-async function status() {
-  const [usage, limit, model, essayModel, lastError] = await Promise.all([
+/**
+ * Situação da integração para o painel e para o front (sem expor segredos).
+ * Com `userId`, `limit_reached` diz se AQUELE aluno esgotou a cota; sem, é
+ * sempre falso (não existe mais teto que desligue a plataforma inteira).
+ * `limit` é a cota mensal por aluno.
+ */
+async function status(userId = null) {
+  const [usage, limit, reached, model, essayModel, lastError] = await Promise.all([
     monthUsage().catch(() => ({ tokens: 0, requests: 0 })),
-    monthlyLimit(),
+    studentMonthlyLimit(),
+    studentLimitReached(userId).catch(() => false),
     getSetting('openrouter_model'),
     getSetting('openrouter_essay_model'),
     db
@@ -459,7 +496,7 @@ async function status() {
     month_tokens: usage.tokens,
     month_requests: usage.requests,
     limit,
-    limit_reached: limit > 0 && usage.tokens >= limit,
+    limit_reached: reached,
     last_error: lastError ? { message: lastError.error_message, at: lastError.created_at } : null,
   };
 }
@@ -766,7 +803,9 @@ module.exports = {
   status,
   recordUsage,
   monthUsage,
-  monthlyLimit,
+  studentMonthlyLimit,
+  studentLimitReached,
+  userMonthUsage,
   parseJsonResponse,
   setClientForTests,
   UNAVAILABLE_MESSAGE,

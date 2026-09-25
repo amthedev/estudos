@@ -36,7 +36,7 @@ const DEFAULTS = Object.freeze({
   openrouter_essay_model: config.openrouter.essayModel,
   // Modelo da leitura de prova em PDF. Vazio usa o mesmo do tutor.
   openrouter_extract_model: '',
-  openrouter_monthly_token_limit: config.openrouter.monthlyTokenLimit,
+  ai_student_monthly_token_limit: config.openrouter.studentMonthlyTokenLimit,
   tutor_system_prompt: TUTOR_SYSTEM_PROMPT,
   review_intervals: [1, 7, 30],
   schedule_defaults: {

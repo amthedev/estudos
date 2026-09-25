@@ -88,7 +88,7 @@ router.get(
           LIMIT $1`,
         [LATEST_LIMIT]
       ),
-      getSetting('openrouter_monthly_token_limit'),
+      getSetting('ai_student_monthly_token_limit'),
     ]);
 
     const days = eachDay(from, today);

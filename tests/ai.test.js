@@ -315,8 +315,8 @@ describe('IA: Tutor e Redação', () => {
       assert.ok(atual.last_message && atual.last_message.length > 0);
     });
 
-    it('limite mensal de tokens atingido → 503 ai_unavailable', async () => {
-      await settings.setSetting('openrouter_monthly_token_limit', 1);
+    it('cota mensal do aluno atingida → 503 ai_unavailable', async () => {
+      await settings.setSetting('ai_student_monthly_token_limit', 1);
       try {
         const res = await alice.agent.post(`/api/tutor/conversations/${conversation.id}/messages`, {
           content: 'Consegue revisar comigo o conteúdo de porcentagem?',
@@ -324,7 +324,7 @@ describe('IA: Tutor e Redação', () => {
         assert.equal(res.status, 503);
         assert.equal(res.body.error.code, 'ai_unavailable');
       } finally {
-        await settings.setSetting('openrouter_monthly_token_limit', null);
+        await settings.setSetting('ai_student_monthly_token_limit', null);
       }
     });
 
@@ -549,13 +549,13 @@ describe('IA: Tutor e Redação', () => {
         theme_title: 'Tema para testar indisponibilidade',
         content: ESSAY_TEXT,
       });
-      await settings.setSetting('openrouter_monthly_token_limit', 1);
+      await settings.setSetting('ai_student_monthly_token_limit', 1);
       try {
         const res = await alice.agent.post(`/api/essays/${criada.body.id}/submit`, {});
         assert.equal(res.status, 503);
         assert.equal(res.body.error.code, 'ai_unavailable');
       } finally {
-        await settings.setSetting('openrouter_monthly_token_limit', null);
+        await settings.setSetting('ai_student_monthly_token_limit', null);
       }
 
       const depois = await alice.agent.get(`/api/essays/${criada.body.id}`);

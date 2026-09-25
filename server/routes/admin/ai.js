@@ -96,7 +96,7 @@ router.get(
       };
     });
 
-    const limit = await ai.monthlyLimit();
+    const limit = await ai.studentMonthlyLimit();
     res.json({
       days,
       from,
@@ -108,7 +108,8 @@ router.get(
       month_tokens: monthly.tokens,
       month_requests: monthly.requests,
       limit,
-      limit_reached: limit > 0 && monthly.tokens >= limit,
+      // o limite agora é por aluno: não existe teto que desligue a plataforma
+      limit_reached: false,
     });
   })
 );

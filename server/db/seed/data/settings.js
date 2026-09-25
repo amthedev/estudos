@@ -37,7 +37,7 @@ module.exports = {
   require_subscription: true,
   openrouter_model: 'qwen/qwen3.8-flash',
   openrouter_essay_model: 'qwen/qwen3.8-flash',
-  openrouter_monthly_token_limit: 5000000,
+  ai_student_monthly_token_limit: 3000000,
   tutor_system_prompt: TUTOR_SYSTEM_PROMPT,
   review_intervals: [1, 7, 30],
   schedule_defaults: {

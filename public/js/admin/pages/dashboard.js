@@ -9,7 +9,7 @@
 import { api } from '../../core/api.js';
 import {
   html, render, qs, on,
-  pageHeader, emptyState, errorState, skeleton, statCard, badge, progressBar,
+  pageHeader, emptyState, errorState, skeleton, statCard, badge,
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { fmtNumber, fmtDateShort, fmtRelative, fmtScore, fmtDateTime, initials } from '../../core/format.js';
@@ -48,8 +48,6 @@ function statsGrid(data) {
 function aiCard(data) {
   const used = Number(data.ai_month_tokens) || 0;
   const limit = Number(data.ai_month_limit) || 0;
-  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-  const tone = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : '';
   return html`
     <section class="card adash-ai">
       <div class="card-body">
@@ -59,9 +57,8 @@ function aiCard(data) {
         </div>
         <p class="adash-ai-value">
           <strong>${num(used)}</strong>
-          <span class="text-2">${limit > 0 ? `de ${num(limit)} tokens` : 'tokens · sem limite definido'}</span>
+          <span class="text-2">tokens · ${limit > 0 ? `cota de ${num(limit)} por aluno` : 'sem cota por aluno'}</span>
         </p>
-        ${limit > 0 ? progressBar(pct, { color: tone, label: 'Uso do limite mensal' }) : ''}
       </div>
     </section>`;
 }
