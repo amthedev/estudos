@@ -36,9 +36,17 @@ const BASE = 'https://blob.squarecloud.app/v1/objects';
  */
 const PUBLIC_BASE = 'https://public-blob.squarecloud.dev';
 
-/** URL pública a partir da chave (id) do objeto. */
+/**
+ * URL pública a partir da chave (id) do objeto.
+ *
+ * A chave que a API devolve começa com "pub/" ("pub/<conta>/videos/aula.mp4"),
+ * mas o domínio público serve o objeto SEM esse prefixo: com ele, dá 404. Uma
+ * videoaula subia inteira e o player ficava cinza porque o link salvo tinha o
+ * "pub/". A chave com o prefixo continua sendo a que a API usa para apagar e
+ * listar; só o endereço público perde o trecho.
+ */
 function publicUrl(id) {
-  const key = String(id || '').replace(/^\/+/, '');
+  const key = String(id || '').replace(/^\/+/, '').replace(/^pub\//, '');
   return key ? `${PUBLIC_BASE}/${key}` : '';
 }
 
