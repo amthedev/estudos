@@ -49,7 +49,10 @@ const apiLimiter = rateLimit({
   ...base,
   windowMs: 15 * MINUTE,
   limit: config.isTest ? 100_000 : 600,
-  skip: (req) => req.path === '/health',
+  // As partes de um envio grande não contam: uma videoaula de 1 GB são 128
+  // requisições, e um lote estouraria o limite no meio. A rota continua
+  // exigindo sessão de admin.
+  skip: (req) => req.path === '/health' || (req.method === 'PUT' && /^\/admin\/uploads\/sessions\/[^/]+\/parts\/\d+$/.test(req.path)),
 });
 
 module.exports = { authLimiter, aiLimiter, apiLimiter };

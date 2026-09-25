@@ -41,27 +41,29 @@ function isPdfUrl(url) {
 }
 
 /**
- * Sobe um arquivo e devolve os dados gravados.
- * @param {File|Blob} file
- * @param {{ folder?: string, onProgress?: (pct:number)=>void }} options
- * @returns {Promise<{url:string, bytes:number, content_type:string, kind:string}>}
+ * Acima disto o arquivo vai em partes. O Cloudflare de produção recusa corpo
+ * acima de 100 MB, e a requisição morria em 0% com "falha de conexão".
  */
-export function uploadFile(file, { folder = 'geral', onProgress } = {}) {
-  const name = file.name || 'arquivo';
-  const query = `?folder=${encodeURIComponent(folder)}&filename=${encodeURIComponent(name)}`;
+const CHUNKED_FROM = 64 * 1024 * 1024;
+/** Tentativas por parte: uma queda rápida de Wi-Fi não pode perder o vídeo todo. */
+const PART_TRIES = 4;
 
-  // XMLHttpRequest em vez de fetch: é o único jeito de ter progresso de envio,
-  // que importa para PDF de edital em conexão lenta.
+/**
+ * Uma requisição com progresso de envio. XMLHttpRequest em vez de fetch: é o
+ * único jeito de ter progresso, que importa para vídeo em conexão lenta.
+ * Resolve com o JSON da resposta; rejeita com a mensagem da API ou de rede.
+ */
+function xhrSend(method, url, body, { contentType, onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open('POST', `/api/admin/uploads${query}`);
+    request.open(method, url);
     request.setRequestHeader('X-Requested-With', 'FocoElite');
-    if (file.type) request.setRequestHeader('Content-Type', file.type);
+    if (contentType) request.setRequestHeader('Content-Type', contentType);
     request.withCredentials = true;
 
     if (onProgress && request.upload) {
       request.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+        if (event.lengthComputable) onProgress(event.loaded);
       });
     }
 
@@ -72,20 +74,101 @@ export function uploadFile(file, { folder = 'geral', onProgress } = {}) {
       } catch {
         payload = null;
       }
-      if (request.status >= 200 && request.status < 300 && payload?.url) {
+      if (request.status >= 200 && request.status < 300) {
         resolve(payload);
         return;
       }
-      const message = payload?.error?.message || 'Não foi possível enviar o arquivo.';
-      const error = new Error(message);
+      const error = new Error(payload?.error?.message || 'Não foi possível enviar o arquivo.');
       error.status = request.status;
       error.code = payload?.error?.code;
       reject(error);
     });
-    request.addEventListener('error', () => reject(new Error('Falha de conexão ao enviar o arquivo.')));
+    request.addEventListener('error', () => {
+      const error = new Error('Falha de conexão ao enviar o arquivo.');
+      error.network = true;
+      reject(error);
+    });
     request.addEventListener('abort', () => reject(new Error('Envio cancelado.')));
-    request.send(file);
+    request.send(body);
   });
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Arquivo pequeno: uma requisição só, com o corpo bruto. */
+async function uploadWhole(file, { folder, onProgress }) {
+  const name = file.name || 'arquivo';
+  const query = `?folder=${encodeURIComponent(folder)}&filename=${encodeURIComponent(name)}`;
+  const payload = await xhrSend('POST', `/api/admin/uploads${query}`, file, {
+    contentType: file.type || undefined,
+    onProgress: onProgress && ((loaded) => onProgress(Math.round((loaded / file.size) * 100))),
+  });
+  if (!payload?.url) throw new Error('Não foi possível enviar o arquivo.');
+  return payload;
+}
+
+/**
+ * Arquivo grande: abre um envio no servidor e manda em partes, em ordem.
+ * Parte que falha por rede ou por instabilidade do servidor é repetida; o
+ * servidor aceita a mesma parte de novo sem gravar duas vezes.
+ */
+async function uploadInParts(file, { folder, onProgress }) {
+  const base = '/api/admin/uploads/sessions';
+  const opened = await xhrSend(
+    'POST',
+    base,
+    JSON.stringify({ folder, filename: file.name || 'arquivo', content_type: file.type || undefined, size: file.size }),
+    { contentType: 'application/json' }
+  );
+  const { id, part_size: partSize } = opened;
+  const total = Math.ceil(file.size / partSize);
+  let sent = 0;
+
+  try {
+    for (let index = 1; index <= total; index += 1) {
+      const slice = file.slice((index - 1) * partSize, index * partSize);
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          await xhrSend('PUT', `${base}/${id}/parts/${index}`, slice, {
+            contentType: 'application/octet-stream',
+            onProgress: onProgress && ((loaded) => {
+              // 99% no máximo: o último passo é o servidor fechar o arquivo
+              onProgress(Math.min(99, Math.round(((sent + loaded) / file.size) * 100)));
+            }),
+          });
+          break;
+        } catch (err) {
+          // erro de regra (tipo de arquivo, limite, envio expirado) não melhora repetindo
+          const transient = err.network || !err.status || err.status >= 500 || err.status === 429;
+          if (!transient || attempt >= PART_TRIES) throw err;
+          await wait(1000 * 2 ** (attempt - 1));
+        }
+      }
+      sent += slice.size;
+      if (onProgress) onProgress(Math.min(99, Math.round((sent / file.size) * 100)));
+    }
+
+    const saved = await xhrSend('POST', `${base}/${id}/complete`, null);
+    if (onProgress) onProgress(100);
+    if (!saved?.url) throw new Error('Não foi possível enviar o arquivo.');
+    return saved;
+  } catch (err) {
+    // libera o que o servidor já tinha recebido; se falhar, a varredura dele resolve
+    xhrSend('DELETE', `${base}/${id}`, null).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * Sobe um arquivo e devolve os dados gravados.
+ * @param {File|Blob} file
+ * @param {{ folder?: string, onProgress?: (pct:number)=>void }} options
+ * @returns {Promise<{url:string, bytes:number, content_type:string, kind:string}>}
+ */
+export function uploadFile(file, { folder = 'geral', onProgress } = {}) {
+  return file.size > CHUNKED_FROM
+    ? uploadInParts(file, { folder, onProgress })
+    : uploadWhole(file, { folder, onProgress });
 }
 
 /**

@@ -25,6 +25,7 @@ const { validate, z } = require('../../middleware/validate');
 const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const uploads = require('../../services/uploads');
+const sessions = require('../../services/upload-sessions');
 
 const folderEnum = z.enum(uploads.FOLDERS);
 
@@ -40,6 +41,10 @@ const listQuery = z.object({
 
 /** Erros do serviço viram resposta de API em português. */
 const STATUS_BY_CODE = {
+  upload_not_found: [404, 'upload_not_found'],
+  invalid_part: [409, 'invalid_part'],
+  aborted: [409, 'aborted'],
+  too_small: [400, 'validation_error'],
   empty_file: [400, 'validation_error'],
   unsupported_type: [415, 'unsupported_type'],
   too_large: [413, 'too_large'],
@@ -77,6 +82,99 @@ router.post(
     } catch (err) {
       throw toAppError(err);
     }
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Envio em partes (videoaula grande)
+//
+//   POST   /api/admin/uploads/sessions                 { folder, filename, content_type, size } → { id, part_size }
+//   PUT    /api/admin/uploads/sessions/:id/parts/:n    corpo bruto da parte n (a partir de 1)
+//   POST   /api/admin/uploads/sessions/:id/complete    → mesmo retorno do POST /
+//   DELETE /api/admin/uploads/sessions/:id             cancela
+//
+// O Cloudflare de produção recusa corpo acima de 100 MB; em partes de 8 MB o
+// arquivo passa inteiro. Ver services/upload-sessions.js.
+// ---------------------------------------------------------------------------
+const ownerOf = (req) => (req.admin && req.admin.id) || null;
+
+/** Lê o corpo de uma parte, recusando o que passar do tamanho de parte. */
+function readPart(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > sessions.PART_SIZE) {
+        req.destroy();
+        const error = new Error('Parte maior que o permitido.');
+        error.code = 'too_large';
+        reject(error);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks, size)));
+    req.on('error', reject);
+  });
+}
+
+router.post(
+  '/sessions',
+  validate({
+    body: z.object({
+      folder: z.preprocess((v) => (v === '' ? undefined : v), folderEnum.optional()),
+      filename: z.string().trim().max(200).optional(),
+      content_type: z.string().trim().max(100).optional(),
+      size: z.coerce.number().int().positive(),
+    }),
+  }),
+  wrap(async (req, res) => {
+    const { folder, filename, content_type: contentType, size } = req.valid.body;
+    try {
+      res.status(201).json(sessions.open({ folder, filename, contentType, size, owner: ownerOf(req) }));
+    } catch (err) {
+      throw toAppError(err);
+    }
+  })
+);
+
+router.put(
+  '/sessions/:id/parts/:index',
+  wrap(async (req, res) => {
+    try {
+      const buffer = await readPart(req);
+      res.json(await sessions.appendPart(req.params.id, req.params.index, buffer, ownerOf(req)));
+    } catch (err) {
+      throw toAppError(err);
+    }
+  })
+);
+
+router.post(
+  '/sessions/:id/complete',
+  wrap(async (req, res) => {
+    try {
+      const saved = await sessions.complete(req.params.id, ownerOf(req));
+      await audit(req, 'upload.create', 'upload', null, {
+        url: saved.url,
+        bytes: saved.bytes,
+        content_type: saved.content_type,
+        reused: saved.reused,
+        chunked: true,
+      });
+      res.status(201).json(saved);
+    } catch (err) {
+      throw toAppError(err);
+    }
+  })
+);
+
+router.delete(
+  '/sessions/:id',
+  wrap(async (req, res) => {
+    sessions.abort(req.params.id, ownerOf(req));
+    res.json({ ok: true });
   })
 );
 

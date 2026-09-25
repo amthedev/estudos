@@ -31,6 +31,8 @@ const ADMIN_ROUTES_DIR = path.join(ROUTES_DIR, 'admin');
 const WEBHOOK_PATH = '/api/billing/webhook';
 // O envio de arquivos do painel chega como corpo bruto (sem multipart).
 const UPLOAD_PATH = '/api/admin/uploads';
+// Partes do envio em partes (videoaula acima dos 100 MB do Cloudflare).
+const UPLOAD_PART = /^\/api\/admin\/uploads\/sessions\/[^/]+\/parts\/\d+$/;
 const CSRF_HEADER_VALUE = 'FocoElite';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -177,6 +179,8 @@ function createApp() {
     const path = req.originalUrl.split('?')[0];
     if (path === WEBHOOK_PATH) return next();
     if (path === UPLOAD_PATH && req.method === 'POST') return next();
+    // parte de envio em partes: corpo bruto, lido pela própria rota
+    if (req.method === 'PUT' && UPLOAD_PART.test(path)) return next();
     express.json({ limit: '2mb' })(req, res, next);
   });
 
