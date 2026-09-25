@@ -30,6 +30,9 @@ const { TIMEZONE } = require('../utils/dates');
 const STATUS_DE_USO = new Set(['ok', 'error', 'aborted']);
 const FEATURES = new Set(['tutor', 'essay', 'essay_theme', 'questions', 'exam_import', 'other']);
 const DEFAULT_TIMEOUT_MS = 90_000;
+/** Novas tentativas quando o provedor do modelo falha antes de entregar texto. */
+const UPSTREAM_RETRIES = 2;
+const UPSTREAM_RETRY_MS = process.env.NODE_ENV === 'test' ? 5 : 800;
 const UNAVAILABLE_MESSAGE = 'O Tutor IA ainda não foi ativado pela equipe.';
 const LIMIT_MESSAGE = 'Limite mensal de uso da IA atingido';
 
@@ -268,7 +271,8 @@ async function chat({
   let finishReason = null;
   let usedModel = resolvedModel;
 
-  try {
+  // Uma tentativa completa: streaming ou não.
+  const attemptOnce = async () => {
     if (stream) {
       params.stream = true;
       const iterator = await client.chat.completions.create(params, requestOptions);
@@ -290,6 +294,30 @@ async function chat({
       finishReason = (choice && choice.finish_reason) || null;
       usage = (completion && completion.usage) || null;
       if (completion && completion.model) usedModel = completion.model;
+    }
+  };
+
+  try {
+    // O cliente do OpenRouter já repete quando o 429 vem na resposta HTTP. Mas
+    // no streaming o OpenRouter responde 200 na hora e o erro do provedor que
+    // roda o modelo ("Provider returned error", 429 de sobrecarga momentânea)
+    // chega DENTRO do fluxo — e ia direto para o aluno como "a IA está
+    // sobrecarregada", na segunda mensagem de uma conversa que funcionava.
+    // Enquanto nenhum texto foi entregue, repetir é invisível para o aluno e
+    // quase sempre resolve; depois do primeiro trecho, repetir duplicaria a
+    // resposta na tela, então o erro sobe.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await attemptOnce();
+        break;
+      } catch (err) {
+        const status = Number(err && err.status);
+        const transient = status === 429 || status === 408 || status >= 500;
+        const canRetry = transient && !content && attempt < UPSTREAM_RETRIES && !(signal && signal.aborted) && !isAbortError(err);
+        if (!canRetry) throw err;
+        console.warn(`[ai] provedor devolveu ${status}; nova tentativa ${attempt + 1}/${UPSTREAM_RETRIES}`);
+        await new Promise((resolve) => setTimeout(resolve, UPSTREAM_RETRY_MS * 2 ** attempt));
+      }
     }
   } catch (err) {
     if (isAbortError(err) || (signal && signal.aborted)) {
