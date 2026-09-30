@@ -5,7 +5,8 @@
 import { api } from './core/api.js';
 import { html, render, qs, qsa, tabs } from './core/ui.js';
 import { icon } from './core/icons.js';
-import { fmtMoney, intervalLabel } from './core/format.js';
+import { fmtMoney, fmtNumber, fmtScore, intervalLabel } from './core/format.js';
+import { tierLabel } from './core/coins.js';
 
 function initNav() {
   const nav = qs('#nav');
@@ -54,9 +55,18 @@ function initScrollMotion() {
     if (progress) progress.style.transform = `scaleX(${ratio})`;
 
     const marker = Math.min(window.innerHeight * 0.3, 220);
+    // a seção atual é a que começou mais perto acima do marcador, e não a última
+    // na ordem do menu: o menu lista Plataforma antes de Por dentro, e a página
+    // mostra Por dentro primeiro.
     let current = '';
+    let best = -Infinity;
     sections.forEach(({ section }) => {
-      if (!section.hidden && section.getBoundingClientRect().top <= marker) current = section.id;
+      if (section.hidden) return;
+      const top = section.getBoundingClientRect().top;
+      if (top <= marker && top > best) {
+        best = top;
+        current = section.id;
+      }
     });
     sections.forEach(({ link, section }) => {
       const active = section.id === current;
@@ -179,10 +189,55 @@ function compactFeature(value) {
   return labels.find(([pattern]) => pattern.test(feature))?.[1] || feature;
 }
 
+// Quantas vezes uma ação cabe nas moedas do dia (daily_capacity da API):
+// inteiro >= 0, ou null quando a ação é grátis ou o dado não veio.
+function wholeCount(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
+// "2×", "3,3×": uma casa, com vírgula, e sem casa quando dá inteiro. Corta
+// para baixo, para a razão nunca passar da real (1,97 sai 1,9×, e não 2×).
+function fmtTimes(value) {
+  return `${fmtScore(Math.floor(value * 10 + 1e-9) / 10)}×`;
+}
+
+// Meses de acesso que uma compra do plano dá (a API manda access_months; sem ele,
+// a conta sai do ciclo de cobrança mais os meses de bônus).
+function planAccessMonths(plan) {
+  const count = Number(plan.interval_count) || 1;
+  const billedMonths = plan.interval === 'year' ? 12 * count : count;
+  return Number(plan.access_months) || billedMonths + (Number(plan.bonus_months) || 0);
+}
+
+// O que as moedas do dia pagam, na ordem em que aparecem no cartão e na tabela.
+// São alternativas (até 5 redações OU 3 simulados), nunca uma soma.
+const CAPACITY_LINES = [
+  { key: 'essay_corrections', one: 'redação corrigida', many: 'redações corrigidas', row: 'Redações corrigidas' },
+  { key: 'simulados_long', one: 'simulado completo', many: 'simulados completos', row: 'Simulados completos' },
+  { key: 'simulados_short', one: 'simulado curto', many: 'simulados curtos', row: 'Simulados curtos' },
+];
+
+function planCapacity(plan) {
+  const capacity = plan.daily_capacity && typeof plan.daily_capacity === 'object' ? plan.daily_capacity : null;
+  if (!capacity) return '';
+  // linha com 0 some; ação grátis (null) também, o cartão só fala do que as moedas limitam
+  const lines = CAPACITY_LINES
+    .map((line) => ({ ...line, n: wholeCount(capacity[line.key]) }))
+    .filter((line) => line.n > 0);
+  if (!lines.length) return '';
+  return html`
+    <div class="plan-capacity">
+      <p>Por dia, dá para:</p>
+      <ul>${lines.map((line, index) => html`<li>${index ? 'ou' : 'até'} <strong>${fmtNumber(line.n, { digits: 0 })}</strong> ${line.n === 1 ? line.one : line.many}</li>`)}</ul>
+    </div>`;
+}
+
 function planCard(plan) {
   const count = Number(plan.interval_count) || 1;
   const billedMonths = plan.interval === 'year' ? 12 * count : count;
-  const accessMonths = Number(plan.access_months) || billedMonths + (Number(plan.bonus_months) || 0);
+  const accessMonths = planAccessMonths(plan);
   const period = accessMonths > billedMonths ? `${accessMonths} meses` : intervalLabel(plan.interval, count);
   const monthlyFromApi = Number(plan.monthly_equivalent_cents);
   const monthly = monthlyFromApi > 0
@@ -190,8 +245,16 @@ function planCard(plan) {
     : accessMonths > 1
       ? Math.round(Number(plan.price_cents) / accessMonths)
       : null;
+  // moedas por dia do nível: o número vem das configurações, pela API
+  const dailyCoins = Number(plan.daily_coins) > 0 ? Number(plan.daily_coins) : 0;
+  // com as moedas e o que elas rendem no cartão, item que só fala de moedas
+  // ("Mais moedas por dia") repetiria o que está logo acima
   const features = Array.isArray(plan.features)
-    ? plan.features.filter((feature) => typeof feature === 'string' && feature.trim()).slice(0, 3).map(compactFeature)
+    ? plan.features
+      .filter((feature) => typeof feature === 'string' && feature.trim())
+      .filter((feature) => !(dailyCoins && /moedas/i.test(feature)))
+      .slice(0, 3)
+      .map(compactFeature)
     : [];
   const trial = Number(plan.trial_days) > 0 ? plan.trial_days : 0;
   const slug = plan.slug || plan.id || '';
@@ -202,8 +265,10 @@ function planCard(plan) {
   // parcelamento: divide o preço pelo número de cobranças do ciclo (6x, 12x)
   const parcelas = plan.interval === 'year' ? 12 * count : count;
   const installment = parcelas > 1 ? Math.round(Number(plan.price_cents) / parcelas) : null;
-  // moedas por dia do nível: o número vem das configurações, pela API
-  const dailyCoins = Number(plan.daily_coins) > 0 ? Number(plan.daily_coins) : 0;
+  // "Escolher Avançado 12 meses": a duração fica num trecho à parte, que o
+  // tablet em pé esconde para o botão caber numa linha (landing.css)
+  const tier = tierLabel(plan.tier);
+  const nameTail = tier && String(plan.name).startsWith(tier) ? String(plan.name).slice(tier.length) : '';
 
   return html`
     <article class="plan ${plan.highlight ? 'highlight' : ''}" ${plan.tier ? html`id="plano-${plan.tier}"` : ''}>
@@ -217,11 +282,15 @@ function planCard(plan) {
       ${installment ? html`<div class="plan-installment">ou ${parcelas}x de ${fmtMoney(installment)}</div>` : ''}
       ${monthly ? html`<div class="plan-equiv">Equivale a ${fmtMoney(monthly)} por mês</div>` : ''}
       ${trial ? html`<div class="plan-equiv">24h grátis com cartão</div>` : ''}
-      ${dailyCoins ? html`<div class="plan-coins">${icon('coins')}<span>${dailyCoins} moedas por dia</span></div>` : ''}
+      ${dailyCoins ? html`
+        <div class="plan-coins-row">
+          <div class="plan-coins">${icon('coins')}<span>${dailyCoins} moedas por dia</span></div>
+        </div>
+        ${planCapacity(plan)}` : ''}
       ${features.length
         ? html`<ul class="plan-features">${features.map((feature) => html`<li>${icon('check')}<span>${feature}</span></li>`)}</ul>`
         : html`<div class="plan-features"></div>`}
-      <a class="btn ${plan.highlight ? 'btn-primary' : 'btn-secondary'} btn-lg" href="/cadastro?plan=${encodeURIComponent(slug)}">Escolher ${plan.name}</a>
+      <a class="btn ${plan.highlight ? 'btn-primary' : 'btn-secondary'} btn-lg" href="/cadastro?plan=${encodeURIComponent(slug)}"><span>Escolher ${nameTail ? html`${tier}<span class="plan-btn-tail">${nameTail}</span>` : plan.name}</span></a>
     </article>`;
 }
 
@@ -234,50 +303,402 @@ function durationLabel(months) {
   return months === 1 ? 'Mensal' : `${months} meses`;
 }
 
-function renderTierCards(grid, plans, months) {
-  const cards = plans
+function tierCardsFor(plans, months) {
+  return plans
     .filter((plan) => (Number(plan.duration_months) || 1) === months)
     .sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
-  render(grid, cards.map(planCard));
+}
+
+function renderTierCards(grid, plans, months, onRender) {
+  const cards = tierCardsFor(plans, months);
+  render(grid, cards.map((plan) => planCard(plan)));
   observeReveal(qsa('.plan', grid));
+  onRender();
   window.dispatchEvent(new Event('landing:layout'));
 }
 
-function initTierPlans(grid, plans) {
+// Celular: a grade de planos vira um trilho lateral (landing.css, max-width: 767px).
+// Ele abre centrado no plano em destaque, com as pontas dos vizinhos à vista, e
+// ganha um ponto por cartão embaixo, que acompanha a rolagem e leva ao cartão
+// tocado. No desktop os pontos ficam ocultos pelo CSS e nada disso age.
+// Devolve a função que refaz os pontos depois de cada troca de duração.
+const PLANS_RAIL_QUERY = '(max-width: 767px)';
+
+function centerPlan(grid, card, behavior = 'auto') {
+  const box = grid.getBoundingClientRect();
+  const rect = card.getBoundingClientRect();
+  grid.scrollTo({ left: grid.scrollLeft + rect.left + rect.width / 2 - (box.left + box.width / 2), behavior });
+}
+
+function initPlansRail(grid) {
+  const media = window.matchMedia ? window.matchMedia(PLANS_RAIL_QUERY) : null;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const dots = document.createElement('div');
+  dots.className = 'plans-dots';
+  dots.setAttribute('role', 'group');
+  dots.setAttribute('aria-label', 'Planos');
+  dots.hidden = true;
+  grid.after(dots);
+  let frame = 0;
+  let centered = false;
+
+  // o cartão atual é o que tem o centro mais perto do centro do trilho
+  const mark = () => {
+    frame = 0;
+    const box = grid.getBoundingClientRect();
+    const middle = box.left + box.width / 2;
+    let current = 0;
+    let best = Infinity;
+    qsa('.plan', grid).forEach((card, index) => {
+      const rect = card.getBoundingClientRect();
+      const distance = Math.abs(rect.left + rect.width / 2 - middle);
+      if (distance < best) {
+        best = distance;
+        current = index;
+      }
+    });
+    qsa('.plans-dot', dots).forEach((dot, index) => {
+      dot.classList.toggle('active', index === current);
+      if (index === current) dot.setAttribute('aria-current', 'true');
+      else dot.removeAttribute('aria-current');
+    });
+  };
+
+  const centerHighlight = () => {
+    if (!media || !media.matches) return;
+    const card = qs('.plan.highlight', grid) || qs('.plan', grid);
+    if (card) centerPlan(grid, card);
+    centered = true;
+    mark();
+  };
+
+  grid.addEventListener('scroll', () => {
+    if (!frame) frame = window.requestAnimationFrame(mark);
+  }, { passive: true });
+  dots.addEventListener('click', (event) => {
+    const dot = event.target instanceof Element ? event.target.closest('.plans-dot') : null;
+    const card = dot ? qsa('.plan', grid)[Number(dot.dataset.index)] : null;
+    if (card) centerPlan(grid, card, reduce ? 'auto' : 'smooth');
+  });
+  // quem abre a página no desktop e estreita a janela também chega ao trilho centrado no destaque
+  if (media && media.addEventListener) media.addEventListener('change', centerHighlight);
+
+  return () => {
+    const cards = qsa('.plan', grid);
+    dots.replaceChildren(...cards.map((card, index) => {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'plans-dot';
+      dot.dataset.index = String(index);
+      const name = card.querySelector('.plan-name');
+      dot.setAttribute('aria-label', `Ver ${name ? name.textContent.trim() : 'plano'}`);
+      return dot;
+    }));
+    dots.hidden = cards.length < 2;
+    // a troca de duração mantém a posição do trilho; só a primeira pintura centraliza
+    if (!centered) centerHighlight();
+    else mark();
+  };
+}
+
+// Devolve a duração em tela e o registro de quem precisa refazer junto quando
+// ela muda (contagem e comparativo usam os planos da duração escolhida).
+function initTierPlans(grid, plans, onRender) {
   const months = [...new Set(plans.map((plan) => Number(plan.duration_months) || 1))].sort((a, b) => a - b);
   // 12 meses abre selecionado: é o de menor valor por mês
   const initial = months.includes(12) ? 12 : months[months.length - 1];
+  let current = initial;
+  const listeners = [];
+  const show = (value) => {
+    current = value;
+    renderTierCards(grid, plans, value, onRender);
+    listeners.forEach((fn) => fn(value));
+  };
   const box = qs('#plans-durations');
   if (box && months.length > 1) {
     tabs(
       box,
       months.map((value) => ({ id: String(value), label: durationLabel(value) })),
-      (id) => renderTierCards(grid, plans, Number(id)),
+      (id) => show(Number(id)),
       { active: String(initial), pills: true }
     );
     qs('.tabs', box)?.setAttribute('aria-label', 'Duração do plano');
     box.hidden = false;
   }
-  renderTierCards(grid, plans, initial);
+  show(initial);
+  return {
+    months: () => current,
+    onChange: (fn) => listeners.push(fn),
+  };
 }
 
-// Faixa de contagem regressiva até o ENEM (data cadastrada no painel, em
-// Provas). Só aparece com data futura e com o Avançado na vitrine, porque o
-// texto aponta para ele.
-function initCountdown(data) {
-  const box = qs('#plans-countdown');
-  const countdown = data && data.countdown;
+// Com o ENEM a menos de 90 dias, a contagem e o cartão do Avançado sugerem o
+// Avançado. É conselho, não fato.
+const SHORT_TIME_DAYS = 90;
+const DAY_MS = 86400000;
+
+// "o ENEM", "a FUVEST"; prova sem artigo conhecido sai sem artigo (EXAM_ARTICLES, mais abaixo).
+function examWithArticle(shortName) {
+  const article = EXAM_ARTICLES[String(shortName).trim().toUpperCase()];
+  return article ? `${article} ${shortName}` : String(shortName);
+}
+
+// "2026-11-08" → meia-noite UTC desse dia (NaN quando não é data).
+function isoDayTime(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : NaN;
+}
+
+// Soma meses como o servidor soma o acesso (asaas.addMonths): 31/01 + 1 mês = 28/02.
+function addMonthsUTC(time, months) {
+  const date = new Date(time);
+  const day = date.getUTCDate();
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target.getTime();
+}
+
+// Uma compra do plano feita hoje ainda vale no dia da prova? "Hoje" é o do
+// servidor: a data da prova menos os dias que faltam. Sem data, a resposta é não,
+// e o total até a prova não aparece.
+function accessCoversExam(plan, countdown) {
+  const exam = isoDayTime(countdown && countdown.exam_date);
   const days = countdown ? Number(countdown.days_left) : 0;
-  if (!box || !(days > 0)) return;
+  const months = planAccessMonths(plan);
+  if (!Number.isFinite(exam) || !(days > 0) || !(months > 0)) return false;
+  return addMonthsUTC(exam - days * DAY_MS, months) >= exam;
+}
+
+// Com a prova perto e o Avançado na vitrine da duração escolhida.
+function recommendsTop(countdown, cards) {
+  const days = countdown ? Number(countdown.days_left) : 0;
+  return days > 0 && days <= SHORT_TIME_DAYS && cards.some((plan) => plan.tier === 'avancado');
+}
+
+// Contagem até o ENEM (data cadastrada no painel, em Provas): uma linha entre o
+// título e o seletor. Na reta final, leva o conselho e o link para o Avançado.
+function renderCountdown(box, countdown, cards) {
+  const days = countdown ? Number(countdown.days_left) : 0;
+  if (!(days > 0)) {
+    box.hidden = true;
+    return;
+  }
   const exam = countdown.exam_short_name || 'ENEM';
   render(box, html`
-    <p class="plans-countdown-days">${icon('hourglass')}<span>${days === 1 ? 'Falta' : 'Faltam'} <strong>${days}</strong> ${days === 1 ? 'dia' : 'dias'} para o ${exam}</span></p>
-    <p class="plans-countdown-text">
-      Com pouco tempo, cada dia de treino conta: o Avançado te dá o máximo de moedas por dia.
-      <a href="#plano-avancado">Ver o Avançado</a>
-    </p>`);
+    <p class="plans-countdown-days">${icon('hourglass')}<span>${days === 1 ? 'Falta' : 'Faltam'} <strong>${fmtNumber(days, { digits: 0 })}</strong> ${days === 1 ? 'dia' : 'dias'} para ${examWithArticle(exam)}</span></p>
+    ${recommendsTop(countdown, cards)
+      ? html`<p class="plans-countdown-text">Na reta final, vale treinar mais por dia. <a href="#plano-avancado">Ver o Avançado</a></p>`
+      : ''}`);
   box.hidden = false;
-  window.dispatchEvent(new Event('landing:layout'));
+}
+
+// Conselho no próprio cartão do Avançado, ao lado das moedas, na reta final.
+// Os cartões são refeitos a cada troca de duração; o conselho volta junto.
+function renderTopAdvice(grid, countdown, cards) {
+  const card = grid ? qs('#plano-avancado', grid) : null;
+  if (!card) return;
+  qsa('.plan-advice', card).forEach((el) => el.remove());
+  const row = qs('.plan-coins-row', card);
+  if (!row || !recommendsTop(countdown, cards)) return;
+  const advice = document.createElement('p');
+  advice.className = 'plan-advice';
+  render(advice, html`${icon('flag')}<span>Recomendado para a reta final</span>`);
+  row.appendChild(advice);
+}
+
+// Custos que aparecem em "Como funcionam as moedas", todos de coin_costs.
+// Só entra a ação que custa alguma coisa.
+const COST_CHIPS = [
+  { key: 'essay_correction', label: () => 'Correção de redação' },
+  { key: 'simulado_long', label: () => 'Simulado completo' },
+  {
+    key: 'simulado_short',
+    label: (costs) => {
+      const max = wholeCount(costs.simulado_short_max_questions);
+      return max > 0 ? `Simulado curto (até ${fmtNumber(max, { digits: 0 })} questões)` : 'Simulado curto';
+    },
+  },
+  { key: 'questions', label: () => 'Lote de questões da IA' },
+  { key: 'essay_theme', label: () => 'Tema de redação da IA' },
+  { key: 'practice', label: () => 'Prática da aula com IA' },
+];
+
+// Três passos que explicam para que servem as moedas, entre os cartões e a
+// tabela. Sem custos na API, o bloco não aparece (sem eles não há o que mostrar
+// no passo do meio).
+function renderCoinsHow(box, costs) {
+  const chips = costs
+    ? COST_CHIPS
+      .map((chip) => ({ label: chip.label(costs), cost: wholeCount(costs[chip.key]) }))
+      .filter((chip) => chip.cost > 0)
+    : [];
+  if (!chips.length) {
+    box.hidden = true;
+    return;
+  }
+  render(box, html`
+    <h3 class="plans-how-title">Como funcionam as moedas</h3>
+    <ol class="plans-how-steps">
+      <li>
+        <span class="plans-how-icon">${icon('coins')}</span>
+        <div><strong>Moedas todo dia</strong><p>Cada plano recebe moedas por dia. Elas renovam à meia-noite e não acumulam.</p></div>
+      </li>
+      <li>
+        <span class="plans-how-icon">${icon('sparkles')}</span>
+        <div>
+          <strong>Pagam correções, simulados e o que a IA cria</strong>
+          <ul class="plans-how-costs">${chips.map((chip) => html`
+            <li>${chip.label} · <b>${icon('coins')}${fmtNumber(chip.cost, { digits: 0 })}<span class="sr-only"> ${chip.cost === 1 ? 'moeda' : 'moedas'}</span></b></li>`)}
+          </ul>
+        </div>
+      </li>
+      <li>
+        <span class="plans-how-icon">${icon('infinity')}</span>
+        <div><strong>O resto é livre</strong><p>Videoaulas, banco de questões, provas anteriores e cronograma não gastam moedas, em nenhum plano.</p></div>
+      </li>
+    </ol>`);
+  box.hidden = false;
+}
+
+// Exemplo de combinação para a nota da tabela: o primeiro par de ações pagas,
+// nesta ordem, que cabe no dia de algum plano. Sem par que caiba, sem exemplo.
+const COMBO_ACTIONS = [
+  { key: 'essay_correction', label: '1 redação' },
+  { key: 'simulado_long', label: '1 simulado completo' },
+  { key: 'simulado_short', label: '1 simulado curto' },
+  { key: 'questions', label: '1 lote de questões da IA' },
+];
+
+function comboExample(cols, costs) {
+  const paid = costs
+    ? COMBO_ACTIONS.map((action) => ({ ...action, cost: wholeCount(costs[action.key]) })).filter((action) => action.cost > 0)
+    : [];
+  for (let i = 0; i < paid.length; i += 1) {
+    for (let j = i + 1; j < paid.length; j += 1) {
+      const total = paid[i].cost + paid[j].cost;
+      const fits = cols.filter((plan) => Number(plan.daily_coins) >= total).map((plan) => tierLabel(plan.tier));
+      if (!fits.length) continue;
+      const where = fits.length === cols.length
+        ? 'de qualquer plano'
+        : `do ${fits.length > 1 ? `${fits.slice(0, -1).join(', do ')} e do ${fits[fits.length - 1]}` : fits[0]}`;
+      return `Dá para combinar: ${paid[i].label} + ${paid[j].label} = ${fmtNumber(total, { digits: 0 })} moedas, o que cabe no dia ${where}.`;
+    }
+  }
+  return '';
+}
+
+function compareNote(cols, costs, { daily, tutor }) {
+  return [
+    daily ? 'Redações e simulados por dia: cada número é o máximo de uma ação só, com todas as moedas do dia nela.' : '',
+    daily ? comboExample(cols, costs) : '',
+    tutor ? 'O Tutor IA não gasta moedas: cada plano tem uma cota própria por mês.' : '',
+  ].filter(Boolean).join(' ');
+}
+
+// Tabela Básico × Pro × Avançado da duração escolhida. Cada número vem dos planos
+// (daily_capacity, moedas, cota do Tutor) e da contagem; linha sem dado some, e
+// com menos de dois níveis a tabela não aparece. As linhas por dia de redações e
+// simulados repetem a caixa dos cartões, então só aparecem no celular, onde o
+// trilho mostra um cartão por vez (landing.css).
+function renderCompare(box, cards, countdown, costs) {
+  const cols = TIER_ORDER.map((tier) => cards.find((plan) => plan.tier === tier)).filter(Boolean);
+  if (cols.length < 2) {
+    box.hidden = true;
+    return;
+  }
+  const count = (value) => (value === null ? null : fmtNumber(value, { digits: 0 }));
+  const capacity = (plan, key) => wholeCount(plan.daily_capacity && plan.daily_capacity[key]);
+  const rows = [
+    { label: 'Moedas por dia', values: cols.map((plan) => count(Number(plan.daily_coins) > 0 ? Number(plan.daily_coins) : null)) },
+    ...CAPACITY_LINES.map((line) => ({
+      label: html`${line.row}<span class="sr-only"> por dia</span>`,
+      daily: true,
+      values: cols.map((plan) => count(capacity(plan, line.key))),
+    })),
+  ];
+  const base = cols.find((plan) => plan.tier === 'basico');
+  const baseTokens = base ? Number(base.tutor_monthly_tokens) : 0;
+  if (baseTokens > 0) {
+    rows.push({
+      label: html`Tutor IA no mês <span>comparado ao ${tierLabel(base.tier)}</span>`,
+      tutor: true,
+      values: cols.map((plan) => {
+        const tokens = Number(plan.tutor_monthly_tokens);
+        if (!(tokens > 0)) return null;
+        if (plan === base) return { text: 'base' };
+        return tokens === baseTokens ? { text: 'igual' } : fmtTimes(tokens / baseTokens);
+      }),
+    });
+  }
+  // total até a prova só na duração cujo acesso chega ao dia da prova: o Mensal
+  // dá um mês, e com a prova mais longe que isso o número dependeria de renovar
+  const days = countdown ? Number(countdown.days_left) : 0;
+  if (days > 0) {
+    const exam = countdown.exam_short_name || 'ENEM';
+    rows.push({
+      label: html`Redações até ${examWithArticle(exam)} <span>${fmtNumber(days, { digits: 0 })} ${days === 1 ? 'dia' : 'dias'}</span>`,
+      values: cols.map((plan) => {
+        const n = capacity(plan, 'essay_corrections');
+        return n === null || !accessCoversExam(plan, countdown) ? null : count(n * days);
+      }),
+      accent: true,
+    });
+  }
+  const shown = rows.filter((row) => row.values.some((value) => value !== null));
+  const note = compareNote(cols, costs, { daily: shown.some((row) => row.daily), tutor: shown.some((row) => row.tutor) });
+  const rowClass = (row) => [row.accent ? 'is-accent' : '', row.daily ? 'is-daily' : ''].filter(Boolean).join(' ');
+
+  render(box, html`
+    <div class="plans-compare-frame">
+      <table class="plans-compare-table">
+        <caption><span>Quanto rende cada plano</span> ${cols.map((plan) => tierLabel(plan.tier)).join(' × ')}</caption>
+        <thead>
+          <tr>
+            <td></td>
+            ${cols.map((plan) => html`<th scope="col">${tierLabel(plan.tier)}</th>`)}
+          </tr>
+        </thead>
+        <tbody>
+          ${shown.map((row, index) => html`
+            ${row.daily && !(index && shown[index - 1].daily)
+              ? html`<tr class="is-daily is-group" aria-hidden="true"><td colspan="${cols.length + 1}">Por dia, dá para</td></tr>`
+              : ''}
+            <tr class="${rowClass(row)}">
+              <th scope="row">${row.label}</th>
+              ${row.values.map((value) => (value && value.text
+                ? html`<td class="is-text">${value.text}</td>`
+                : html`<td>${value === null ? '—' : value}</td>`))}
+            </tr>`)}
+        </tbody>
+      </table>
+    </div>
+    ${note ? html`<p class="plans-compare-note">${note}</p>` : ''}`);
+  // no tablet e no desktop a tabela fica só com as linhas que os cartões não têm;
+  // se não sobrar nenhuma, ela some ali (landing.css)
+  box.classList.toggle('plans-compare-only-daily', shown.every((row) => row.daily));
+  box.hidden = false;
+}
+
+// Blocos que dependem de /api/landing (contagem e custos das moedas): chegam
+// depois dos cartões e acompanham a duração escolhida no seletor.
+function initPlansExtras(data, plans, view) {
+  const grid = qs('#plans-grid');
+  const countdownBox = qs('#plans-countdown');
+  const howBox = qs('#plans-how');
+  const compareBox = qs('#plans-compare');
+  const countdown = data && data.countdown && Number(data.countdown.days_left) > 0 ? data.countdown : null;
+  const costs = data && data.coin_costs && typeof data.coin_costs === 'object' ? data.coin_costs : null;
+  if (howBox) renderCoinsHow(howBox, costs);
+  const paint = (months) => {
+    const cards = tierCardsFor(plans, months);
+    if (countdownBox) renderCountdown(countdownBox, countdown, cards);
+    renderTopAdvice(grid, countdown, cards);
+    if (compareBox) renderCompare(compareBox, cards, countdown, costs);
+    window.dispatchEvent(new Event('landing:layout'));
+  };
+  paint(view.months());
+  view.onChange(paint);
 }
 
 async function initPlans() {
@@ -302,15 +723,18 @@ async function initPlans() {
   const tierPlans = plans.filter((plan) => TIER_ORDER.includes(plan.tier));
   section.hidden = false;
   qsa('[data-plans-link]').forEach((link) => { link.hidden = false; });
+  const syncRail = initPlansRail(grid);
   if (tierPlans.length) {
-    initTierPlans(grid, tierPlans);
-    if (tierPlans.some((plan) => plan.tier === 'avancado')) loadLanding().then(initCountdown);
+    // os cartões saem já; contagem, moedas e comparativo completam quando /api/landing chegar
+    const view = initTierPlans(grid, tierPlans, syncRail);
+    loadLanding().then((data) => initPlansExtras(data, tierPlans, view));
     return;
   }
 
   plans.sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
-  render(grid, plans.map(planCard));
+  render(grid, plans.map((plan) => planCard(plan)));
   observeReveal(qsa('.plan', grid));
+  syncRail();
   window.dispatchEvent(new Event('landing:layout'));
 }
 
@@ -473,6 +897,12 @@ function initTour(data) {
   render(grid, shots.map(tourCard));
   section.hidden = false;
   qsa('[data-tour-link]').forEach((link) => { link.hidden = false; });
+  // com as telas no ar, a seta da hero leva para elas, que vêm logo abaixo
+  const cue = qs('.hero-scroll');
+  if (cue) {
+    cue.href = '#por-dentro';
+    cue.setAttribute('aria-label', 'Ir para a seção Por dentro da plataforma');
+  }
   observeReveal(qsa('.tour-card', grid));
   window.dispatchEvent(new Event('landing:layout'));
 }
@@ -751,6 +1181,9 @@ function observeReveal(elements) {
   }
 
   if (!observer) {
+    // o bloco aparece assim que o topo dele passa da faixa de baixo da tela
+    // (threshold 0): com 10%, um bloco alto como o dos vídeos de Resultados
+    // ficava invisível mesmo já na tela, deixando um vão morto embaixo dos cards
     observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -759,7 +1192,7 @@ function observeReveal(elements) {
           observer.unobserve(entry.target);
         });
       },
-      { rootMargin: '0px 0px -8% 0px', threshold: 0.1 }
+      { rootMargin: '0px 0px -8% 0px', threshold: 0 }
     );
   }
 
