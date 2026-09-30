@@ -162,17 +162,45 @@ function initSocialProof() {
   const box = qs('#social-proof');
   if (!box) return;
   const items = buildSocialProofItems();
+  const visible = 4;
   render(box, html`
     <div class="social-proof-head">
       <span>Movimento da comunidade</span>
       <strong>${items.length}+ comentários recentes</strong>
     </div>
     <div class="social-proof-viewport">
-      <div class="social-proof-track">
-        ${items.map(socialProofCard)}
-        ${items.map(socialProofCard)}
-      </div>
+      <div class="social-proof-stack" aria-live="polite"></div>
     </div>`);
+
+  const stack = qs('.social-proof-stack', box);
+  if (!stack) return;
+
+  let index = 0;
+  let paused = false;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const show = () => {
+    const next = Array.from({ length: visible }, (_, offset) => items[(index + offset) % items.length]);
+    render(stack, next.map(socialProofCard));
+  };
+
+  show();
+  if (reduce) return;
+
+  const timer = window.setInterval(() => {
+    if (paused) return;
+    index = (index + 1) % items.length;
+    stack.classList.add('swap');
+    window.setTimeout(() => {
+      show();
+      stack.classList.remove('swap');
+    }, 260);
+  }, 5200);
+
+  box.addEventListener('mouseenter', () => { paused = true; });
+  box.addEventListener('mouseleave', () => { paused = false; });
+  box.addEventListener('focusin', () => { paused = true; });
+  box.addEventListener('focusout', () => { paused = false; });
+  window.addEventListener('pagehide', () => window.clearInterval(timer), { once: true });
 }
 
 function normalizePlans(data) {
