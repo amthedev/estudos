@@ -400,7 +400,7 @@ body { overflow-x: hidden; background: var(--ink); }
 .faq-item summary .icon { width: 18px; height: 18px; color: rgb(104, 118, 138); transition: transform 240ms, color 240ms; }
 .faq-item[open] summary .icon { color: var(--blue-deep); transform: rotate(45deg); }
 .faq-answer { max-width: 700px; padding: 0px 48px 24px 0px; animation: 260ms ease 0s 1 normal both running faq-enter; }
-.faq-answer p { color: rgb(86, 100, 119); font-family: var(--font-reading); font-size: 14px; line-height: 1.65; }
+.faq-answer p { color: rgb(86, 100, 119); font-family: var(--font-reading); font-size: 14px; line-height: 1.65; white-space: pre-line; }
 .final-cta { --section-accent: #FFFFFF; padding: 72px 0px; color: var(--ink); background: var(--gold-strong); border-top: 1px solid rgba(7, 17, 31, 0.2); border-bottom: 1px solid rgba(7, 17, 31, 0.2); }
 .final-cta-inner { display: grid; grid-template-columns: minmax(0px, 1fr) minmax(260px, 0.42fr); align-items: end; gap: 68px; }
 .final-cta .eyebrow { margin-bottom: 16px; color: var(--ink); background: rgba(255, 255, 255, 0.18); border-color: rgba(7, 17, 31, 0.48); }

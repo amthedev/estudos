@@ -711,7 +711,11 @@ async function applyAsaasEvent(tx, event) {
       }
       const paidAt = (info.payment && info.payment.paid_at) || now;
       const first = !current || !current.last_payment_at;
-      const months = asaas.accessMonths(plan, { first });
+      // Compra nova de Pix na linha reaproveitada (período anterior acabado) é a
+      // primeira cobrança DAQUELA compra: leva o mês de bônus do plano. Sem isso,
+      // quando o pagamento chegava antes do CHECKOUT_PAID, a linha já tinha
+      // last_payment_at e o evento virava renovação — pagava 13 meses, levava 12.
+      const months = asaas.accessMonths(plan, { first: first || newPurchase });
       // renovação antes do fim do período: o acesso é somado ao que ainda resta
       const from = !first && previousEnd && previousEnd.getTime() > paidAt.getTime() ? previousEnd : paidAt;
       patch.status = 'active';

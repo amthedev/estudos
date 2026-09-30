@@ -297,6 +297,8 @@ function planCard(plan) {
       .map(compactFeature)
     : [];
   const trial = Number(plan.trial_days) > 0 ? plan.trial_days : 0;
+  // mês de bônus do plano (o de 12 meses dá 1: 13 meses de acesso), do cadastro do plano
+  const bonus = Math.max(0, Number(plan.bonus_months) || 0);
   const slug = plan.slug || plan.id || '';
   const badge = String(plan.badge || '').trim() || (plan.highlight ? 'Melhor oferta' : '');
   // preço cheio riscado, só quando for maior que o preço cobrado
@@ -317,6 +319,7 @@ function planCard(plan) {
         <span class="period">por ${period}</span>
       </div>
       ${monthly ? html`<div class="plan-equiv">Equivale a ${fmtMoney(monthly)} por mês</div>` : ''}
+      ${bonus ? html`<div class="plan-equiv">Inclui ${bonus} ${bonus === 1 ? 'mês' : 'meses'} de bônus</div>` : ''}
       ${trial ? html`<div class="plan-equiv">24h grátis com cartão</div>` : ''}
       ${dailyCoins ? html`
         <div class="plan-coins-row">
@@ -547,7 +550,13 @@ function renderTopAdvice(grid, countdown, cards) {
 // Só entra a ação que custa alguma coisa.
 const COST_CHIPS = [
   { key: 'essay_correction', label: () => 'Correção de redação' },
-  { key: 'simulado_long', label: () => 'Simulado completo' },
+  {
+    key: 'simulado_long',
+    label: (costs) => {
+      const max = wholeCount(costs.simulado_short_max_questions);
+      return max > 0 ? `Simulado com mais de ${fmtNumber(max, { digits: 0 })} questões` : 'Simulado longo';
+    },
+  },
   {
     key: 'simulado_short',
     label: (costs) => {

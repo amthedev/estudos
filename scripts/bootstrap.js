@@ -28,6 +28,7 @@ const { runSeed } = require('../server/db/seed/run');
 const { getSetting, setSetting } = require('../server/services/settings');
 const { releaseInterruptedCorrections } = require('../server/services/essay');
 const { releaseInterruptedBuilds } = require('../server/services/simulados');
+const { faqEBonusOutubro2026 } = require('../server/db/seed/ajustes');
 
 function log(mensagem) {
   console.log(`[bootstrap] ${mensagem}`);
@@ -49,6 +50,17 @@ const AJUSTES_UNICOS = [
     flag: 'bootstrap_precos_2026_09_aplicado',
     descricao: 'tabela de preços 2026-09',
     run: () => runSeed({ quiet: true, forcePlans: true }),
+  },
+  {
+    // Outubro/2026: o plano de 12 meses passa a dar 1 mês de bônus (13 meses)
+    // e as perguntas frequentes antigas (plano de 15 meses, sem moedas) dão
+    // lugar às novas. Pode sair daqui depois de rodar em produção.
+    flag: 'bootstrap_faq_e_bonus_2026_10_aplicado',
+    descricao: 'perguntas frequentes novas e 12 meses com 1 mês de bônus',
+    run: async () => {
+      const resumo = await faqEBonusOutubro2026();
+      log(`  planos de 12 meses: ${resumo.planos}; perguntas: ${resumo.perguntasCriadas} criadas, ${resumo.perguntasAtualizadas} atualizadas, ${resumo.perguntasDesativadas} desativadas`);
+    },
   },
 ];
 

@@ -20,6 +20,9 @@
  *   - Nada de texto de venda, preço, percentual ou depoimento fixo em código: tudo vem do banco.
  *     Se uma tabela estiver vazia, a chave chega vazia e a página omite a seção.
  *   - Identificadores internos do provedor de pagamento NUNCA saem daqui.
+ *   - Os marcadores {{moedas}} (moedas por dia de cada nível) e {{custos}} (quanto custa cada ação
+ *     em moedas) funcionam do mesmo jeito, com os valores das configurações do painel: a resposta
+ *     da pergunta frequente nunca fica com número velho quando o custo ou as moedas mudam.
  *   - O marcador {{planos}} (usado nas respostas de perguntas frequentes e nos textos dos blocos)
  *     é substituído pela lista dos planos ativos formatada, uma linha por plano:
  *     "Mensal — R$ 44,90".
@@ -51,6 +54,17 @@ const dates = require('../utils/dates');
 
 const CACHE_TTL_MS = 60 * 1000;
 const PLANS_MARKER = /\{\{\s*planos\s*\}\}/gi;
+const MARKERS = { planos: PLANS_MARKER, moedas: /\{\{\s*moedas\s*\}\}/gi, custos: /\{\{\s*custos\s*\}\}/gi };
+
+/** Nomes das ações pagas em moedas, na ordem em que a página explica. */
+const COST_LABELS = [
+  ['essay_correction', 'Correção de redação'],
+  ['simulado_long', 'Simulado longo'],
+  ['simulado_short', 'Simulado curto'],
+  ['questions', 'Lote de questões da IA'],
+  ['essay_theme', 'Tema de redação da IA'],
+  ['practice', 'Prática da aula com IA'],
+];
 
 /** Colunas públicas dos planos — a lista é explícita justamente para não vazar ids do provedor. */
 const PUBLIC_PLAN_COLUMNS = [
@@ -133,9 +147,38 @@ function publicPlan(row, allowances = {}, costs = null) {
   };
 }
 
-/** Lista dos planos ativos em texto, uma linha por plano: "Mensal — R$ 44,90". */
+/**
+ * Lista dos planos ativos em texto, uma linha por plano: "Mensal — R$ 44,90".
+ * Plano com mês de bônus diz quanto tempo de acesso dá: "… (13 meses de acesso)".
+ */
 function plansAsText(plans) {
-  return plans.map((plan) => `${plan.name} — ${formatMoney(plan.price_cents, plan.currency)}`).join('\n');
+  return plans.map((plan) => {
+    const bonus = Number(plan.bonus_months) || 0;
+    const access = bonus > 0 ? ` (${(Number(plan.duration_months) || 1) + bonus} meses de acesso)` : '';
+    return `${plan.name} — ${formatMoney(plan.price_cents, plan.currency)}${access}`;
+  }).join('\n');
+}
+
+/** Moedas por dia de cada nível, uma linha por nível: "Pro — 60 moedas por dia". */
+function coinsAsText(allowances) {
+  return coins.TIERS
+    .filter((tier) => allowances && allowances[tier] && Number(allowances[tier].daily_coins) > 0)
+    .map((tier) => `${coins.TIER_LABELS[tier]} — ${allowances[tier].daily_coins} moedas por dia`)
+    .join('\n');
+}
+
+/** Custo de cada ação paga, uma linha por ação: "Correção de redação — 20 moedas". */
+function costsAsText(costs) {
+  if (!costs) return '';
+  return COST_LABELS
+    .filter(([key]) => Number(costs[key]) > 0)
+    .map(([key, label]) => {
+      const max = Number(costs.simulado_short_max_questions) > 0 ? costs.simulado_short_max_questions : null;
+      const detalhe = !max ? '' : key === 'simulado_short' ? ` (até ${max} questões)` : key === 'simulado_long' ? ` (mais de ${max} questões)` : '';
+      const n = Number(costs[key]);
+      return `${label}${detalhe} — ${n} ${n === 1 ? 'moeda' : 'moedas'}`;
+    })
+    .join('\n');
 }
 
 /**
@@ -150,6 +193,25 @@ function countdownFrom(exam, today = dates.todayISO()) {
   const daysLeft = dates.diffDays(today, exam.exam_date);
   if (!(daysLeft > 0)) return null;
   return { exam_short_name: exam.exam_short_name, exam_date: exam.exam_date, days_left: daysLeft };
+}
+
+/**
+ * Troca {{planos}}, {{moedas}} e {{custos}} pelos textos do momento. Marcador
+ * sem valor some, sem deixar linhas em branco sobrando.
+ */
+function applyMarkers(text, values = {}) {
+  if (typeof text !== 'string' || !text.includes('{{')) return text;
+  let result = text;
+  let emptied = false;
+  for (const [name, pattern] of Object.entries(MARKERS)) {
+    pattern.lastIndex = 0;
+    if (!pattern.test(result)) continue;
+    pattern.lastIndex = 0;
+    const value = values[name] || '';
+    if (!value) emptied = true;
+    result = result.replace(pattern, value);
+  }
+  return emptied ? result.replace(/\n{3,}/g, '\n\n').trim() : result;
 }
 
 /** Troca {{planos}} pela lista de preços do banco. Sem planos ativos, o marcador some. */
@@ -229,15 +291,16 @@ async function loadPayload() {
 
   const plans = planRows.map((row) => publicPlan(row, allowances, coinCosts));
   const plansText = plansAsText(plans);
+  const markers = { planos: plansText, moedas: coinsAsText(allowances), custos: costsAsText(coinCosts) };
 
   const blocks = {};
   for (const row of blockRows) {
     blocks[row.key] = {
       key: row.key,
       eyebrow: row.eyebrow,
-      title: applyPlansMarker(row.title, plansText),
-      subtitle: applyPlansMarker(row.subtitle, plansText),
-      body: applyPlansMarker(row.body, plansText),
+      title: applyMarkers(row.title, markers),
+      subtitle: applyMarkers(row.subtitle, markers),
+      body: applyMarkers(row.body, markers),
       items: Array.isArray(row.items) ? row.items : [],
       cta_label: row.cta_label,
       cta_href: row.cta_href,
@@ -254,7 +317,7 @@ async function loadPayload() {
     faqs: faqRows.map((row) => ({
       id: row.id,
       question: row.question,
-      answer: applyPlansMarker(row.answer, plansText),
+      answer: applyMarkers(row.answer, markers),
     })),
     platform_tour: tourRows,
     brand: {
@@ -300,5 +363,8 @@ module.exports = {
   formatMoney,
   plansAsText,
   applyPlansMarker,
+  applyMarkers,
+  coinsAsText,
+  costsAsText,
   countdownFrom,
 };

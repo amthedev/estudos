@@ -44,7 +44,8 @@ const DESCRICOES = {
 const DURACOES = {
   1: { sufixo: 'mensal', nome: 'Mensal', texto: 'com cobrança mensal. Cancele quando quiser.' },
   6: { sufixo: '6-meses', nome: '6 meses', texto: 'por seis meses, pagos de uma vez.' },
-  12: { sufixo: '12-meses', nome: '12 meses', texto: 'por doze meses, pagos de uma vez.' },
+  // 12 meses dá 1 mês de bônus na primeira compra: 13 meses de acesso (decisão do Guilherme, out/2026)
+  12: { sufixo: '12-meses', nome: '12 meses', texto: 'por doze meses, pagos de uma vez, com 1 mês de bônus (13 meses de acesso).', bonus: 1 },
 };
 
 /** Um plano da grade: nível × duração. */
@@ -60,7 +61,7 @@ function plano(tier, nomeDoNivel, duracao, { price_cents, compare_price_cents, s
     interval: 'month',
     interval_count: duracao,
     duration_months: duracao,
-    bonus_months: 0,
+    bonus_months: d.bonus || 0,
     // preço cheio, só para o "de" riscado na vitrine
     compare_price_cents,
     // as 24 horas grátis só existem no cartão dos planos de 6 e 12 meses
@@ -68,6 +69,7 @@ function plano(tier, nomeDoNivel, duracao, { price_cents, compare_price_cents, s
     highlight: destaque,
     badge: destaque ? 'Mais escolhido' : null,
     sort_order,
+    // sem número nos recursos: o bônus aparece no cartão a partir de bonus_months
     features: FEATURES[tier],
   };
 }

@@ -129,68 +129,117 @@ const blocks = [
   },
 ];
 
-// Perguntas frequentes enviadas pelo cliente. As três primeiras citam preço:
-// a resposta é montada com os planos do banco quando o texto tem {{planos}}.
+// Perguntas frequentes (versão de outubro/2026, com os planos por nível e as
+// moedas). Números nunca ficam no texto: {{planos}}, {{moedas}} e {{custos}}
+// são trocados pelos valores do painel na hora de montar a página
+// (server/routes/landing.js). Em produção, a troca das perguntas antigas por
+// estas roda uma vez no boot (server/db/seed/ajustes.js).
 const faqs = [
   {
     question: 'Quanto custa a Foco de Elite?',
-    answer: 'Você pode escolher entre os planos disponíveis:\n\n{{planos}}',
+    answer:
+      'São três níveis — Básico, Pro e Avançado — cada um nos planos mensal, de 6 meses e de 12 meses:\n\n{{planos}}\n\n' +
+      'Todos dão acesso às videoaulas, ao banco de questões, às provas anteriores e ao cronograma. O que muda entre os níveis são as moedas de cada dia, que pagam correções de redação, simulados e o que a IA cria, e a cota mensal do Tutor IA.',
     sort_order: 1,
   },
   {
-    question: 'Como funciona o plano de 15 meses?',
+    question: 'Qual a diferença entre Básico, Pro e Avançado?',
     answer:
-      'Você paga pelo equivalente ao plano anual de 12 meses e recebe mais 3 meses de acesso como bônus, totalizando 15 meses.',
+      'O conteúdo é o mesmo nos três. O que muda são as moedas que você recebe por dia — elas pagam as correções de redação, os simulados e o que a IA cria para você:\n\n{{moedas}}\n\n' +
+      'Quanto maior o plano, mais redações corrigidas e simulados você faz no mesmo dia. O Pro e o Avançado também têm uma cota maior de Tutor IA por mês.',
     sort_order: 2,
   },
   {
-    question: 'Qual plano oferece a maior vantagem?',
+    question: 'O que são as moedas?',
     answer:
-      'O plano de 15 meses possui o melhor custo-benefício, por ter o menor valor equivalente por mês entre as opções.',
+      'Todo dia você recebe as moedas do seu plano. Elas renovam à meia-noite (horário de Brasília) e não acumulam de um dia para o outro. As correções de redação, os simulados e o que a IA cria para você custam algumas moedas:\n\n{{custos}}\n\n' +
+      'Se a ação não chegar a sair — a correção falhou, a IA não conseguiu criar nada, o simulado não foi montado —, a moeda volta para você.',
     sort_order: 3,
   },
   {
-    question: 'A plataforma serve para ENEM e Barro Branco?',
-    answer: 'Sim. Você escolhe seu objetivo e encontra uma preparação direcionada para ele.',
+    question: 'O que posso usar sem gastar moedas?',
+    answer:
+      'Videoaulas, resumos, o banco de questões, as provas anteriores, o cronograma e o acompanhamento de desempenho são livres em todos os planos, sem limite.',
     sort_order: 4,
   },
   {
-    question: 'Posso estudar pelo celular?',
-    answer: 'Sim. A plataforma pode ser acessada pelo celular, tablet ou computador.',
+    question: 'Qual plano devo escolher?',
+    answer:
+      'Se você tem tempo até a prova e quer estudar com constância, o Básico cobre o essencial. Se quer treinar mais com redação e simulados toda semana, o Pro dá mais moedas por dia. ' +
+      'Com a prova se aproximando, o Avançado é o que permite mais treino por dia: mais redações corrigidas e mais simulados no mesmo dia.',
     sort_order: 5,
   },
   {
-    question: 'Tem videoaulas?',
-    answer: 'Sim. As aulas ficam organizadas por matéria e assunto.',
+    question: 'Como funciona o plano de 12 meses?',
+    answer:
+      'Você paga 12 meses e ganha 1 mês de bônus: são 13 meses de acesso, com o menor valor por mês do seu nível. ' +
+      'No cartão, depois desse período a assinatura renova por mais 12 meses; no Pix, o pagamento vale para os 13 meses e não renova sozinho.',
     sort_order: 6,
   },
   {
-    question: 'Tem questões depois das aulas?',
+    question: 'Posso testar antes de pagar?',
     answer:
-      'Sim. Ao terminar uma aula você pratica questões do assunto que acabou de estudar, com resposta correta, resolução e explicação.',
+      'Sim. Nos planos de 6 e de 12 meses pagos com cartão, você tem 24 horas grátis para conhecer a plataforma, e a primeira cobrança só acontece depois desse período. O teste vale uma vez por cadastro.',
     sort_order: 7,
   },
   {
-    question: 'Tem simulados?',
-    answer: 'Sim. Você pode realizar simulados e acompanhar seu desempenho por matéria e por assunto.',
+    question: 'Como posso pagar?',
+    answer:
+      'Com cartão de crédito ou Pix. No cartão, a assinatura renova sozinha ao fim de cada período. No Pix, você paga o período inteiro de uma vez e ele não renova automaticamente.',
     sort_order: 8,
   },
   {
-    question: 'Tem cronograma?',
+    question: 'Posso cancelar quando quiser?',
     answer:
-      'Sim. A plataforma monta seu cronograma conforme a prova escolhida, os dias e horas que você tem disponíveis e o seu desempenho.',
+      'Sim. Você cancela na própria plataforma, na tela de assinatura, e continua com acesso até o fim do período que já pagou.',
     sort_order: 9,
   },
   {
-    question: 'Tem redação para o ENEM?',
+    question: 'Posso mudar de plano depois?',
     answer:
-      'Sim. A preparação para o ENEM tem uma área dedicada à redação, com correção pelos critérios da prova.',
+      'Você pode subir de nível — do Básico para o Pro ou o Avançado, ou do Pro para o Avançado, na mesma duração — pagando só a diferença proporcional aos dias que faltam do seu período, com um valor mínimo por cobrança. Nos planos com teste grátis, o upgrade fica disponível depois das 24 horas de teste. ' +
+      'Para ir para um plano menor, cancele a renovação e escolha o novo plano quando o período atual terminar.',
     sort_order: 10,
   },
   {
-    question: 'Consigo acompanhar meu progresso?',
-    answer: 'Sim. Você acompanha atividades, matérias e desempenho dentro da plataforma.',
+    question: 'A plataforma serve para ENEM e Barro Branco?',
+    answer: 'Sim, e também para outros vestibulares. Você escolhe seu objetivo e recebe uma preparação direcionada para ele.',
     sort_order: 11,
+  },
+  {
+    question: 'Tem videoaulas e questões?',
+    answer:
+      'Sim. As aulas ficam organizadas por matéria e assunto, e depois de cada aula você pratica questões do assunto que acabou de estudar, com resposta, resolução e explicação.',
+    sort_order: 12,
+  },
+  {
+    question: 'Tem correção de redação?',
+    answer:
+      'Sim. Você escreve na plataforma e recebe a correção pelos critérios da redação da sua prova — no ENEM, as cinco competências —, com a nota de cada critério e o que melhorar. Cada correção usa moedas do seu plano.',
+    sort_order: 13,
+  },
+  {
+    question: 'Tem simulados?',
+    answer:
+      'Sim: simulado completo com as matérias da sua prova, simulados curtos e por matéria ou assunto, com o resultado por matéria. Cada simulado usa moedas do seu plano.',
+    sort_order: 14,
+  },
+  {
+    question: 'Tem Tutor IA?',
+    answer:
+      'Sim. O Tutor IA tira suas dúvidas a qualquer hora, inclusive sobre a aula ou a questão que você está fazendo. Ele não gasta moedas: cada plano tem uma cota própria por mês, que renova no dia 1º.',
+    sort_order: 15,
+  },
+  {
+    question: 'Tem cronograma e acompanhamento?',
+    answer:
+      'Sim. A plataforma monta seu cronograma conforme a prova, os dias e as horas que você tem, e mostra sua evolução por matéria, com o que precisa revisar.',
+    sort_order: 16,
+  },
+  {
+    question: 'Posso estudar pelo celular?',
+    answer: 'Sim. A plataforma funciona no celular, no tablet e no computador.',
+    sort_order: 17,
   },
 ];
 

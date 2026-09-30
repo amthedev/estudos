@@ -604,6 +604,45 @@ describe('Upgrade de plano pela diferença', () => {
       assert.equal(await totalDeAssinaturas(aluno.user.id), 1);
     });
 
+    it('Pix de 12 meses comprado de novo depois de vencido ganha o mês de bônus', async () => {
+      // Compra nova na linha reaproveitada é primeira cobrança daquela compra:
+      // o bônus vale mesmo quando o pagamento chega antes do CHECKOUT_PAID.
+      // Antes, a linha já tinha last_payment_at e o evento virava "renovação",
+      // sem o mês de bônus — o aluno pagava 13 meses e levava 12.
+      const doze = await ctx.db.one(
+        `INSERT INTO plans (slug, name, price_cents, currency, interval, interval_count, duration_months,
+                            bonus_months, trial_days, tier, active, sort_order)
+         VALUES ('pro-12-meses-pix', 'Pro 12 meses', 44990, 'brl', 'month', 12, 12, 1, 1, 'pro', true, 23)
+         RETURNING id`
+      );
+      await assinar(aluno.user.id, planos['basico-mensal'], {
+        providerSubscriptionId: null,
+        cancelAtPeriodEnd: true,
+        paymentMethod: 'pix',
+        lastPaymentId: 'pay_pix_antigo_12',
+        fim: new Date(Date.now() - 2 * DAY),
+      });
+
+      const hoje = dates.todayISO();
+      await fake.sendWebhook(
+        ctx,
+        fake.paymentEvent('PAYMENT_CONFIRMED', {
+          id: 'evt_pix_12_de_novo',
+          reference: `${aluno.user.id}:${doze.id}`,
+          subscription: null,
+          overrides: { id: 'pay_pix_12_novo', value: 449.9, paymentDate: hoje, confirmedDate: hoje },
+        })
+      );
+
+      const depois = await assinaturaDe(aluno.user.id);
+      assert.equal(depois.plan_id, doze.id);
+      // 12 meses pagos + 1 de bônus, a partir de hoje
+      assert.equal(
+        asaas.toISODate(depois.current_period_end),
+        asaas.toISODate(asaas.addMonths(new Date(`${hoje}T12:00:00.000Z`), 13))
+      );
+    });
+
     it('o estorno da diferença volta o nível e não corta o acesso', async () => {
       const antes = await assinar(aluno.user.id, planos['basico-mensal']);
       const aberto = await abrirUpgrade();
@@ -1321,7 +1360,8 @@ describe('Upgrade de plano pela diferença', () => {
         assert.equal(p.compare_price_cents, compare, p.slug);
         assert.equal(p.duration_months, duration, p.slug);
         assert.equal(p.interval_count, duration, p.slug);
-        assert.equal(p.bonus_months, 0, p.slug);
+        // 12 meses dá 1 mês de bônus (13 meses de acesso); os outros, nenhum
+        assert.equal(p.bonus_months, duration === 12 ? 1 : 0, p.slug);
         assert.equal(p.trial_days, trial, p.slug);
         assert.equal(p.highlight, destaque, p.slug);
         assert.equal(p.badge, destaque ? 'Mais escolhido' : null, p.slug);
