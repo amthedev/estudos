@@ -117,7 +117,10 @@ function initHeroMotion() {
 // e as palavras de quem escreveu. A faixa corre devagar e sem parar, passando
 // por todos, e pausa com o mouse ou o foco em cima; para quem prefere menos
 // movimento, fica parada e rola na mão.
-const SOCIAL_SECONDS_PER_CARD = 7;
+// 60 px por segundo é 1 px por quadro a 60 Hz — 2 px de tela num retina, 3 num
+// celular 3x. Com o passo inteiro o texto anda liso; a velocidade antiga (uns
+// 40 px/s) dava 1,33 px de tela por quadro, e o passo desigual tremia.
+const SOCIAL_SPEED_PX_PER_S = 60;
 
 function socialProofCard(item) {
   return html`
@@ -156,10 +159,47 @@ function initSocialProof(data) {
     </div>`);
   box.hidden = false;
 
-  // A faixa tem duas cópias lado a lado e anda metade do comprimento: quando
-  // a primeira some, a segunda está no mesmo lugar e o giro não dá salto.
+  if (!reduce) startSocialProofScroll(box);
+}
+
+// A faixa tem duas cópias lado a lado e anda exatamente a largura de uma
+// cópia: quando a primeira some, a segunda está no mesmo lugar e o giro não
+// dá salto. A animação roda no compositor (transform), fora da thread da
+// página, e a duração sai da largura medida, para a velocidade ser sempre a
+// mesma em qualquer tela; se a largura dos cartões muda (girar o celular,
+// redimensionar a janela), a faixa recalcula sem pular de posição.
+function startSocialProofScroll(box) {
   const track = qs('.social-proof-track', box);
-  if (track && !reduce) track.style.setProperty('--social-proof-duration', `${items.length * SOCIAL_SECONDS_PER_CARD}s`);
+  const group = qs('.social-proof-group', box);
+  const viewport = qs('.social-proof-viewport', box);
+  if (!track || !group || !viewport || typeof track.animate !== 'function') return;
+
+  let animation = null;
+  const setup = () => {
+    const distance = Math.round(group.getBoundingClientRect().width);
+    if (!distance) return;
+    const duration = (distance / SOCIAL_SPEED_PX_PER_S) * 1000;
+    const frames = [{ transform: 'translate3d(0, 0, 0)' }, { transform: `translate3d(${-distance}px, 0, 0)` }];
+    if (!animation) {
+      animation = track.animate(frames, { duration, iterations: Infinity, easing: 'linear' });
+      return;
+    }
+    const before = Number(animation.effect.getTiming().duration) || duration;
+    const progress = ((Number(animation.currentTime) || 0) % before) / before;
+    animation.effect.setKeyframes(frames);
+    animation.effect.updateTiming({ duration });
+    animation.currentTime = progress * duration;
+  };
+  setup();
+  if ('ResizeObserver' in window) new ResizeObserver(setup).observe(group);
+
+  // pausa para ler: mouse em cima ou foco dentro da faixa
+  const pause = () => animation && animation.pause();
+  const play = () => animation && animation.play();
+  viewport.addEventListener('mouseenter', pause);
+  viewport.addEventListener('mouseleave', play);
+  viewport.addEventListener('focusin', pause);
+  viewport.addEventListener('focusout', play);
 }
 
 function normalizePlans(data) {
@@ -262,9 +302,6 @@ function planCard(plan) {
   // preço cheio riscado, só quando for maior que o preço cobrado
   const compare = Number(plan.compare_price_cents) || 0;
   const showCompare = compare > Number(plan.price_cents);
-  // parcelamento: divide o preço pelo número de cobranças do ciclo (6x, 12x)
-  const parcelas = plan.interval === 'year' ? 12 * count : count;
-  const installment = parcelas > 1 ? Math.round(Number(plan.price_cents) / parcelas) : null;
   // "Escolher Avançado 12 meses": a duração fica num trecho à parte, que o
   // tablet em pé esconde para o botão caber numa linha (landing.css)
   const tier = tierLabel(plan.tier);
@@ -279,7 +316,6 @@ function planCard(plan) {
         <span class="amount">${fmtMoney(plan.price_cents)}</span>
         <span class="period">por ${period}</span>
       </div>
-      ${installment ? html`<div class="plan-installment">ou ${parcelas}x de ${fmtMoney(installment)}</div>` : ''}
       ${monthly ? html`<div class="plan-equiv">Equivale a ${fmtMoney(monthly)} por mês</div>` : ''}
       ${trial ? html`<div class="plan-equiv">24h grátis com cartão</div>` : ''}
       ${dailyCoins ? html`
@@ -862,7 +898,22 @@ function initContent(data) {
       if (field === 'title') applyTitle(el, block.title);
       else applyText(el, block[field]);
     });
+    qsa('[data-block-items="steps"]', section).forEach((list) => applySteps(list, block.items));
   });
+}
+
+// Passos do "Como funciona": vêm do painel (itens do bloco), com ícone, título
+// e texto. O título do bloco fala em "seis passos" e a página mostrava três
+// fixos no HTML; agora a lista é a do painel. Sem itens cadastrados, os passos
+// do HTML ficam como estão.
+function applySteps(list, items) {
+  const steps = (Array.isArray(items) ? items : []).filter((item) => item && String(item.title || '').trim());
+  if (!steps.length) return;
+  render(list, steps.map((step, index) => html`
+    <li class="reveal"><span>${String(index + 1).padStart(2, '0')}</span><div class="method-icon">${icon(step.icon || 'check')}</div><div><h3>${step.title}</h3>${step.text ? html`<p>${step.text}</p>` : ''}</div></li>`));
+  list.classList.toggle('method-flow-grid', steps.length > 3);
+  observeReveal(qsa('li', list));
+  window.dispatchEvent(new Event('landing:layout'));
 }
 
 // "Por dentro da plataforma": grade de telas reais. Clique abre a imagem grande
