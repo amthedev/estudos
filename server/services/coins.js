@@ -100,6 +100,24 @@ async function readCosts() {
 }
 
 /**
+ * Quanto as moedas de um dia rendem em cada ação: moedas ÷ custo, arredondado
+ * para baixo. É o que traduz "60 moedas por dia" em algo que quem vai comprar
+ * entende ("até 3 redações corrigidas por dia"). Ação de custo 0 é grátis e
+ * volta null (não limitada por moedas).
+ */
+function dailyCapacity(dailyCoinsValue, costs) {
+  if (dailyCoinsValue === null || dailyCoinsValue === undefined || !costs) return null;
+  const vezes = (cost) => (Number(cost) > 0 ? Math.floor(Number(dailyCoinsValue) / Number(cost)) : null);
+  return {
+    essay_corrections: vezes(costs.essay_correction),
+    simulados_long: vezes(costs.simulado_long),
+    simulados_short: vezes(costs.simulado_short),
+    practices: vezes(costs.practice),
+    question_batches: vezes(costs.questions),
+  };
+}
+
+/**
  * Custo de um simulado pelo número de questões que ele realmente tem: até o
  * limite do curto, preço de curto; acima, preço de longo.
  */
@@ -399,6 +417,7 @@ module.exports = {
   tutorMonthlyTokens,
   tierAllowances,
   readCosts,
+  dailyCapacity,
   simuladoCost,
   resetsAt,
 };

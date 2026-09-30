@@ -83,7 +83,7 @@ const toInt = (value) => (value === null || value === undefined ? null : Number(
  * preço de comparação foi cadastrado no painel. As moedas por dia e a cota do
  * Tutor vêm das configurações do nível; plano sem nível (antigo) fica sem elas.
  */
-function decoratePlan(plan, allowances = {}) {
+function decoratePlan(plan, allowances = {}, costs = null) {
   const duration = Math.max(1, Number(plan.duration_months) || 1);
   const bonus = Math.max(0, Number(plan.bonus_months) || 0);
   const accessMonths = duration + bonus;
@@ -102,6 +102,7 @@ function decoratePlan(plan, allowances = {}) {
     monthly_equivalent_cents: accessMonths > 1 ? Math.round(price / accessMonths) : null,
     savings_cents: compare !== null && compare > price ? compare - price : null,
     daily_coins: allowance ? allowance.daily_coins : null,
+    daily_capacity: allowance ? coins.dailyCapacity(allowance.daily_coins, costs) : null,
     tutor_monthly_tokens: allowance ? allowance.tutor_monthly_tokens : null,
   };
 }
@@ -109,7 +110,7 @@ function decoratePlan(plan, allowances = {}) {
 router.get(
   '/plans',
   wrap(async (req, res) => {
-    const [plans, allowances] = await Promise.all([
+    const [plans, allowances, costs] = await Promise.all([
       db.many(
         `SELECT ${PUBLIC_PLAN_COLUMNS}
            FROM plans
@@ -117,9 +118,10 @@ router.get(
           ORDER BY sort_order ASC, name ASC`
       ),
       coins.tierAllowances(),
+      coins.readCosts(),
     ]);
     res.set('Cache-Control', 'no-store');
-    res.json(plans.map((plan) => decoratePlan(plan, allowances)));
+    res.json(plans.map((plan) => decoratePlan(plan, allowances, costs)));
   })
 );
 

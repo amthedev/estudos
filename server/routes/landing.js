@@ -12,6 +12,7 @@
  *       faqs: [{ id, question, answer }],              // só perguntas ativas
  *       brand: { name, support_email },
  *       countdown: { exam_short_name, exam_date, days_left } | null,  // ENEM com data futura
+ *       coin_costs: { essay_correction, simulado_short, simulado_long, simulado_short_max_questions, practice, questions, essay_theme },
  *       activity: [{ first_name, exam_short_name, kind, tier, tier_label, at }]  // avisos reais (services/activity.js)
  *     }
  *
@@ -23,7 +24,10 @@
  *     é substituído pela lista dos planos ativos formatada, uma linha por plano:
  *     "Mensal — R$ 44,90".
  *   - Cada plano já chega com as contas prontas (monthly_equivalent_cents, savings_cents) para
- *     que a página não precise inventar número nenhum.
+ *     que a página não precise inventar número nenhum. Os planos com nível trazem também
+ *     daily_capacity: quanto as moedas do dia rendem em cada ação (redações corrigidas,
+ *     simulados longos e curtos, práticas e questões), pela conta moedas ÷ custo das
+ *     configurações. É o que traduz "60 moedas" em algo que o visitante entende.
  *   - A contagem regressiva usa a data da prova do ENEM cadastrada no painel (Provas → editar,
  *     "Data da próxima prova"). Sem data, ou com a data já passada, countdown chega nulo e a
  *     faixa não aparece.
@@ -93,7 +97,7 @@ function accessMonths(plan) {
  * `allowances` traz as moedas por dia e a cota do Tutor de cada nível, lidas
  * das configurações; plano sem nível (antigo) chega com as duas nulas.
  */
-function publicPlan(row, allowances = {}) {
+function publicPlan(row, allowances = {}, costs = null) {
   const price = Number(row.price_cents) || 0;
   const months = accessMonths(row);
   const compare = row.compare_price_cents === null || row.compare_price_cents === undefined
@@ -124,6 +128,7 @@ function publicPlan(row, allowances = {}) {
     savings_cents: savings,
     tier,
     daily_coins: allowance ? allowance.daily_coins : null,
+    daily_capacity: allowance ? coins.dailyCapacity(allowance.daily_coins, costs) : null,
     tutor_monthly_tokens: allowance ? allowance.tutor_monthly_tokens : null,
   };
 }
@@ -163,7 +168,7 @@ function applyPlansMarker(text, plansText) {
 // leitura do banco
 // ---------------------------------------------------------------------------
 async function loadPayload() {
-  const [blockRows, examRows, planRows, testimonialRows, faqRows, tourRows, brand, allowances, enem, activityItems] = await Promise.all([
+  const [blockRows, examRows, planRows, testimonialRows, faqRows, tourRows, brand, allowances, coinCosts, enem, activityItems] = await Promise.all([
     db.many(
       `SELECT key, eyebrow, title, subtitle, body, items, cta_label, cta_href, image_url, sort_order
          FROM landing_blocks
@@ -204,6 +209,7 @@ async function loadPayload() {
     ),
     settings.getMany(['brand_name', 'support_email']),
     coins.tierAllowances(),
+    coins.readCosts(),
     // A prova do ENEM é achada pelo slug; o nome curto é o plano B para uma
     // base em que o slug foi trocado no painel. Não depende de "destaque":
     // a contagem vale mesmo que o ENEM saia da vitrine de provas.
@@ -221,7 +227,7 @@ async function loadPayload() {
     }),
   ]);
 
-  const plans = planRows.map((row) => publicPlan(row, allowances));
+  const plans = planRows.map((row) => publicPlan(row, allowances, coinCosts));
   const plansText = plansAsText(plans);
 
   const blocks = {};
@@ -258,6 +264,7 @@ async function loadPayload() {
     // guardado cru (só a data); a conta dos dias é feita na resposta
     countdown: enem ? { exam_short_name: enem.exam_short_name, exam_date: enem.exam_date } : null,
     activity: activityItems,
+    coin_costs: coinCosts,
   };
 }
 
