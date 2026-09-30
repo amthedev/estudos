@@ -5,16 +5,22 @@
  *
  *   const ai = require('../services/ai');
  *   ai.isConfigured()                       → true quando há OPENROUTER_API_KEY (ou cliente de simulação)
- *   await ai.assertAvailable(userId)        → lança 503 ai_unavailable se não configurada ou se o aluno esgotou a cota do mês
+ *   await ai.assertAvailable(userId, feature) → 503 ai_unavailable se não configurada ou se o aluno esgotou a cota do mês;
+ *                                             402 tutor_quota_reached se o aluno com nível esgotou a cota do Tutor
  *   await ai.chat({ messages, model, stream, temperature, maxTokens, userId, feature, onDelta, signal })
  *       → { content, usage: { prompt_tokens, completion_tokens, total_tokens }, model, latency_ms, aborted }
  *   await ai.json({ messages, retryMaxTokens, ... })
  *       → idem + `data` (resposta interpretada como JSON; repete uma vez se vier cortada)
- *   await ai.status(userId)                 → { configured, mock, model, essay_model, month_tokens, month_requests, limit, limit_reached, last_error }
+ *   await ai.status(userId)                 → { configured, mock, model, essay_model, month_tokens, month_requests, limit,
+ *                                               limit_reached, tier, tutor_quota_reached, last_error }
  *
- * Toda chamada registra uma linha em ai_usage (tokens, modelo, latência, status) e respeita a cota mensal
- * de tokens POR ALUNO da configuração `ai_student_monthly_token_limit` (0 = sem limite). O aluno que passa
- * da cota recebe AppError 503 ai_unavailable 'Limite mensal de uso da IA atingido'; os outros seguem normais.
+ * Toda chamada registra uma linha em ai_usage (tokens, modelo, latência, status) e respeita uma cota mensal
+ * de tokens POR ALUNO, que depende do plano:
+ *   - aluno com nível (Básico, Pro, Avançado): as ações são pagas em moedas (services/coins), então a cota de
+ *     tokens vale só para o Tutor, que não gasta moeda — `tutor_tokens_<nível>`, contando só a feature 'tutor'.
+ *     Esgotada, o Tutor responde 402 tutor_quota_reached; o resto segue.
+ *   - aluno sem moedas contadas (plano antigo, cortesia, acesso aberto): `ai_student_monthly_token_limit`
+ *     (0 = sem limite) somando todas as features; quem passa recebe 503 'Limite mensal de uso da IA atingido'.
  * Equipe e chamadas internas (userId nulo) não têm cota.
  *
  * Simulação (OPENROUTER_MOCK=1, ou NODE_ENV=test sem chave): um cliente falso e determinístico responde em
@@ -25,7 +31,7 @@ const config = require('../config');
 const db = require('../db/pool');
 const { getSetting } = require('./settings');
 const { AppError } = require('../middleware/errors');
-const { TIMEZONE } = require('../utils/dates');
+const { TIMEZONE, toISODate, startOfMonth, midnightInSaoPaulo } = require('../utils/dates');
 
 /** Situações que o registro de uso aceita (ver migration 212). */
 const STATUS_DE_USO = new Set(['ok', 'error', 'aborted']);
@@ -36,6 +42,8 @@ const UPSTREAM_RETRIES = 2;
 const UPSTREAM_RETRY_MS = process.env.NODE_ENV === 'test' ? 5 : 800;
 const UNAVAILABLE_MESSAGE = 'O Tutor IA ainda não foi ativado pela equipe.';
 const LIMIT_MESSAGE = 'Limite mensal de uso da IA atingido';
+const TUTOR_QUOTA_MESSAGE =
+  'Você usou toda a cota do Tutor IA deste mês no seu plano. Ela renova no dia 1º — ou faça upgrade para ter mais.';
 
 let realClient = null;
 let mockClient = null;
@@ -124,23 +132,107 @@ async function userMonthUsage(userId) {
 }
 
 /**
- * O aluno já passou da cota do mês? Sem aluno (chamada interna) ou com
- * usuário da equipe, nunca: ler prova e montar banco de questões não podem
- * parar por causa de cota de aluno.
+ * Tokens do Tutor gastos pelo aluno no mês civil de São Paulo. O início do mês
+ * sai do relógio da aplicação, como o dia das moedas, e não do now() do banco.
  */
-async function studentLimitReached(userId) {
-  if (!userId) return false;
+async function userMonthTutorUsage(userId, now = new Date()) {
+  const monthStart = midnightInSaoPaulo(startOfMonth(toISODate(now)));
+  const row = await db.one(
+    `SELECT coalesce(sum(total_tokens), 0)::bigint AS tokens
+       FROM ai_usage
+      WHERE user_id = $1 AND feature = 'tutor' AND created_at >= $2`,
+    [userId, monthStart]
+  );
+  return Number(row ? row.tokens : 0) || 0;
+}
+
+/**
+ * Qual cota vale para este usuário.
+ *
+ *   'none'   equipe ou chamada interna (userId nulo): nunca barra. Ler prova e
+ *            montar banco de questões não podem parar por causa de cota de aluno.
+ *   'tier'   aluno com nível de plano: quem limita as ações é a moeda; a cota
+ *            de tokens só existe para o Tutor, que não gasta moeda.
+ *   'global' aluno sem moedas contadas (plano antigo, cortesia, acesso aberto):
+ *            a cota mensal de ai_student_monthly_token_limit somando tudo.
+ *
+ * O require é preguiçoso porque coins depende de access e de settings, e
+ * carregar tudo isso no topo do módulo de IA é pedir um ciclo de require.
+ */
+async function quotaFor(userId) {
+  if (!userId) return { kind: 'none', tier: null };
+  const user = await db.one('SELECT id, role FROM users WHERE id = $1', [userId]);
+  if (!user || user.role === 'admin') return { kind: 'none', tier: null };
+  const { computeAccess } = require('../middleware/access');
+  const coins = require('./coins');
+  const access = await computeAccess(userId);
+  const resolved = await coins.resolveTier({ user, access });
+  if (!resolved.unlimited && resolved.tier) return { kind: 'tier', tier: resolved.tier };
+  return { kind: 'global', tier: null };
+}
+
+/** O aluno com nível esgotou a cota de tokens do Tutor deste mês? */
+async function tutorQuotaReached(userId, tier) {
+  const coins = require('./coins');
+  const quota = await coins.tutorMonthlyTokens(tier);
+  return (await userMonthTutorUsage(userId)) >= quota;
+}
+
+/** O aluno sem nível passou da cota mensal que soma todas as features? */
+async function globalLimitReached(userId) {
   const limit = await studentMonthlyLimit();
   if (!limit) return false;
-  const user = await db.one('SELECT role FROM users WHERE id = $1', [userId]);
-  if (!user || user.role === 'admin') return false;
   return (await userMonthUsage(userId)) >= limit;
 }
 
-/** Lança 503 quando a IA não está configurada ou o aluno atingiu a cota do mês. */
-async function assertAvailable(userId = null) {
+/**
+ * Situação das cotas do aluno: nível, se a cota do Tutor do nível acabou e se
+ * qualquer um dos limites foi atingido.
+ */
+async function quotaStatus(userId) {
+  const quota = await quotaFor(userId);
+  if (quota.kind === 'tier') {
+    const reached = await tutorQuotaReached(userId, quota.tier);
+    return { tier: quota.tier, tutor_quota_reached: reached, limit_reached: reached };
+  }
+  if (quota.kind === 'global') {
+    return { tier: null, tutor_quota_reached: false, limit_reached: await globalLimitReached(userId) };
+  }
+  return { tier: null, tutor_quota_reached: false, limit_reached: false };
+}
+
+/**
+ * O aluno já passou da cota mensal que soma todas as features? Só vale para
+ * quem não tem as moedas contadas; o aluno com nível responde pelo Tutor em
+ * quotaStatus.
+ */
+async function studentLimitReached(userId) {
+  if (!userId) return false;
+  if (!(await studentMonthlyLimit())) return false;
+  const quota = await quotaFor(userId);
+  return quota.kind === 'global' && (await globalLimitReached(userId));
+}
+
+/**
+ * Lança 503 quando a IA não está configurada ou o aluno sem nível atingiu a
+ * cota do mês; lança 402 tutor_quota_reached quando o aluno com nível esgotou
+ * a cota do Tutor. Para o aluno com nível, as outras features não passam por
+ * cota de tokens: a moeda já cobrou a ação.
+ */
+async function assertAvailable(userId = null, feature = null) {
   if (!isConfigured()) throw new AppError(503, 'ai_unavailable', UNAVAILABLE_MESSAGE);
-  if (await studentLimitReached(userId)) throw new AppError(503, 'ai_unavailable', LIMIT_MESSAGE);
+  if (!userId) return;
+  // Sem cota global e fora do Tutor, não há o que conferir: poupa as consultas
+  // de acesso em toda chamada de IA.
+  if (feature !== 'tutor' && !(await studentMonthlyLimit())) return;
+  const quota = await quotaFor(userId);
+  if (quota.kind === 'global') {
+    if (await globalLimitReached(userId)) throw new AppError(503, 'ai_unavailable', LIMIT_MESSAGE);
+  } else if (quota.kind === 'tier' && feature === 'tutor') {
+    if (await tutorQuotaReached(userId, quota.tier)) {
+      throw new AppError(402, 'tutor_quota_reached', TUTOR_QUOTA_MESSAGE);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +360,7 @@ async function chat({
 } = {}) {
   if (!Array.isArray(messages) || messages.length === 0) throw new Error('ai.chat: "messages" é obrigatório.');
 
-  await assertAvailable(userId);
+  await assertAvailable(userId, feature);
   const client = getClient();
   const resolvedModel = model || (await getSetting('openrouter_model')) || config.openrouter.model;
   const started = Date.now();
@@ -472,15 +564,18 @@ async function json(options = {}) {
 
 /**
  * Situação da integração para o painel e para o front (sem expor segredos).
- * Com `userId`, `limit_reached` diz se AQUELE aluno esgotou a cota; sem, é
- * sempre falso (não existe mais teto que desligue a plataforma inteira).
- * `limit` é a cota mensal por aluno.
+ * Com `userId`, `limit_reached` diz se AQUELE aluno esgotou alguma cota (a
+ * mensal de quem não tem nível ou a do Tutor de quem tem), e
+ * `tutor_quota_reached` separa o segundo caso, que pede "faça upgrade" em vez
+ * de "a IA está indisponível". Sem `userId`, tudo falso (não existe mais teto
+ * que desligue a plataforma inteira). `limit` é a cota mensal de quem não tem
+ * nível.
  */
 async function status(userId = null) {
-  const [usage, limit, reached, model, essayModel, lastError] = await Promise.all([
+  const [usage, limit, quota, model, essayModel, lastError] = await Promise.all([
     monthUsage().catch(() => ({ tokens: 0, requests: 0 })),
     studentMonthlyLimit(),
-    studentLimitReached(userId).catch(() => false),
+    quotaStatus(userId).catch(() => ({ tier: null, tutor_quota_reached: false, limit_reached: false })),
     getSetting('openrouter_model'),
     getSetting('openrouter_essay_model'),
     db
@@ -496,7 +591,9 @@ async function status(userId = null) {
     month_tokens: usage.tokens,
     month_requests: usage.requests,
     limit,
-    limit_reached: reached,
+    limit_reached: quota.limit_reached,
+    tier: quota.tier,
+    tutor_quota_reached: quota.tutor_quota_reached,
     last_error: lastError ? { message: lastError.error_message, at: lastError.created_at } : null,
   };
 }
@@ -806,8 +903,11 @@ module.exports = {
   studentMonthlyLimit,
   studentLimitReached,
   userMonthUsage,
+  userMonthTutorUsage,
+  quotaStatus,
   parseJsonResponse,
   setClientForTests,
   UNAVAILABLE_MESSAGE,
   LIMIT_MESSAGE,
+  TUTOR_QUOTA_MESSAGE,
 };

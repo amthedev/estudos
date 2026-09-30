@@ -6,7 +6,7 @@
 // diária e progresso por matéria).
 //
 // Escrita: PUT /api/admin/students/:id e as ações POST block | unblock |
-// grant-access | reset-password, além de DELETE — todas com confirmação.
+// grant-access | reset-password | coins, além de DELETE — todas com confirmação.
 // =====================================================================
 import { api } from '../../core/api.js';
 import {
@@ -45,6 +45,25 @@ const ACCESS_REASONS = {
   canceled: 'Assinatura cancelada',
   unpaid: 'Assinatura não paga',
   paused: 'Assinatura pausada',
+};
+
+// Por que o aluno gasta (ou não) moedas hoje — espelha coins.resolveTier.
+const COIN_REASONS = {
+  admin: 'Equipe — não gasta moedas',
+  legacy: 'Plano antigo — acesso completo, não gasta moedas',
+  plan_without_tier: 'Básico (plano antigo com o período de acesso completo já encerrado)',
+  override: 'Liberação manual — acesso completo, não gasta moedas',
+  open: 'Plataforma aberta — não gasta moedas',
+  none: 'Sem nível (sem assinatura com nível)',
+};
+
+const COIN_ACTIONS = {
+  essay_correction: 'Correção de redação',
+  essay_theme: 'Tema de redação pela IA',
+  simulado: 'Simulado',
+  practice: 'Pratique da aula',
+  questions: 'Questões elaboradas pela IA',
+  admin_grant: 'Moedas dadas pelo suporte',
 };
 
 const essayStatusLabel = (status) => (
@@ -130,6 +149,53 @@ function grantAccess() {
         },
       },
     ].filter(Boolean),
+  });
+}
+
+function grantCoins() {
+  const { user } = state.data;
+  const wallet = state.data.coins && state.data.coins.wallet;
+  const dialog = modal({
+    title: 'Dar moedas hoje',
+    subtitle: user.name,
+    size: 'sm',
+    body: html`
+      <p class="text-2 mb-4">
+        As moedas somam ao saldo de hoje e, como as do nível, não passam para amanhã.
+        ${wallet && wallet.unlimited ? html`<strong>Hoje este aluno não gasta moedas</strong>, então elas só contam se isso mudar até a meia-noite.` : ''}
+      </p>
+      <div class="field">
+        <label class="label" for="astu-coins-amount">Quantidade</label>
+        <input class="input" type="number" id="astu-coins-amount" min="1" max="500" step="1" value="10" inputmode="numeric">
+        <p class="hint">De 1 a 500 moedas.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="astu-coins-note">Motivo</label>
+        <input class="input" type="text" id="astu-coins-note" maxlength="200" placeholder="Ex.: correção com problema no dia 12">
+        <p class="hint">Fica no histórico de moedas do aluno e na auditoria.</p>
+      </div>`,
+    actions: [
+      { label: 'Cancelar', variant: 'ghost' },
+      {
+        label: 'Dar moedas',
+        variant: 'primary',
+        icon: 'coins',
+        onClick: async () => {
+          const amount = Number(qs('#astu-coins-amount', dialog.body)?.value);
+          const note = String(qs('#astu-coins-note', dialog.body)?.value || '').trim();
+          if (!Number.isInteger(amount) || amount < 1 || amount > 500) {
+            toast('Informe uma quantidade inteira entre 1 e 500.', { type: 'warning' });
+            return false;
+          }
+          if (note.length < 3) {
+            toast('Escreva o motivo em poucas palavras.', { type: 'warning' });
+            return false;
+          }
+          await runAction(api.post(`/api/admin/students/${state.id}/coins`, { amount, note }), 'Moedas concedidas.');
+          return true;
+        },
+      },
+    ],
   });
 }
 
@@ -339,6 +405,87 @@ function accessCard() {
     </article>`;
 }
 
+function coinEntryLabel(entry) {
+  return COIN_ACTIONS[entry.action] || entry.action;
+}
+
+function coinEntryStatus(entry) {
+  if (entry.kind === 'grant') {
+    const who = entry.created_by_name ? `por ${entry.created_by_name}` : '';
+    return html`<span class="text-xs text-2">${[who, entry.note].filter(Boolean).join(' — ') || '—'}</span>`;
+  }
+  if (entry.refunded_at) {
+    return html`<span title="${entry.refund_reason || ''}">${badge('Estornada', 'orange')}${entry.refund_reason ? html` <span class="text-xs text-3">${entry.refund_reason}</span>` : ''}</span>`;
+  }
+  return badge('Cobrada', 'gray');
+}
+
+function coinsCard() {
+  const info = state.data.coins;
+  const wallet = info && info.wallet;
+  const ledger = (info && info.ledger) || [];
+  const subscription = state.data.subscription;
+
+  let level = '—';
+  let today = '—';
+  if (wallet) {
+    if (wallet.reason === 'plan') level = `${wallet.tier_label || wallet.tier}`;
+    else level = COIN_REASONS[wallet.reason] || wallet.reason;
+    if (wallet.reason === 'legacy' && subscription && subscription.legacy_until) {
+      level = `${level} até ${fmtDate(subscription.legacy_until)}`;
+    }
+    if (wallet.unlimited) {
+      today = 'Não gasta moedas';
+    } else {
+      const total = (Number(wallet.daily) || 0) + (Number(wallet.granted) || 0);
+      today = `${num(wallet.balance)} de ${num(total)}`;
+    }
+  }
+
+  const rows = wallet
+    ? [
+      { label: 'Nível', value: level },
+      { label: 'Moedas de hoje', value: today },
+      ...(wallet.unlimited ? [] : [{ label: 'Do nível por dia', value: num(wallet.daily) }]),
+      { label: 'Gastas hoje', value: num(wallet.spent) },
+      { label: 'Dadas hoje pelo suporte', value: num(wallet.granted) },
+      { label: 'Renovam', value: fmtDateTime(wallet.resets_at) },
+    ]
+    : [];
+
+  return html`
+    <section class="card astu-coins">
+      <div class="card-header">
+        <h2 class="card-title">${icon('coins')}<span>Moedas</span></h2>
+        <button type="button" class="btn btn-secondary btn-sm" data-action="coins-grant">${icon('gift')}<span>Dar moedas hoje</span></button>
+      </div>
+      <div class="card-body astu-coins-body">
+        ${wallet
+          ? html`<dl class="kv">${rows.map((row) => html`<dt>${row.label}</dt><dd>${row.value}</dd>`)}</dl>`
+          : html`<p class="text-2">Não foi possível ler as moedas deste aluno agora.</p>`}
+        <div class="astu-coins-ledger">
+          <h3 class="astu-coins-title">Últimos lançamentos</h3>
+          ${ledger.length
+            ? html`<div class="table-wrap">
+                <table class="table table-sm">
+                  <thead><tr><th>Dia</th><th>Lançamento</th><th class="text-right">Moedas</th><th>Detalhe</th></tr></thead>
+                  <tbody>
+                    ${ledger.map((entry) => html`
+                      <tr>
+                        <td class="text-xs" title="${fmtDateTime(entry.created_at)}">${fmtDate(entry.day)}</td>
+                        <td>${coinEntryLabel(entry)}</td>
+                        <td class="text-right astu-coins-amount ${entry.kind === 'grant' ? 'is-grant' : ''} ${entry.refunded_at ? 'is-refunded' : ''}">${entry.kind === 'grant' ? '+' : '−'}${num(entry.amount)}</td>
+                        <td>${coinEntryStatus(entry)}</td>
+                      </tr>`)}
+                  </tbody>
+                </table>
+              </div>`
+            : emptyState({ icon: 'coins', title: 'Nenhum lançamento', text: 'As cobranças, os estornos e as moedas dadas pelo suporte aparecem aqui.', size: 'sm' })}
+        </div>
+      </div>
+    </section>`;
+}
+
 function activityCard() {
   return html`
     <article class="card astu-chart-card">
@@ -484,6 +631,7 @@ function paintHeader() {
   if (more) {
     state.menu = dropdown(more, [
       { label: 'Liberar acesso', icon: 'unlock', onClick: () => grantAccess() },
+      { label: 'Dar moedas hoje', icon: 'coins', onClick: () => grantCoins() },
       { label: 'Redefinir senha', icon: 'key', onClick: () => resetPassword() },
       { divider: true },
       { label: 'Excluir aluno', icon: 'trash-2', danger: true, onClick: () => removeStudent() },
@@ -500,6 +648,7 @@ function paint() {
       ${activityCard()}
       ${accessCard()}
     </div>
+    ${coinsCard()}
     <section class="card astu-form-card">
       <div class="card-header">
         <h2 class="card-title">${icon('user')}<span>Dados e preferências de estudo</span></h2>
@@ -563,6 +712,7 @@ export default async function renderStudent(ctx) {
     const action = target.dataset.action;
     if (action === 'block' || action === 'unblock') toggleBlock();
     else if (action === 'grant') grantAccess();
+    else if (action === 'coins-grant') grantCoins();
     else if (action === 'reset-password') resetPassword();
     else if (action === 'retry') load();
   });

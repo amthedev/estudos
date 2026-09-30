@@ -25,6 +25,7 @@ const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const { uniqueSlug } = require('../../utils/slug');
 const { isISODate } = require('../../utils/dates');
+const { invalidateLandingCache } = require('../landing');
 
 const TRACKS = ['enem', 'barro_branco', 'vestibular'];
 
@@ -236,6 +237,8 @@ router.post(
       return row.id;
     });
 
+    // a página inicial lista as provas e conta os dias até o ENEM
+    invalidateLandingCache();
     const exam = await db.one(`${SELECT_EXAM} WHERE e.id = $1`, [id]);
     exam.subjects = [];
     await audit(req, 'exam.create', 'exam', id, { name: body.name, track: body.track });
@@ -261,6 +264,9 @@ router.put(
     if (sets.length) {
       params.push(id);
       await db.query(`UPDATE exams SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+      // A contagem regressiva da página inicial sai da data do ENEM editada
+      // aqui; sem isto, a data nova só apareceria quando o cache vencesse.
+      invalidateLandingCache();
     }
     const exam = await db.one(`${SELECT_EXAM} WHERE e.id = $1`, [id]);
     exam.subjects = await loadExamSubjects(id);
@@ -288,6 +294,7 @@ router.delete(
       throw new AppError(409, 'conflict', `Esta prova tem ${parts.join(' e ')} vinculados. Desative-a em vez de excluir.`, counts);
     }
     await db.query('DELETE FROM exams WHERE id = $1', [id]);
+    invalidateLandingCache();
     await audit(req, 'exam.delete', 'exam', id, { name: exam.name });
     res.json({ ok: true });
   })

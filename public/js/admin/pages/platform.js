@@ -96,6 +96,31 @@ function healthSection() {
 // ---------------------------------------------------------------------
 // Consumo de IA
 // ---------------------------------------------------------------------
+const TIER_NAMES = { basico: 'Básico', pro: 'Pro', avancado: 'Avançado' };
+
+/**
+ * Não existe um limite único por aluno. Quem assina um nível paga as ações com
+ * IA em moedas e só o Tutor tem cota de tokens, que muda com o nível; quem tem
+ * acesso completo (plano antigo, cortesia) tem a cota geral, somando tudo.
+ */
+function aiQuotasNote(usage) {
+  const tutor = usage.tutor_limits || {};
+  const limit = Number(usage.limit) || 0;
+  const tiers = Object.keys(TIER_NAMES).filter((tier) => tutor[tier] !== undefined && tutor[tier] !== null);
+  return html`
+    <p class="aplat-ai-quotas text-xs text-3">
+      ${icon('info', { size: 14 })}
+      <span>
+        ${tiers.length
+          ? html`Tutor IA por mês, por nível: ${tiers.map((tier, index) => html`${index ? ' · ' : ''}${TIER_NAMES[tier]} ${Number(tutor[tier]) > 0 ? `${fmtCompact(tutor[tier])} tokens` : 'sem Tutor'}`)}.
+            As outras ações com IA desses alunos são pagas com moedas.`
+          : ''}
+        Acesso completo (planos antigos e cortesias): ${limit > 0 ? `${fmtCompact(limit)} tokens por mês, somando todo o uso` : 'sem cota'}.
+        <a href="/admin/configuracoes">Ajustar em Configurações</a>
+      </span>
+    </p>`;
+}
+
 function aiSection() {
   const usage = state.usage;
   if (!usage) {
@@ -106,17 +131,17 @@ function aiSection() {
       </section>`;
   }
   const totals = usage.totals || {};
-  const limit = Number(usage.limit) || 0;
   const monthTokens = Number(usage.month_tokens) || 0;
   const features = usage.by_feature || [];
   const users = usage.top_users || [];
   return html`
     <section class="grid grid-4 aplat-ai-stats">
       ${statCard({ label: 'Tokens em 30 dias', value: fmtCompact(totals.tokens), hint: `${num(totals.requests)} chamadas`, icon: 'sparkles' })}
-      ${statCard({ label: 'Tokens no mês', value: fmtCompact(monthTokens), hint: limit > 0 ? `cota de ${fmtCompact(limit)} por aluno` : 'sem cota por aluno', icon: 'gauge' })}
+      ${statCard({ label: 'Tokens no mês', value: fmtCompact(monthTokens), hint: 'cotas por aluno, conforme o nível', icon: 'gauge' })}
       ${statCard({ label: 'Erros de IA', value: num(totals.errors), icon: 'triangle-alert', tone: Number(totals.errors) ? 'orange' : 'gray' })}
       ${statCard({ label: 'Latência média', value: `${num(totals.avg_latency_ms)} ms`, icon: 'timer' })}
     </section>
+    ${aiQuotasNote(usage)}
     <section class="card">
       <div class="card-header">
         <h2 class="card-title">${icon('chart-column')}<span>Consumo de IA por dia</span></h2>

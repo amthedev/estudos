@@ -343,24 +343,28 @@ async function seedPlans(client, ctx) {
       JSON.stringify(plan.features || []), plan.highlight ?? false, plan.sort_order ?? 0,
       plan.duration_months ?? plan.interval_count ?? 1, plan.bonus_months ?? 0,
       plan.compare_price_cents ?? null, plan.badge ?? null,
+      plan.tier ?? null, plan.active ?? true,
     ];
+    // `active` só entra no INSERT. Tirar ou pôr um plano na vitrine é decisão
+    // do painel, e o --force-plans (que reaplica preços) não pode desfazê-la:
+    // reativaria, por exemplo, um plano que a equipe desligou de propósito.
     const sql = ctx.forcePlans
       ? `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count, trial_days,
                             features, highlight, sort_order, duration_months, bonus_months,
-                            compare_price_cents, badge)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15)
+                            compare_price_cents, badge, tier, active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17)
          ON CONFLICT (slug) DO UPDATE SET
            name = EXCLUDED.name, description = EXCLUDED.description, price_cents = EXCLUDED.price_cents,
            currency = EXCLUDED.currency, interval = EXCLUDED.interval, interval_count = EXCLUDED.interval_count,
            trial_days = EXCLUDED.trial_days, features = EXCLUDED.features, highlight = EXCLUDED.highlight,
            sort_order = EXCLUDED.sort_order, duration_months = EXCLUDED.duration_months,
            bonus_months = EXCLUDED.bonus_months, compare_price_cents = EXCLUDED.compare_price_cents,
-           badge = EXCLUDED.badge
+           badge = EXCLUDED.badge, tier = EXCLUDED.tier
          RETURNING (xmax = 0) AS inserted`
       : `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count, trial_days,
                             features, highlight, sort_order, duration_months, bonus_months,
-                            compare_price_cents, badge)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15)
+                            compare_price_cents, badge, tier, active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17)
          ON CONFLICT (slug) DO NOTHING
          RETURNING true AS inserted`;
     const result = await client.query(sql, params);
@@ -909,4 +913,6 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runSeed, parseArgs };
+// seedPlans sai também sozinho para o teste conferir a gravação dos planos sem
+// pagar o seed inteiro (provas, assuntos, página inicial...).
+module.exports = { runSeed, parseArgs, seedPlans };

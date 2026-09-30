@@ -9,17 +9,24 @@
  *     by_day:   [{ date, tokens, requests, errors }]        (série completa, com zeros)
  *     by_feature: [{ feature, requests, tokens, errors }]
  *     top_users:  [{ user_id, name, email, tokens, requests }]
- *     limit, limit_reached, month_tokens
+ *     limit, limit_reached, month_tokens,
+ *     tutor_limits: { basico, pro, avancado }                 (tokens do Tutor por mês em cada nível)
  *   }
  *
  * A fonte é a tabela ai_usage, alimentada por services/ai.js a cada chamada (tutor, redação e
  * geração de temas). Os dias são agrupados no fuso America/Sao_Paulo.
+ *
+ * Não existe um limite único por aluno. Quem assina um nível gasta moedas nas ações com IA e
+ * tem só o Tutor limitado, pela cota mensal do nível (tutor_limits). `limit` é a cota mensal
+ * de quem tem acesso completo e não gasta moedas (planos antigos, cortesias, plataforma
+ * aberta), que soma todo o uso de IA do aluno.
  */
 const router = require('express').Router();
 const db = require('../../db/pool');
 const { validate, z } = require('../../middleware/validate');
 const { wrap } = require('../../middleware/errors');
 const ai = require('../../services/ai');
+const coins = require('../../services/coins');
 const { TIMEZONE, todayISO, addDays, eachDay } = require('../../utils/dates');
 
 const TOP_USERS_LIMIT = 10;
@@ -96,7 +103,9 @@ router.get(
       };
     });
 
-    const limit = await ai.studentMonthlyLimit();
+    const [limit, allowances] = await Promise.all([ai.studentMonthlyLimit(), coins.tierAllowances()]);
+    const tutorLimits = {};
+    for (const tier of coins.TIERS) tutorLimits[tier] = allowances[tier].tutor_monthly_tokens;
     res.json({
       days,
       from,
@@ -107,8 +116,11 @@ router.get(
       top_users: topUsers,
       month_tokens: monthly.tokens,
       month_requests: monthly.requests,
+      // cota de quem tem acesso completo (planos antigos, cortesias, plataforma aberta)
       limit,
-      // o limite agora é por aluno: não existe teto que desligue a plataforma
+      // cota mensal do Tutor em cada nível; 0 deixa o nível sem Tutor
+      tutor_limits: tutorLimits,
+      // os limites são por aluno: não existe teto que desligue a plataforma
       limit_reached: false,
     });
   })

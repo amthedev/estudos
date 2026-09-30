@@ -10,13 +10,15 @@
  *   POST /api/questions/:id/answer { option_id, context, context_id?, time_spent_sec? }
  *                                  → { is_correct, correct_option_id, resolution, explanation, attempt_id }
  *   POST /api/questions/generate   { topic_id? , subject_id?, exam_id?, difficulty? }
- *                                  elabora questões do recorte quando o banco não tem nenhuma
+ *                                  elabora questões do recorte quando o banco não tem nenhuma;
+ *                                  custa moedas (402 insufficient_coins sem saldo), devolvidas se nada sair
  *   POST /api/questions/:id/report { reason, comment? } → 201
  *                                  avisa que a questão tem problema (gabarito, enunciado, alternativas…)
  *
  * O gabarito (is_correct, resolution, explanation) só sai na resposta do POST /answer.
  * Toda leitura de dados do aluno (último resultado, tentativas) filtra por user_id = req.user.id.
  */
+const crypto = require('node:crypto');
 const router = require('express').Router();
 const db = require('../db/pool');
 const { validate, z } = require('../middleware/validate');
@@ -26,6 +28,7 @@ const { requireAccess } = require('../middleware/access');
 const { parsePagination, paginate } = require('../utils/pagination');
 const questions = require('../services/questions');
 const questionAi = require('../services/question-ai');
+const coins = require('../services/coins');
 const { aiLimiter } = require('../middleware/rateLimit');
 
 router.use(requireStudent, requireAccess);
@@ -285,6 +288,18 @@ router.post(
   wrap(async (req, res) => {
     const { topic_id: topicId, subject_id: subjectId, exam_id: examId, difficulty } = req.valid.body;
 
+    // A cota diária antiga é conferida antes da moeda: cobrar e logo depois
+    // recusar com 429 seria cobrar por nada.
+    await questionAi.assertDailyQuota(req.user.id);
+    const { chargeId } = await coins.charge(db, {
+      user: req.user,
+      access: req.access,
+      action: 'questions',
+      cost: (await coins.readCosts()).questions,
+      refType: 'question_generation',
+      refId: crypto.randomUUID(),
+    });
+
     // Quem espera aqui é uma tela com o botão girando, atrás de uma borda que
     // corta a requisição perto dos 100 segundos. A elaboração tem que caber
     // nesse tempo e parar sozinha se o aluno desistir — antes disso, um clique
@@ -308,9 +323,17 @@ router.post(
         timeoutMs: questionAi.TIMEOUT_INTERATIVO_MS,
         signal: controller.signal,
       });
+    } catch (err) {
+      await coins.refund(chargeId, 'falha ao elaborar questões');
+      throw err;
     } finally {
       res.off('close', onClose);
     }
+
+    // Nada elaborado, a moeda volta. Com a aba fechada no meio, o que já ficou
+    // pronto está gravado no banco e aparece no próximo filtro: a cobrança
+    // fica, porque a IA entregou.
+    if (!criadas.length) await coins.refund(chargeId, 'nenhuma questão elaborada');
 
     if (controller.signal.aborted) return;
 

@@ -8,6 +8,7 @@
 // só exibia uma frase explicando isso, e um botão que finge trabalhar é pior
 // que a ausência dele.
 // Assinaturas: GET /api/admin/subscriptions (paginado) e /subscriptions/summary.
+// Upgrades pagos sem troca de plano: GET /subscriptions/upgrades-nao-aplicados.
 // O status do provedor vem de GET /api/admin/plans/provider-status.
 // =====================================================================
 import { api } from '../../core/api.js';
@@ -35,6 +36,15 @@ const SUBSCRIPTION_STATUS = {
 
 const num = (value) => fmtNumber(value ?? 0, { digits: 0 });
 
+// Nível do plano: decide as moedas por dia e a cota do Tutor, que ficam em
+// Configurações → Moedas (um número por nível, e não por plano).
+const TIERS = [
+  { value: 'basico', label: 'Básico' },
+  { value: 'pro', label: 'Pro' },
+  { value: 'avancado', label: 'Avançado' },
+];
+const tierLabel = (tier) => (TIERS.find((item) => item.value === tier) || {}).label || null;
+
 // ---------------------------------------------------------------------
 // Formulário de plano
 // ---------------------------------------------------------------------
@@ -52,6 +62,14 @@ function planFields() {
     { type: 'section', label: 'Acesso vendido' },
     { key: 'duration_months', label: 'Meses pagos', type: 'number', min: 1, max: 60, integer: true, hint: 'Quantos meses o aluno está pagando neste plano.' },
     { key: 'bonus_months', label: 'Meses de bônus', type: 'number', min: 0, max: 36, integer: true, hint: 'Meses extras de acesso, sem cobrança. Ex.: 3 no plano "pague 12, receba 15".' },
+    {
+      key: 'tier',
+      label: 'Nível',
+      type: 'select',
+      options: TIERS,
+      placeholder: 'Sem nível — plano antigo, tudo liberado',
+      hint: 'O nível decide quantas moedas por dia o assinante recebe e a cota do Tutor IA (valores em Configurações → Moedas). Trocar o nível de um plano com assinantes muda as moedas deles também. Upgrade só existe entre níveis da mesma duração.',
+    },
     { type: 'section', label: 'Exibição' },
     { key: 'compare_price', label: 'Preço de comparação (R$)', type: 'number', min: 0, step: '0.01', placeholder: '538,80', hint: 'Quanto custaria no mensal pelo mesmo período. Deixe vazio para não mostrar economia.' },
     { key: 'badge', label: 'Selo do card', type: 'text', maxLength: 40, placeholder: 'MELHOR OFERTA', hint: 'Texto curto exibido sobre o card na página inicial.' },
@@ -66,7 +84,7 @@ function planValues(plan) {
   if (!plan) {
     return {
       name: '', slug: '', description: '', price: null, interval: 'month', interval_count: 1, trial_days: 0,
-      duration_months: 1, bonus_months: 0, compare_price: null, badge: '',
+      duration_months: 1, bonus_months: 0, tier: null, compare_price: null, badge: '',
       features: [], sort_order: 0, highlight: false, active: true,
     };
   }
@@ -80,6 +98,7 @@ function planValues(plan) {
     trial_days: Number(plan.trial_days) || 0,
     duration_months: Number(plan.duration_months) || 1,
     bonus_months: Number(plan.bonus_months) || 0,
+    tier: plan.tier || null,
     compare_price: plan.compare_price_cents === null || plan.compare_price_cents === undefined
       ? null
       : Number(plan.compare_price_cents) / 100,
@@ -102,6 +121,9 @@ function planPayload(values) {
     trial_days: Number(values.trial_days) || 0,
     duration_months: Math.max(1, Number(values.duration_months) || 1),
     bonus_months: Math.max(0, Number(values.bonus_months) || 0),
+    // sempre enviado (nulo quando vazio): sem ele, o servidor manteria o nível
+    // antigo e "Sem nível" no formulário não teria efeito
+    tier: values.tier || null,
     compare_price_cents: values.compare_price === null || values.compare_price === undefined || values.compare_price === ''
       ? null
       : Math.round(Number(values.compare_price) * 100),
@@ -198,6 +220,13 @@ function mountPlansTable() {
             <strong>${fmtMoney(plan.price_cents, { currency: plan.currency })}</strong>
             <span class="text-xs text-3">${intervalLabel(plan.interval, plan.interval_count)}</span>
           </span>`,
+      },
+      {
+        key: 'tier',
+        label: 'Nível',
+        render: (plan) => (plan.tier
+          ? badge(tierLabel(plan.tier) || plan.tier, plan.tier === 'avancado' ? 'solid' : plan.tier === 'pro' ? 'blue' : 'gray')
+          : html`<span class="text-xs text-3" title="Plano de antes das moedas: o assinante tem tudo liberado até o fim do período que já pagou">Sem nível</span>`),
       },
       {
         key: 'trial_days',
@@ -434,12 +463,76 @@ function summaryRow() {
     </section>`;
 }
 
+/**
+ * Upgrades pagos que não trocaram o plano (GET /subscriptions/upgrades-nao-aplicados).
+ *
+ * O aluno pagou a diferença, mas quando a confirmação chegou a assinatura já
+ * não estava como na cotação, e o sistema não troca sozinho nesse caso. Só
+ * aparece quando existe algum: cada linha é uma decisão do suporte.
+ */
+function unappliedUpgradesCard() {
+  const items = (state.unapplied && state.unapplied.items) || [];
+  if (!items.length) return '';
+  const firstUpper = (text) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : '—');
+  return html`
+    <section class="card aplan-unapplied">
+      <div class="card-header">
+        <h2 class="card-title">${icon('triangle-alert')}<span>Upgrades pagos sem troca de plano</span></h2>
+        <span class="card-subtitle">
+          O aluno pagou a diferença, mas a assinatura já não estava como na cotação. Aplique a troca ou devolva o
+          valor pelo Asaas — a devolução tira o pedido desta lista.
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="table-wrap">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th scope="col">Aluno</th>
+                <th scope="col">De → para</th>
+                <th scope="col" class="num">Valor</th>
+                <th scope="col">Pago em</th>
+                <th scope="col">Motivo provável</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map((item) => html`
+                <tr>
+                  <td>
+                    <a class="aplan-user" href="/admin/alunos/${item.user.id}">
+                      <strong>${item.user.name}</strong>
+                      <span class="text-xs text-3">${item.user.email}</span>
+                    </a>
+                  </td>
+                  <td>
+                    ${item.from_plan.name || 'Plano removido'} → ${item.to_plan.name || 'Plano removido'}
+                    ${item.subscription && item.subscription.plan_name
+                      ? html`<br><span class="text-xs text-3">Hoje em: ${item.subscription.plan_name}</span>`
+                      : ''}
+                  </td>
+                  <td class="num">${fmtMoney(item.amount_cents)}</td>
+                  <td class="text-xs" title="Pedido em ${fmtDateTime(item.created_at)}">${fmtDateTime(item.paid_at || item.created_at)}</td>
+                  <td>
+                    ${firstUpper(item.reason)}.
+                    ${item.provider_payment_id
+                      ? html`<br><span class="text-xs text-3">Cobrança no Asaas: ${item.provider_payment_id}</span>`
+                      : ''}
+                  </td>
+                </tr>`)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+}
+
 function paint() {
   render(state.el, html`
     <div class="aplan-page">
       ${header()}
       ${providerNotice()}
     ${summaryRow()}
+    ${unappliedUpgradesCard()}
     <section class="card">
       <div class="card-header">
         <h2 class="card-title">${icon('layers')}<span>Planos</span></h2>
@@ -462,13 +555,15 @@ function paint() {
 async function load() {
   render(state.el, html`${header()}${skeleton('stats', 4)}<div class="mt-6">${skeleton('table')}</div>`);
   try {
-    const [summary, providerStatus, plans] = await Promise.all([
+    const [summary, providerStatus, plans, unapplied] = await Promise.all([
       api.get('/api/admin/subscriptions/summary').catch(() => ({})),
       api.get('/api/admin/plans/provider-status').catch(() => null),
       api.get('/api/admin/plans').catch(() => []),
+      api.get('/api/admin/subscriptions/upgrades-nao-aplicados').catch(() => null),
     ]);
     state.summary = summary;
     state.providerStatus = providerStatus;
+    state.unapplied = unapplied;
     state.plans = Array.isArray(plans) ? plans : (plans.items || []);
   } catch (err) {
     render(state.el, html`${header()}${errorState({ title: 'Não foi possível carregar os planos', message: err && err.message })}`);
@@ -478,7 +573,10 @@ async function load() {
 }
 
 export default async function renderPlans(ctx) {
-  state = { el: ctx.el, navigate: ctx.navigate, plans: [], summary: null, providerStatus: null, plansTable: null, subsTable: null };
+  state = {
+    el: ctx.el, navigate: ctx.navigate, plans: [], summary: null, providerStatus: null, unapplied: null,
+    plansTable: null, subsTable: null,
+  };
   ctx.setTitle('Planos e assinaturas');
   on(ctx.el, 'click', '[data-action]', (event, target) => {
     const action = target.dataset.action;

@@ -1,6 +1,10 @@
 // =====================================================================
 // /app/simulados — tipos de simulado, modelos do administrador, histórico
 // e evolução das notas. Consome GET /api/simulados e POST /api/simulados/attempts.
+//
+// Montar um simulado custa moedas pelo número de questões (curto até o limite
+// configurado, longo acima dele — core/coins.js). Cada cartão, formato e o
+// botão de iniciar mostram o custo da quantidade escolhida.
 // =====================================================================
 import { api } from '../../core/api.js';
 import {
@@ -10,6 +14,9 @@ import {
 import { icon } from '../../core/icons.js';
 import { fmtDateShort, fmtDateTime, fmtMinutes, fmtDuration, fmtScore, pluralize } from '../../core/format.js';
 import { lineChart, destroyChart, palette } from '../../core/charts.js';
+import {
+  loadCoins, coinCost, costFor, simuladoCost, simuladoShortLimit, hasCoinLimit, handleCoinError, isCoinError,
+} from '../../core/coins.js';
 
 const TYPE_CARDS = [
   {
@@ -136,14 +143,39 @@ function inProgressBlock() {
     </div>`;
 }
 
+/** Número padrão de questões de um tipo (o que o modal abre preenchido). */
+function defaultCount(type) {
+  const defaults = data.defaults && data.defaults[type];
+  return defaults && Number(defaults.question_count) > 0 ? Number(defaults.question_count) : 0;
+}
+
+/** A régua do custo, dita uma vez acima dos cartões: até N questões custa X; acima, Y. */
+function costRuleLine() {
+  if (!hasCoinLimit()) return '';
+  const shortCost = costFor('simulado_short');
+  const longCost = costFor('simulado_long');
+  const limit = simuladoShortLimit();
+  if (!shortCost && !longCost) return '';
+  if (!limit || shortCost === longCost) {
+    return html`<p class="sim-cost-rule">Cada simulado custa ${coinCost(shortCost || longCost)}. Se ele não puder ser montado, as moedas voltam.</p>`;
+  }
+  return html`
+    <p class="sim-cost-rule">
+      Até ${limit} questões: ${shortCost ? coinCost(shortCost) : 'grátis'} · acima disso: ${longCost ? coinCost(longCost) : 'grátis'}.
+      Se o simulado não puder ser montado, as moedas voltam.
+    </p>`;
+}
+
 function typeCardsBlock() {
   const exam = data.exam;
   return html`
     <section class="mb-6">
       <h2 class="section-title">Começar um simulado</h2>
+      ${costRuleLine()}
       <div class="grid grid-4 sim-types">
         ${TYPE_CARDS.map((card) => {
           const isExam = card.type === 'exam';
+          const cost = simuladoCost(defaultCount(card.type));
           // Banco vazio não barra mais: a IA completa o que faltar. O que
           // ainda barra é não ter prova escolhida no perfil.
           const disabled = isExam && !exam;
@@ -152,6 +184,7 @@ function typeCardsBlock() {
             : '';
           return html`
             <button type="button" class="card card-hover sim-type" data-action="config" data-type="${card.type}" ${disabled ? 'disabled' : ''}>
+              ${cost ? html`<span class="sim-type-cost">${coinCost(cost)}</span>` : ''}
               <span class="icon-box">${icon(card.icon)}</span>
               <span class="sim-type-title">${card.title}</span>
               <span class="sim-type-text">${card.text}</span>
@@ -191,7 +224,9 @@ function templatesBlock() {
                 <div class="sim-template-actions">
                   ${t.can_start
                     ? html`
-                      <button type="button" class="btn btn-primary btn-sm" data-action="start-template" data-id="${t.id}">${icon('play')}<span>Iniciar</span></button>
+                      <button type="button" class="btn btn-primary btn-sm" data-action="start-template" data-id="${t.id}">
+                        ${icon('play')}<span>Iniciar</span>${coinCost(simuladoCost(t.question_count || 0))}
+                      </button>
                       ${t.missing
                         ? html`<span class="text-3 text-sm">${pluralize(t.missing, 'questão será elaborada', 'questões serão elaboradas')} na hora</span>`
                         : ''}`
@@ -340,16 +375,28 @@ async function abandon(id) {
   }
 }
 
-async function startAttempt(body, button) {
+/**
+ * Monta a tentativa. `dialog` é o modal de configuração, quando o pedido veio
+ * dele: sem moedas, ele fecha antes do aviso abrir — "Ver planos" troca de
+ * página, e o modal de configuração ficaria aberto por cima dela.
+ */
+async function startAttempt(body, button, dialog = null) {
   if (button) button.disabled = true;
   try {
     const attempt = await api.post('/api/simulados/attempts', body);
     page.navigate(`/app/simulados/${attempt.id}`);
     return true;
   } catch (err) {
-    toast(err.message || 'Não foi possível montar o simulado.', { type: 'error' });
+    if (isCoinError(err)) {
+      if (dialog) dialog.close();
+      handleCoinError(err);
+    } else {
+      toast(err.message || 'Não foi possível montar o simulado.', { type: 'error' });
+    }
     if (button) button.disabled = false;
     return false;
+  } finally {
+    loadCoins();
   }
 }
 
@@ -381,6 +428,7 @@ function modeField(defaults) {
                     data-count="${m.question_count}" data-duration="${m.duration_min}">
               <span class="sim-mode-label">${m.label}</span>
               <span class="sim-mode-text">${m.question_count} questões · ${fmtMinutes(m.duration_min)}</span>
+              ${coinCost(simuladoCost(m.question_count))}
             </button>`
         )}
         <button type="button" class="sim-mode is-active" role="radio" aria-checked="true"
@@ -505,7 +553,7 @@ function openConfig(type) {
         onClick: async () => {
           const payload = readConfig(type, dialog.body);
           if (!payload) return false;
-          const started = await startAttempt(payload);
+          const started = await startAttempt(payload, null, dialog);
           return started ? undefined : false;
         },
       },
@@ -514,6 +562,30 @@ function openConfig(type) {
 
   if (type === 'topic') bindTopicChain(dialog.body);
   if (type === 'exam') bindModes(dialog.body);
+  bindStartCost(dialog);
+}
+
+/**
+ * O botão "Iniciar simulado" mostra o custo da quantidade que está no campo
+ * agora: mudar de 30 para 31 questões pode mudar o preço, e o aluno vê antes
+ * de clicar. O ouvinte fica no corpo do modal, então pega tanto a digitação
+ * quanto o clique num formato (que preenche o campo antes de o evento subir).
+ */
+function bindStartCost(dialog) {
+  if (!hasCoinLimit()) return;
+  const button = qs('[data-primary="true"]', dialog.footer);
+  const count = qs('[name="question_count"]', dialog.body);
+  if (!button || !count) return;
+  const holder = document.createElement('span');
+  holder.className = 'sim-start-cost';
+  button.appendChild(holder);
+  const update = () => {
+    const value = Math.round(Number(count.value));
+    renderTo(holder, Number.isFinite(value) && value > 0 ? coinCost(simuladoCost(value)) : '');
+  };
+  dialog.body.addEventListener('input', update);
+  dialog.body.addEventListener('click', update);
+  update();
 }
 
 /** Um formato escolhido preenche quantidade e tempo; mexer nos campos volta para "Do meu jeito". */

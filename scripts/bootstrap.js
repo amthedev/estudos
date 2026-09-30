@@ -26,6 +26,8 @@ const db = require('../server/db/pool');
 const { runMigrations } = require('../server/db/migrate');
 const { runSeed } = require('../server/db/seed/run');
 const { getSetting, setSetting } = require('../server/services/settings');
+const { releaseInterruptedCorrections } = require('../server/services/essay');
+const { releaseInterruptedBuilds } = require('../server/services/simulados');
 
 function log(mensagem) {
   console.log(`[bootstrap] ${mensagem}`);
@@ -86,15 +88,15 @@ async function main() {
   // presa para sempre — o aluno vê "em correção" eterno, sem poder reenviar.
   // Mesmo caso da leitura de prova acima, e a mesma cura: quem sobe agora sabe
   // que ninguém está corrigindo. Volta para "failed" com aviso, e a tela do
-  // aluno já oferece "Enviar novamente" nesse estado.
-  const redacoes = await db.many(
-    `UPDATE essays
-        SET status = 'failed',
-            error_message = 'A correção foi interrompida quando a aplicação reiniciou. Envie novamente.'
-      WHERE status = 'submitted'
-      RETURNING id`
-  );
-  if (redacoes.length) log(`${redacoes.length} redação(ões) destravada(s) após reinício.`);
+  // aluno já oferece "Enviar novamente" nesse estado. A moeda cobrada no envio
+  // volta junto: a correção não aconteceu.
+  const redacoes = await releaseInterruptedCorrections();
+  if (redacoes) log(`${redacoes} redação(ões) destravada(s) após reinício, com a moeda devolvida.`);
+
+  // Simulado cobrado cuja montagem o reinício matou: a tentativa nunca vai
+  // existir, e a moeda do aluno não pode ficar presa esperando por ela.
+  const montagens = await releaseInterruptedBuilds();
+  if (montagens) log(`${montagens} montagem(ns) de simulado interrompida(s), com a moeda devolvida.`);
 
   log('pronto.');
 }

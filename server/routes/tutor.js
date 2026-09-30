@@ -3,7 +3,7 @@
 /**
  * Tutor IA — conversas do aluno com o professor virtual.
  *
- *   GET    /api/tutor/status                    → { available, configured, limit_reached }
+ *   GET    /api/tutor/status                    → { available, configured, limit_reached, tutor_quota_reached, tier }
  *   GET    /api/tutor/conversations             → lista das conversas do aluno (mais recentes primeiro)
  *   POST   /api/tutor/conversations             { subject_id?, topic_id?, lesson_id?, question_id?, essay_id? }
  *   GET    /api/tutor/conversations/:id         → conversa + mensagens + contexto
@@ -340,6 +340,10 @@ router.get(
       available: Boolean(info.configured) && !info.limit_reached,
       configured: Boolean(info.configured),
       limit_reached: Boolean(info.limit_reached),
+      // A cota do Tutor do nível acabou: o aviso é "renova no dia 1º ou faça
+      // upgrade", não "a IA está desativada".
+      tutor_quota_reached: Boolean(info.tutor_quota_reached),
+      tier: info.tier || null,
     });
   })
 );
@@ -439,7 +443,9 @@ router.post(
     if (!conversation) throw new AppError(404, 'not_found', 'Conversa não encontrada.');
 
     // Verificações que podem virar erro HTTP normal precisam acontecer ANTES de abrir o stream.
-    await ai.assertAvailable(req.user.id);
+    // Com 'tutor', o aluno com nível que esgotou a cota do mês recebe 402 aqui,
+    // e não um erro no meio da resposta.
+    await ai.assertAvailable(req.user.id, 'tutor');
 
     const content = req.valid.body.content;
     const previous = await db.one(

@@ -3,7 +3,7 @@
 // Navegacao fixa, planos reais e movimento suave dos blocos.
 // =====================================================================
 import { api } from './core/api.js';
-import { html, render, qs, qsa } from './core/ui.js';
+import { html, render, qs, qsa, tabs } from './core/ui.js';
 import { icon } from './core/icons.js';
 import { fmtMoney, intervalLabel } from './core/format.js';
 
@@ -152,9 +152,11 @@ function planCard(plan) {
   // parcelamento: divide o preço pelo número de cobranças do ciclo (6x, 12x)
   const parcelas = plan.interval === 'year' ? 12 * count : count;
   const installment = parcelas > 1 ? Math.round(Number(plan.price_cents) / parcelas) : null;
+  // moedas por dia do nível: o número vem das configurações, pela API
+  const dailyCoins = Number(plan.daily_coins) > 0 ? Number(plan.daily_coins) : 0;
 
   return html`
-    <article class="plan ${plan.highlight ? 'highlight' : ''}">
+    <article class="plan ${plan.highlight ? 'highlight' : ''}" ${plan.tier ? html`id="plano-${plan.tier}"` : ''}>
       ${badge ? html`<span class="badge badge-blue plan-flag">${badge}</span>` : ''}
       <div class="plan-name">${plan.name}</div>
       ${showCompare ? html`<div class="plan-compare">de <s>${fmtMoney(compare)}</s> por</div>` : ''}
@@ -165,11 +167,67 @@ function planCard(plan) {
       ${installment ? html`<div class="plan-installment">ou ${parcelas}x de ${fmtMoney(installment)}</div>` : ''}
       ${monthly ? html`<div class="plan-equiv">Equivale a ${fmtMoney(monthly)} por mês</div>` : ''}
       ${trial ? html`<div class="plan-equiv">24h grátis com cartão</div>` : ''}
+      ${dailyCoins ? html`<div class="plan-coins">${icon('coins')}<span>${dailyCoins} moedas por dia</span></div>` : ''}
       ${features.length
         ? html`<ul class="plan-features">${features.map((feature) => html`<li>${icon('check')}<span>${feature}</span></li>`)}</ul>`
         : html`<div class="plan-features"></div>`}
       <a class="btn ${plan.highlight ? 'btn-primary' : 'btn-secondary'} btn-lg" href="/cadastro?plan=${encodeURIComponent(slug)}">Escolher ${plan.name}</a>
     </article>`;
+}
+
+// Planos por nível: um cartão de cada nível para a duração escolhida no
+// seletor. Plano sem nível (os antigos) não entra aqui; se a API só tiver
+// planos sem nível, a grade volta a ser um cartão por plano, como antes.
+const TIER_ORDER = ['basico', 'pro', 'avancado'];
+
+function durationLabel(months) {
+  return months === 1 ? 'Mensal' : `${months} meses`;
+}
+
+function renderTierCards(grid, plans, months) {
+  const cards = plans
+    .filter((plan) => (Number(plan.duration_months) || 1) === months)
+    .sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
+  render(grid, cards.map(planCard));
+  observeReveal(qsa('.plan', grid));
+  window.dispatchEvent(new Event('landing:layout'));
+}
+
+function initTierPlans(grid, plans) {
+  const months = [...new Set(plans.map((plan) => Number(plan.duration_months) || 1))].sort((a, b) => a - b);
+  // 12 meses abre selecionado: é o de menor valor por mês
+  const initial = months.includes(12) ? 12 : months[months.length - 1];
+  const box = qs('#plans-durations');
+  if (box && months.length > 1) {
+    tabs(
+      box,
+      months.map((value) => ({ id: String(value), label: durationLabel(value) })),
+      (id) => renderTierCards(grid, plans, Number(id)),
+      { active: String(initial), pills: true }
+    );
+    qs('.tabs', box)?.setAttribute('aria-label', 'Duração do plano');
+    box.hidden = false;
+  }
+  renderTierCards(grid, plans, initial);
+}
+
+// Faixa de contagem regressiva até o ENEM (data cadastrada no painel, em
+// Provas). Só aparece com data futura e com o Avançado na vitrine, porque o
+// texto aponta para ele.
+function initCountdown(data) {
+  const box = qs('#plans-countdown');
+  const countdown = data && data.countdown;
+  const days = countdown ? Number(countdown.days_left) : 0;
+  if (!box || !(days > 0)) return;
+  const exam = countdown.exam_short_name || 'ENEM';
+  render(box, html`
+    <p class="plans-countdown-days">${icon('hourglass')}<span>${days === 1 ? 'Falta' : 'Faltam'} <strong>${days}</strong> ${days === 1 ? 'dia' : 'dias'} para o ${exam}</span></p>
+    <p class="plans-countdown-text">
+      Com pouco tempo, cada dia de treino conta: o Avançado te dá o máximo de moedas por dia.
+      <a href="#plano-avancado">Ver o Avançado</a>
+    </p>`);
+  box.hidden = false;
+  window.dispatchEvent(new Event('landing:layout'));
 }
 
 async function initPlans() {
@@ -191,10 +249,17 @@ async function initPlans() {
     return;
   }
 
-  plans.sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
-  render(grid, plans.map(planCard));
+  const tierPlans = plans.filter((plan) => TIER_ORDER.includes(plan.tier));
   section.hidden = false;
   qsa('[data-plans-link]').forEach((link) => { link.hidden = false; });
+  if (tierPlans.length) {
+    initTierPlans(grid, tierPlans);
+    if (tierPlans.some((plan) => plan.tier === 'avancado')) loadLanding().then(initCountdown);
+    return;
+  }
+
+  plans.sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
+  render(grid, plans.map(planCard));
   observeReveal(qsa('.plan', grid));
   window.dispatchEvent(new Event('landing:layout'));
 }

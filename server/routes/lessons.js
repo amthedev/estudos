@@ -11,11 +11,13 @@
  *                                     → { progress, reviews_created, ... }
  *   POST /api/lessons/:id/practice    { difficulty } → 3 questões dos assuntos da aula, uma de cada,
  *                                     na dificuldade escolhida. Usa o banco primeiro e pede à IA o
- *                                     que faltar (services/question-ai) — sem gabarito
+ *                                     que faltar (services/question-ai) — sem gabarito. Chamar a IA
+ *                                     custa moedas; sem saldo, entrega só o banco com `notice`
  *   PUT  /api/lessons/:id/note        { content } upsert da anotação da aula
  *
  * A listagem respeita o syllabus da prova do aluno (ver services/progress.js).
  */
+const crypto = require('node:crypto');
 const router = require('express').Router();
 const db = require('../db/pool');
 const { validate, z } = require('../middleware/validate');
@@ -26,12 +28,16 @@ const { parsePagination, paginate } = require('../utils/pagination');
 const { todayISO } = require('../utils/dates');
 const progress = require('../services/progress');
 const questionAi = require('../services/question-ai');
+const coins = require('../services/coins');
 const { getQuestionsByIds } = require('../services/questions');
 const { aiLimiter } = require('../middleware/rateLimit');
 
 router.use(requireStudent, requireAccess);
 
 const CONTINUE_LIMIT = 6;
+
+const MOEDAS_ACABARAM_PRATICA =
+  'Suas moedas de hoje acabaram, então esta prática trouxe só as questões que já estavam no banco. As moedas voltam à meia-noite.';
 
 const flag = z
   .string()
@@ -358,28 +364,74 @@ router.post(
     const faltando = assigned.filter((item) => !item.question_id).map((item) => item.target);
     let geradas = [];
     let aviso = null;
+    let avisoCodigo = null;
+    let semMoedas = null;
     if (faltando.length) {
-      const exam = await db.one(
-        `SELECT e.id, e.name, e.short_name, e.board
-           FROM student_profiles p JOIN exams e ON e.id = p.exam_id AND e.active
-          WHERE p.user_id = $1`,
-        [userId]
-      );
+      // A moeda só é cobrada quando a IA vai trabalhar: prática que sai inteira
+      // do banco não custa nada. Sem saldo, a prática não é recusada — sai com
+      // o que o banco tem e um aviso, do mesmo jeito que a cota diária de IA.
+      // A cota diária vem antes da moeda: cobrar e logo em seguida recusar
+      // deixaria um débito e um estorno no extrato a cada clique.
+      let chargeId = null;
+      let chamaIa = true;
       try {
-        geradas = await questionAi.generate({
-          subject: { id: lesson.subject_id, name: lesson.subject_name },
-          topic: { id: lesson.topic_id, name: lesson.topic_name, description: lesson.topic_description },
-          lesson,
-          exam,
-          difficulty,
-          targets: faltando,
-          userId,
-        });
+        await questionAi.assertDailyQuota(userId);
+        ({ chargeId } = await coins.charge(db, {
+          user: req.user,
+          access: req.access,
+          action: 'practice',
+          cost: (await coins.readCosts()).practice,
+          refType: 'lesson_practice',
+          refId: crypto.randomUUID(),
+        }));
       } catch (err) {
-        // Prática com duas questões é melhor que prática nenhuma: a IA falhar
-        // não pode derrubar o que o banco já tinha.
-        console.error(`[lessons] não foi possível elaborar questões da aula ${lesson.id}: ${err.message}`);
-        aviso = err.code === 'ai_limit_reached' ? err.message : null;
+        if (err.code !== 'insufficient_coins' && err.code !== 'ai_limit_reached') throw err;
+        chamaIa = false;
+        if (err.code === 'insufficient_coins') semMoedas = err;
+        aviso = err.code === 'insufficient_coins' ? MOEDAS_ACABARAM_PRATICA : err.message;
+        avisoCodigo = err.code;
+      }
+
+      if (chamaIa) {
+        const exam = await db.one(
+          `SELECT e.id, e.name, e.short_name, e.board
+             FROM student_profiles p JOIN exams e ON e.id = p.exam_id AND e.active
+            WHERE p.user_id = $1`,
+          [userId]
+        );
+        // Quem espera é a tela, atrás de uma borda que corta perto dos 100
+        // segundos. Com o prazo longo, a IA respondia depois do corte: a moeda
+        // ficava cobrada e a prática não chegava a ninguém. O prazo de tela
+        // cabe antes do corte, e a aba fechada para a IA — sem nada entregue,
+        // a moeda volta logo abaixo.
+        const controller = new AbortController();
+        const onClose = () => {
+          if (!res.writableEnded) controller.abort();
+        };
+        res.on('close', onClose);
+        try {
+          geradas = await questionAi.generate({
+            subject: { id: lesson.subject_id, name: lesson.subject_name },
+            topic: { id: lesson.topic_id, name: lesson.topic_name, description: lesson.topic_description },
+            lesson,
+            exam,
+            difficulty,
+            targets: faltando,
+            userId,
+            timeoutMs: questionAi.TIMEOUT_INTERATIVO_MS,
+            signal: controller.signal,
+          });
+        } catch (err) {
+          // Prática com duas questões é melhor que prática nenhuma: a IA falhar
+          // não pode derrubar o que o banco já tinha.
+          console.error(`[lessons] não foi possível elaborar questões da aula ${lesson.id}: ${err.message}`);
+          aviso = err.code === 'ai_limit_reached' ? err.message : null;
+          avisoCodigo = aviso ? err.code : null;
+        } finally {
+          res.off('close', onClose);
+        }
+        // Nada novo saiu da IA: o aluno não recebeu o que pagou.
+        if (!geradas.length) await coins.refund(chargeId, 'nenhuma questão nova elaborada');
       }
     }
 
@@ -390,6 +442,10 @@ router.post(
     const questions = await getQuestionsByIds(ids);
 
     if (!questions.length) {
+      // Sem nada no banco e sem moedas para a IA, não há prática para
+      // entregar: aí sim o aluno recebe a recusa das moedas, com o saldo e a
+      // hora em que elas voltam.
+      if (semMoedas) throw semMoedas;
       throw new AppError(
         503,
         'ai_unavailable',
@@ -410,6 +466,9 @@ router.post(
       generated: questions.length - doBanco,
       subjects: targets.map((alvo) => alvo.name),
       notice: aviso,
+      // Diz à tela por que o aviso apareceu: 'insufficient_coins' pede o
+      // caminho para os planos; 'ai_limit_reached', só esperar até amanhã.
+      notice_code: avisoCodigo,
     });
   })
 );

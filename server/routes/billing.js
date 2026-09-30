@@ -4,9 +4,12 @@
  * Assinaturas processadas pelo Asaas.
  *
  *   GET  /api/billing/plans      → planos ativos, sem identificadores do provedor           [pub]
- *   GET  /api/billing/status     → { require_subscription, access, subscription, payment_provider, ... }
+ *   GET  /api/billing/status     → { require_subscription, access, subscription, payment_provider, pending_upgrade, ... }
+ *                                  pending_upgrade: { id, to_plan: { id, name, tier }, amount_cents, invoice_url, created_at } | null
  *   POST /api/billing/checkout   { plan_id, payment_method, tax_id? } → { url, provider }
  *   POST /api/billing/portal     → { url|null, provider, invoices }
+ *   GET  /api/billing/upgrade/quote?plan_id=  → { from_plan, to_plan, amount_cents, remaining_days, period_end, min_applied }
+ *   POST /api/billing/upgrade    { plan_id } → { url, amount_cents, plan_change_id }
  *   POST /api/billing/webhook    corpo cru, sem cookie e sem CSRF; autenticado pelo
  *                                cabeçalho asaas-access-token
  *
@@ -22,12 +25,13 @@ const { requireStudent } = require('../middleware/auth');
 const { computeAccess, isSubscriptionRequired, isSubscriptionActive } = require('../middleware/access');
 const { getSetting } = require('../services/settings');
 const payments = require('../services/payments');
+const coins = require('../services/coins');
 
 /** Colunas visíveis ao público. Nenhum identificador interno do provedor sai daqui. */
 const PUBLIC_PLAN_COLUMNS = [
   'id', 'slug', 'name', 'description', 'price_cents', 'currency', 'interval', 'interval_count',
   'trial_days', 'features', 'highlight', 'sort_order',
-  'duration_months', 'bonus_months', 'compare_price_cents', 'badge',
+  'duration_months', 'bonus_months', 'compare_price_cents', 'badge', 'tier',
 ].join(', ');
 
 /**
@@ -76,37 +80,46 @@ const toInt = (value) => (value === null || value === undefined ? null : Number(
 /**
  * Acrescenta ao plano o que a vitrine precisa mostrar sem inventar número:
  * meses de acesso, equivalente mensal e economia — esta última só quando o
- * preço de comparação foi cadastrado no painel.
+ * preço de comparação foi cadastrado no painel. As moedas por dia e a cota do
+ * Tutor vêm das configurações do nível; plano sem nível (antigo) fica sem elas.
  */
-function decoratePlan(plan) {
+function decoratePlan(plan, allowances = {}) {
   const duration = Math.max(1, Number(plan.duration_months) || 1);
   const bonus = Math.max(0, Number(plan.bonus_months) || 0);
   const accessMonths = duration + bonus;
   const price = Number(plan.price_cents) || 0;
   const compare = toInt(plan.compare_price_cents);
+  const tier = coins.TIERS.includes(plan.tier) ? plan.tier : null;
+  const allowance = tier ? allowances[tier] : null;
 
   return {
     ...plan,
+    tier,
     duration_months: duration,
     bonus_months: bonus,
     access_months: accessMonths,
     compare_price_cents: compare,
     monthly_equivalent_cents: accessMonths > 1 ? Math.round(price / accessMonths) : null,
     savings_cents: compare !== null && compare > price ? compare - price : null,
+    daily_coins: allowance ? allowance.daily_coins : null,
+    tutor_monthly_tokens: allowance ? allowance.tutor_monthly_tokens : null,
   };
 }
 
 router.get(
   '/plans',
   wrap(async (req, res) => {
-    const plans = await db.many(
-      `SELECT ${PUBLIC_PLAN_COLUMNS}
-         FROM plans
-        WHERE active = true
-        ORDER BY sort_order ASC, name ASC`
-    );
+    const [plans, allowances] = await Promise.all([
+      db.many(
+        `SELECT ${PUBLIC_PLAN_COLUMNS}
+           FROM plans
+          WHERE active = true
+          ORDER BY sort_order ASC, name ASC`
+      ),
+      coins.tierAllowances(),
+    ]);
     res.set('Cache-Control', 'no-store');
-    res.json(plans.map(decoratePlan));
+    res.json(plans.map((plan) => decoratePlan(plan, allowances)));
   })
 );
 
@@ -170,6 +183,12 @@ function publicSubscription(subscription, extra = {}) {
     plan_slug: subscription.plan_slug || null,
     plan_interval: subscription.plan_interval || null,
     plan_price_cents: subscription.plan_price_cents ?? null,
+    // nível e duração do plano atual: a tela de assinatura decide com eles
+    // quais cartões oferecem upgrade; legacy_until é o "tudo liberado até"
+    // do assinante de plano antigo
+    plan_tier: subscription.plan_tier || null,
+    plan_duration_months: subscription.plan_duration_months ?? null,
+    legacy_until: subscription.legacy_until || null,
     status: subscription.status,
     current_period_start: subscription.current_period_start || null,
     current_period_end: subscription.current_period_end || null,
@@ -203,6 +222,15 @@ router.get(
         ])) || {};
     }
 
+    // Upgrade aberto esperando pagamento: a tela mostra a fatura dele em vez de
+    // oferecer o botão de novo. Falhar aqui não pode esconder a assinatura.
+    let pendingUpgrade = null;
+    try {
+      pendingUpgrade = await payments.pendingUpgrade(req.user.id);
+    } catch (err) {
+      console.error(`[billing] não foi possível ler o upgrade em aberto do aluno ${req.user.id}:`, err.message);
+    }
+
     const adapter = payments.getAdapter(provider);
     res.json({
       require_subscription: required,
@@ -219,6 +247,7 @@ router.get(
         access_override_until: access.access_override_until,
       },
       subscription: publicSubscription(access.subscription, extra),
+      pending_upgrade: pendingUpgrade,
     });
   })
 );
@@ -256,7 +285,7 @@ router.post(
     // Não dá para usar access.allowed: com access_override_until o aluno
     // passaria pelo guarda e abriria uma segunda assinatura no Asaas.
     if (isSubscriptionActive(current)) {
-      throw new AppError(409, 'conflict', 'Você já tem uma assinatura ativa. Para trocar de plano, use "Gerenciar assinatura".', {
+      throw new AppError(409, 'conflict', 'Você já tem uma assinatura ativa. Para subir de nível, use o upgrade na tela de assinatura.', {
         subscription: publicSubscription(current),
       });
     }
@@ -285,6 +314,45 @@ router.post(
       payment_method: checkout.payment_method || req.valid.body.payment_method,
       trial_ends_at: checkout.trial_ends_at || null,
     });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Upgrade pela diferença (regras em services/payments/upgrade.js)
+// ---------------------------------------------------------------------------
+const planRef = (plan) => ({ id: plan.id, name: plan.name, tier: plan.tier || null });
+
+router.get(
+  '/upgrade/quote',
+  validate({ query: z.object({ plan_id: z.string().uuid() }) }),
+  wrap(async (req, res) => {
+    const { fromPlan, toPlan, quote } = await payments.quoteUpgrade({
+      user: req.user,
+      planId: req.valid.query.plan_id,
+    });
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      from_plan: planRef(fromPlan),
+      to_plan: planRef(toPlan),
+      amount_cents: quote.amount_cents,
+      remaining_days: quote.remaining_days,
+      period_end: quote.period_end,
+      min_applied: quote.min_applied,
+    });
+  })
+);
+
+router.post(
+  '/upgrade',
+  validate({ body: z.object({ plan_id: z.string().uuid() }).strict() }),
+  wrap(async (req, res) => {
+    if (!(await payments.isConfigured())) {
+      throw new AppError(503, 'payments_unavailable', payments.UNAVAILABLE_MESSAGE);
+    }
+    const created = await callProvider(() =>
+      payments.createUpgrade({ user: req.user, planId: req.valid.body.plan_id })
+    );
+    res.json({ url: created.url, amount_cents: created.amount_cents, plan_change_id: created.plan_change_id });
   })
 );
 

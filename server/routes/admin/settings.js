@@ -45,6 +45,10 @@ const scheduleDefaults = z
 
 const dailyQuotes = z.array(z.string().trim().min(3, 'Frase curta demais.').max(200)).max(50);
 
+/** Número inteiro de moedas, tokens ou centavos: zero vale (ação grátis, nível sem moedas). */
+const wholeNumber = (max, maxMessage) =>
+  z.coerce.number().int('Use um número inteiro.').min(0, 'Use zero ou mais.').max(max, maxMessage).optional();
+
 /** Uma entrada por chave administrável: a chave que não estiver aqui é recusada. */
 const settingsBody = z
   .object({
@@ -65,6 +69,21 @@ const settingsBody = z
       .min(0, 'Use 0 para não completar simulados com IA.')
       .max(90, 'O simulado tem no máximo 90 questões.')
       .optional(),
+    // Moedas: por dia de cada nível, custo de cada ação e cota do Tutor.
+    coins_daily_basico: wholeNumber(100_000),
+    coins_daily_pro: wholeNumber(100_000),
+    coins_daily_avancado: wholeNumber(100_000),
+    coin_cost_essay_correction: wholeNumber(100_000),
+    coin_cost_simulado_short: wholeNumber(100_000),
+    coin_simulado_short_max_questions: wholeNumber(90, 'O simulado tem no máximo 90 questões.'),
+    coin_cost_simulado_long: wholeNumber(100_000),
+    coin_cost_practice: wholeNumber(100_000),
+    coin_cost_questions: wholeNumber(100_000),
+    coin_cost_essay_theme: wholeNumber(100_000),
+    tutor_tokens_basico: wholeNumber(1_000_000_000),
+    tutor_tokens_pro: wholeNumber(1_000_000_000),
+    tutor_tokens_avancado: wholeNumber(1_000_000_000),
+    upgrade_min_cents: wholeNumber(1_000_000),
     private_lessons_enabled: z.boolean().optional(),
     daily_quotes: dailyQuotes.optional(),
     // provedor de pagamento ativo: as chaves ficam no ambiente, aqui só a escolha

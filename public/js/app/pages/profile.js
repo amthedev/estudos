@@ -1,6 +1,6 @@
 // =====================================================================
 // /app/perfil — dados pessoais, prova e metas, rotina de estudos, troca de
-// senha, situação da assinatura e saída da conta.
+// senha, situação da assinatura (com o nível e as moedas de hoje) e saída da conta.
 // Consome GET /api/auth/me, PUT /api/profile, PUT /api/profile/password,
 // GET /api/exams, /api/exams/:id/subjects e /api/billing/status.
 // =====================================================================
@@ -12,6 +12,7 @@ import {
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { fmtDate, fmtHours, initials, statusLabel, weekdayName, daysUntil, pluralize } from '../../core/format.js';
+import { hasCoinLimit, tierLabel } from '../../core/coins.js';
 
 const LEVELS = [
   { value: 'iniciante', label: 'Iniciante — estou começando agora' },
@@ -58,6 +59,9 @@ export default async function renderPage(ctx) {
   }
 
   billing = await api.get('/api/billing/status').catch(() => null);
+  // /me já traz a carteira do dia: aproveita para acertar o chip do topo. Sem
+  // carteira (a conta das moedas falhou), o chip fica como estava em vez de sumir.
+  if (me && me.coins) store.setCoins(me.coins);
 
   if (ctx.query.checkout === 'success') {
     toast('Assinatura confirmada. Bons estudos!', { type: 'success', title: 'Tudo certo' });
@@ -281,10 +285,49 @@ function passwordCard() {
     </section>`;
 }
 
+/**
+ * Nível e moedas de hoje, numa linha. Quem gasta moedas vê o saldo do dia;
+ * quem não gasta (plano antigo, cortesia) vê até quando vale o acesso completo.
+ */
+function coinsLine(subscription) {
+  const wallet = me && me.coins;
+  if (!wallet) return '';
+  if (hasCoinLimit(wallet)) {
+    const balance = Math.max(0, Number(wallet.balance) || 0);
+    const total = Math.max(0, Number(wallet.daily) || 0) + Math.max(0, Number(wallet.granted) || 0);
+    return html`
+      <div class="pr-coins">
+        ${icon('coins')}
+        <span>
+          Nível <strong>${wallet.tier_label || tierLabel(wallet.tier)}</strong> ·
+          <strong>${balance}</strong> de ${total} moedas hoje · renovam à meia-noite
+        </span>
+      </div>`;
+  }
+  if (!wallet.unlimited) return '';
+  const legacyUntil = wallet.reason === 'legacy' && subscription && subscription.legacy_until ? subscription.legacy_until : null;
+  const text = legacyUntil
+    ? html`Acesso completo, sem limite de moedas, até <strong>${fmtDate(legacyUntil)}</strong>`
+    : wallet.reason === 'override'
+      ? 'Acesso liberado pela equipe, sem limite de moedas'
+      : wallet.reason === 'legacy'
+        ? 'Acesso completo, sem limite de moedas'
+        : '';
+  if (!text) return '';
+  return html`<div class="pr-coins">${icon('infinity')}<span>${text}</span></div>`;
+}
+
 function subscriptionCard() {
   const subscription = billing && billing.subscription;
   const access = (billing && billing.access) || me.access || {};
   const active = subscription && subscription.is_active;
+  const tier = subscription && subscription.plan_tier ? tierLabel(subscription.plan_tier) : '';
+  // Upgrade só existe de Básico ou Pro, com a assinatura em dia: no teste de
+  // 24h, no plano antigo (que já tem tudo) e no Avançado, a tela de planos não
+  // oferece nenhum — o link não pode prometer.
+  const upgradable = Boolean(
+    active && ['basico', 'pro'].includes(subscription.plan_tier) && subscription.status === 'active'
+  );
   return html`
     <section class="card pr-card" id="pr-subscription">
       <div class="card-header"><h2 class="card-title">Assinatura</h2></div>
@@ -295,14 +338,19 @@ function subscriptionCard() {
                 <div>
                   <div class="font-semibold">${subscription.plan_name || 'Plano ativo'}</div>
                   <div class="text-2 text-sm">
+                    ${tier ? badge(`Nível ${tier}`, 'blue') : ''}
                     ${badge(statusLabel(subscription.status), subscription.status === 'trialing' ? 'blue' : 'green')}
                     ${subscription.current_period_end
                       ? html` ${subscription.cancel_at_period_end ? 'Acesso até' : 'Renova em'} ${fmtDate(subscription.current_period_end)}`
                       : ''}
                   </div>
+                  ${coinsLine(subscription)}
                 </div>
                 <div class="pr-sub-actions">
                   <button type="button" class="btn btn-secondary" data-action="portal">${icon('credit-card')}<span>Gerenciar assinatura</span></button>
+                  <a class="btn btn-ghost" href="/app/assinatura">
+                    ${icon('arrow-up-right')}<span>${upgradable ? 'Planos e upgrade' : 'Ver planos'}</span>
+                  </a>
                 </div>
               </div>`
           : html`
@@ -316,6 +364,7 @@ function subscriptionCard() {
                         ? 'Nenhum plano é exigido no momento.'
                         : 'Escolha um plano para liberar aulas, simulados e correção de redação.'}
                   </div>
+                  ${access.allowed ? coinsLine(null) : ''}
                 </div>
                 <div class="pr-sub-actions">
                   <a class="btn btn-primary" href="/app/assinatura">${icon('credit-card')}<span>Ver planos</span></a>

@@ -95,6 +95,37 @@
   padding-top: var(--s-4);
   border-top: 1px solid var(--border);
 }
+/* moedas: resumo do dia à esquerda, lançamentos à direita */
+.astu-coins-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2fr);
+  gap: var(--s-5);
+  align-items: start;
+}
+.astu-coins .kv {
+  row-gap: var(--s-2);
+}
+.astu-coins-ledger {
+  min-width: 0;
+}
+.astu-coins-title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.astu-coins-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.astu-coins-amount.is-grant {
+  color: var(--success);
+}
+.astu-coins-amount.is-refunded {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
 .astu-subjects {
   display: flex;
   flex-direction: column;
@@ -203,6 +234,12 @@
 }
 .abook-when strong {
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1023px) {
+  .astu-coins-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 639px) {

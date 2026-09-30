@@ -8,6 +8,7 @@
  *   const prompt = essay.buildCorrectionPrompt(set, exam, theme, content);   // { system, user, messages }
  *   const row    = await essay.correctEssay(essayId);                        // corrige e grava
  *   const theme  = await essay.generateTheme(examId, { userId });            // cria um tema novo
+ *   await essay.releaseInterruptedCorrections();                            // no boot: destrava e estorna
  *
  * Regra central: a correção usa SEMPRE o conjunto de critérios cadastrado para a prova da redação
  * (essay_criteria_sets.exam_id). As competências do ENEM nunca são aplicadas a outra prova. Quando a
@@ -636,6 +637,39 @@ async function generateTheme(examId, { userId = null } = {}) {
   return created;
 }
 
+// ---------------------------------------------------------------------------
+// Recuperação depois de reinício
+// ---------------------------------------------------------------------------
+const INTERRUPTED_MESSAGE = 'A correção foi interrompida quando a aplicação reiniciou. Envie novamente.';
+
+/**
+ * Destrava as redações presas em 'submitted' e devolve a moeda de cada uma.
+ *
+ * A correção roda solta, controlada por um mapa em memória (routes/essays.js).
+ * Se o processo reinicia no meio, ninguém mais está corrigindo: a redação
+ * ficaria "em correção" para sempre e a moeda cobrada no envio, perdida. Quem
+ * sobe agora sabe que nada está rodando — só pode ser chamado no boot, antes
+ * de o servidor aceitar requisições (scripts/bootstrap.js). O caminho lazy do
+ * /submit cobre quem roda sem o bootstrap (npm start).
+ *
+ * @returns {Promise<number>} quantas redações foram destravadas
+ */
+async function releaseInterruptedCorrections() {
+  // Carregado aqui porque só o boot precisa: o serviço de moedas puxa acesso e
+  // configurações, que o resto deste módulo não usa.
+  const coins = require('./coins');
+  const rows = await db.many(
+    `UPDATE essays SET status = 'failed', error_message = $1
+      WHERE status = 'submitted'
+      RETURNING id, user_id`,
+    [INTERRUPTED_MESSAGE]
+  );
+  for (const row of rows) {
+    await coins.refundByRef(row.user_id, 'essay_correction', 'essay', row.id, 'correção interrompida por reinício');
+  }
+  return rows.length;
+}
+
 module.exports = {
   GENERIC_CRITERIA,
   GENERIC_MAX_SCORE,
@@ -650,4 +684,5 @@ module.exports = {
   normalizeCorrection,
   correctEssay,
   generateTheme,
+  releaseInterruptedCorrections,
 };

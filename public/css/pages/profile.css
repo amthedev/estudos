@@ -47,6 +47,28 @@
 .pr-sub-actions {
   display: flex;
   gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+/* nível e moedas de hoje na ficha da assinatura */
+.pr-coins {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.pr-coins .icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--gold);
+}
+
+.pr-coins strong {
+  color: var(--text);
 }
 
 .pr-logout .card-body {
@@ -258,6 +280,7 @@
 .sub-current-actions {
   display: flex;
   gap: var(--s-2);
+  flex-wrap: wrap;
 }
 
 .sub-plans-section {
@@ -588,6 +611,239 @@
   color: var(--primary-2);
   font-size: var(--fs-xs);
   font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------
+   Níveis (Básico, Pro, Avançado), upgrade e moedas
+   --------------------------------------------------------------------- */
+.sub-durations .tabs {
+  margin: 0;
+}
+
+.sub-plan.is-current {
+  border-color: rgba(46, 204, 113, .45);
+}
+
+.sub-plan.is-current::before {
+  background: var(--success);
+  opacity: 1;
+}
+
+/* cartão escolhido na landing (?plan=) */
+.sub-plan.is-selected {
+  box-shadow: 0 0 0 2px var(--gold), 0 20px 44px rgba(0, 0, 0, .26);
+}
+
+.sub-plan-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px var(--s-2);
+  border: 1px solid rgba(226, 189, 89, .35);
+  border-radius: var(--radius-full);
+  color: var(--gold-2);
+  background: var(--gold-soft);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sub-plan-badge-current {
+  border-color: rgba(46, 204, 113, .35);
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.sub-plan-compare {
+  margin-top: var(--s-4);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.sub-plan-compare + .sub-plan-price {
+  margin-top: var(--s-1);
+}
+
+/* três cartões lado a lado (e a barra lateral do app) deixam o cartão estreito:
+   "a cada 12 meses" desce para baixo do preço em vez de vazar pela borda */
+.sub-tier-plan .sub-plan-price {
+  flex-wrap: wrap;
+  row-gap: var(--s-1);
+}
+
+.sub-tier-perks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: var(--s-4) 0 0;
+  padding: var(--s-3);
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.sub-tier-perks li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.sub-tier-perks li > .icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.sub-tier-perks li > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sub-tier-perks strong {
+  color: var(--text);
+  font-family: var(--font-data);
+}
+
+.sub-tier-perks small {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.sub-tier-coins > .icon {
+  color: var(--gold);
+}
+
+.sub-tier-tutor > .icon {
+  color: var(--primary-2);
+}
+
+.sub-plan-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+.sub-plan-note .icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.sub-plan-note-current {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.sub-upgrade-cta span {
+  white-space: normal;
+  text-align: left;
+}
+
+.sub-others {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.sub-others-title {
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+}
+
+/* carteira de moedas do dia */
+.sub-wallet-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+
+.sub-wallet-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(226, 189, 89, .3);
+  border-radius: var(--radius-sm);
+  color: var(--gold-2);
+  background: var(--gold-soft);
+}
+
+.sub-wallet-icon .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.sub-wallet-main {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.sub-wallet-main .sub-section-eyebrow {
+  margin: 0;
+}
+
+.sub-wallet-title {
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.sub-wallet-title strong {
+  color: var(--gold-2);
+  font-family: var(--font-data);
+  font-size: var(--fs-3xl);
+}
+
+.sub-wallet-text {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.sub-wallet-costs {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sub-wallet-costs li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.sub-wallet-costs li:last-child {
+  border-bottom: 0;
 }
 
 /* ---------------------------------------------------------------------

@@ -7,6 +7,7 @@
  *   asaas.isConfigured();                                  // ASAAS_API_KEY presente?
  *   await asaas.ensureCustomer(user);                      // cria/reaproveita o cliente
  *   await asaas.createCheckout({ user, plan });            // → { url, provider, ... }
+ *   await asaas.createUpgradePayment({ user, amountCents, description, reference }); // cobrança da diferença
  *   await asaas.createPortal(user);                        // → { url|null, invoices }
  *   asaas.parseWebhook({ rawBody, headers });              // valida o token e normaliza o evento
  *
@@ -21,6 +22,7 @@
 const crypto = require('node:crypto');
 const config = require('../../config');
 const db = require('../../db/pool');
+const dates = require('../../utils/dates');
 
 const API_BASE_PRODUCTION = 'https://api.asaas.com/v3';
 const API_BASE_SANDBOX = 'https://api-sandbox.asaas.com/v3';
@@ -565,6 +567,88 @@ async function cancelSubscription(subscriptionId) {
   return request('DELETE', `/subscriptions/${encodeURIComponent(subscriptionId)}`);
 }
 
+// ---------------------------------------------------------------------------
+// Upgrade pela diferença
+// ---------------------------------------------------------------------------
+/**
+ * A recusa do Asaas é por causa do endereço de retorno? Só uma recusa de
+ * validação (400) cujo texto fala do callback, da URL de sucesso ou do domínio
+ * — qualquer outro erro (valor, cliente, fora do ar) tem de chegar ao aluno
+ * como está, sem uma segunda tentativa que poderia duplicar a cobrança.
+ */
+function isCallbackRefusal(err) {
+  if (!err || err.code !== 'provider_error' || err.httpStatus !== 400) return false;
+  const codes = err.payload && Array.isArray(err.payload.errors)
+    ? err.payload.errors.map((item) => item && item.code).filter(Boolean).join(' ')
+    : '';
+  return /callback|success_?url|autoredirect|dom[ií]nio|domain/i.test(`${err.message || ''} ${codes}`);
+}
+
+/**
+ * Cobrança avulsa da diferença de um upgrade de plano.
+ *
+ * Vai por POST /payments, e não pelo checkout, por dois motivos. O primeiro é
+ * que a resposta traz o id do pagamento, e é por ele que o webhook reconhece
+ * a cobrança como upgrade — a referência externa do checkout não é copiada
+ * com garantia para o pagamento, e um pagamento de upgrade que caísse na
+ * lógica de compra daria ao aluno um período inteiro de graça. O segundo é que
+ * aqui a referência é do próprio pagamento, então ela também vem no evento, e
+ * serve de segunda chave.
+ *
+ * `billingType: 'UNDEFINED'` deixa o aluno escolher Pix, cartão ou boleto na
+ * fatura do Asaas: quem assinou no cartão não tem cartão guardado aqui.
+ *
+ * O `callback` traz o aluno de volta para a tela de assinatura depois de
+ * pagar. O Asaas só aceita a URL se o domínio dela estiver cadastrado na conta
+ * (Minha Conta → Informações); se ele recusar por isso, a cobrança é criada de
+ * novo sem o callback. Voltar sozinho ao app é conforto — o upgrade não pode
+ * deixar de existir por causa dele.
+ *
+ * @returns {Promise<{ id: string, invoice_url: string|null, status: string|null }>}
+ */
+async function createUpgradePayment({ user, amountCents, description, reference, dueDate }) {
+  if (!user || !user.id) throw new Error('createUpgradePayment exige um usuário.');
+  const cents = Math.round(Number(amountCents));
+  if (!Number.isFinite(cents) || cents <= 0) throw new Error('createUpgradePayment exige um valor positivo.');
+
+  const customer = await ensureCustomer(user);
+  const body = {
+    customer,
+    billingType: 'UNDEFINED',
+    value: cents / 100,
+    // o vencimento é o dia de hoje em São Paulo, não em UTC: depois das 21h o
+    // UTC já está no dia seguinte
+    dueDate: dueDate || dates.todayISO(),
+    description,
+    externalReference: reference,
+  };
+  const callback = config.appUrl
+    ? { successUrl: `${config.appUrl}/app/assinatura?upgrade=success`, autoRedirect: true }
+    : null;
+
+  let created;
+  try {
+    created = await request('POST', '/payments', callback ? { ...body, callback } : body);
+  } catch (err) {
+    if (!callback || !isCallbackRefusal(err)) throw err;
+    console.warn(
+      `[asaas] a cobrança do upgrade ${reference} foi recusada por causa do endereço de retorno (${err.message}). ` +
+        'Criando de novo sem ele: o aluno paga normalmente, só não volta sozinho ao app. ' +
+        'Cadastre o domínio do APP_URL no Asaas (Minha Conta → Informações) para o retorno funcionar.'
+    );
+    created = await request('POST', '/payments', body);
+  }
+  if (!created || !created.id) {
+    throw providerError('provider_error', 'O Asaas não devolveu o identificador da cobrança.');
+  }
+  return { id: created.id, invoice_url: created.invoiceUrl || null, status: created.status || null };
+}
+
+/** Remove uma cobrança avulsa que ainda não foi paga (o Asaas recusa apagar a que já foi). */
+async function deletePayment(paymentId) {
+  return request('DELETE', `/payments/${encodeURIComponent(paymentId)}`);
+}
+
 const centsOf = (value) => Math.round(Number(value || 0) * 100);
 
 /** Faturas do cliente, da mais recente para a mais antiga. */
@@ -745,6 +829,8 @@ module.exports = {
   accessMonths,
   planSchedule,
   parseReference,
+  buildReference,
+  subscriptionDescription,
 
   ensureCustomer,
   findCustomerByUser,
@@ -754,6 +840,8 @@ module.exports = {
   checkoutUrl,
   createCheckout,
   cancelSubscription,
+  createUpgradePayment,
+  deletePayment,
   listInvoices,
   createPortal,
   syncPlan,

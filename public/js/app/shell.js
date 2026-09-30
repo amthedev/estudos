@@ -15,6 +15,7 @@ import { createRouter } from '../core/router.js';
 import { html, render, qs, qsa, dropdown, emptyState, alertBox, setDocumentTitle, toast } from '../core/ui.js';
 import { icon } from '../core/icons.js';
 import { initials, daysUntil } from '../core/format.js';
+import { loadCoins, hasCoinLimit, costFor, setCoinsNavigator } from '../core/coins.js';
 import { routes } from './routes.js';
 
 const DEFAULT_BRAND = 'Foco de Elite';
@@ -60,6 +61,10 @@ let shellEl = null;
 let sidebarEl = null;
 let backdropEl = null;
 let userMenu = null;
+let coinsTimer = null;
+
+/** Ações que gastam moeda; a mais barata diz se ainda dá para fazer alguma coisa hoje. */
+const COIN_ACTIONS = ['essay_correction', 'simulado_short', 'simulado_long', 'practice', 'questions', 'essay_theme'];
 
 // ---------------------------------------------------------------------
 // Utilidades
@@ -241,6 +246,10 @@ function renderShell() {
               <span data-exam-name></span>
               <span class="chip-label" data-exam-days></span>
             </a>
+            <a class="chip chip-coins" href="/app/assinatura" data-coins-chip hidden title="Moedas de hoje — renovam à meia-noite">
+              ${icon('coins')}
+              <span data-coins-value></span><span class="chip-label" data-coins-daily></span>
+            </a>
             <span class="chip chip-streak" data-streak-chip hidden title="Dias seguidos de estudo">
               ${icon('flame')}
               <span data-streak-value></span>
@@ -271,6 +280,7 @@ function renderShell() {
   updateUserBits();
   updateExamChip();
   updateStreakChip();
+  updateCoinsChip();
 }
 
 function bindShellEvents() {
@@ -327,6 +337,17 @@ function bindShellEvents() {
   });
   store.on('progress:updated', updateStreakChip);
   store.on('schedule:updated', updateExamChip);
+  store.on('coins:updated', updateCoinsChip);
+
+  // Aba que ficou em segundo plano durante a madrugada: o relógio do
+  // navegador pode ter pulado o aviso da meia-noite (máquina dormindo). Ao
+  // voltar, se a virada já passou, relê o saldo novo.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const wallet = store.coins;
+    if (!hasCoinLimit(wallet) || !wallet.resets_at) return;
+    if (new Date(wallet.resets_at).getTime() <= Date.now()) loadCoins();
+  });
 }
 
 function userMenuHeader() {
@@ -382,6 +403,55 @@ function updateStreakChip() {
   }
   chip.hidden = false;
   qs('[data-streak-value]', chip).textContent = value === 1 ? '1 dia' : `${value} dias`;
+}
+
+/**
+ * Chip das moedas de hoje ("18/30"). Só aparece para quem gasta moedas: a
+ * equipe, o plano antigo e a cortesia não têm saldo para mostrar. Leva à tela
+ * de assinatura, onde estão os planos com mais moedas por dia.
+ */
+function updateCoinsChip() {
+  const chip = qs('[data-coins-chip]', shellEl);
+  if (!chip) return;
+  const wallet = store.coins;
+  if (!hasCoinLimit(wallet) || wallet.balance === null || wallet.balance === undefined) {
+    chip.hidden = true;
+    scheduleCoinsRefresh();
+    return;
+  }
+  const balance = Math.max(0, Number(wallet.balance) || 0);
+  // moedas extras dadas pela equipe hoje entram no total do dia, para o saldo
+  // nunca aparecer maior que o total ("70/60")
+  const daily = Math.max(0, Number(wallet.daily) || 0) + Math.max(0, Number(wallet.granted) || 0);
+  chip.hidden = false;
+  qs('[data-coins-value]', chip).textContent = String(balance);
+  qs('[data-coins-daily]', chip).textContent = daily ? `/${daily}` : '';
+  chip.setAttribute(
+    'aria-label',
+    `Moedas de hoje: ${balance}${daily ? ` de ${daily}` : ''}. Renovam à meia-noite. Ver planos.`
+  );
+  // Sem saldo nem para a ação mais barata, o chip muda de cor: o aluno entende
+  // antes do clique por que a próxima ação vai pedir upgrade.
+  const cheapest = COIN_ACTIONS.map((action) => costFor(action, wallet)).filter((cost) => cost > 0);
+  chip.classList.toggle('is-empty', balance <= 0 || (cheapest.length > 0 && balance < Math.min(...cheapest)));
+  scheduleCoinsRefresh();
+}
+
+/**
+ * Relê o saldo logo depois da meia-noite de São Paulo, quando as moedas voltam.
+ * Alguns segundos de folga para o servidor já estar no dia novo; se o relógio
+ * do aparelho estiver adiantado, espera um minuto em vez de insistir.
+ */
+function scheduleCoinsRefresh() {
+  clearTimeout(coinsTimer);
+  coinsTimer = null;
+  const wallet = store.coins;
+  if (!hasCoinLimit(wallet) || !wallet.resets_at) return;
+  const until = new Date(wallet.resets_at).getTime() - Date.now();
+  if (!Number.isFinite(until)) return;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const delay = until > 0 ? Math.min(until, DAY_MS) + 5000 : 60 * 1000;
+  coinsTimer = setTimeout(() => loadCoins(), delay);
 }
 
 function updateActiveNav(path) {
@@ -492,6 +562,8 @@ function startRouter() {
     notFound: renderNotFound,
   });
   router.start();
+  // "Ver planos" do aviso de moedas navega sem recarregar o app.
+  setCoinsNavigator((path) => router.navigate(path));
 }
 
 // ---------------------------------------------------------------------
@@ -528,6 +600,10 @@ async function boot() {
   // avisos vindos por query (ex.: retorno do checkout)
   const params = new URLSearchParams(location.search);
   if (params.get('checkout') === 'success') toast('Assinatura ativada. Bons estudos.', { type: 'success' });
+
+  // A sessão de /me pode ter vindo sem a carteira (falha isolada no cálculo):
+  // uma segunda tentativa não custa nada e faz o chip aparecer.
+  if (!store.coins && store.hasAccess) loadCoins();
 }
 
 boot();

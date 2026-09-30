@@ -53,6 +53,29 @@ function queryParam(name) {
   return new URLSearchParams(location.search).get(name);
 }
 
+/**
+ * Plano escolhido na landing (?plan=<slug> no link de cadastro). Só o formato
+ * de slug passa: o valor vai parar na URL da tela de assinatura.
+ */
+function chosenPlan() {
+  const slug = (queryParam('plan') || '').trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,79}$/.test(slug) ? slug : '';
+}
+
+/**
+ * Leva o plano da landing até a tela de assinatura, onde ele aparece já
+ * selecionado. Outros destinos (onboarding, quando nenhum plano é exigido)
+ * seguem como estão.
+ */
+function withChosenPlan(destino) {
+  const plan = chosenPlan();
+  if (!plan) return destino;
+  const url = new URL(destino, location.origin);
+  if (url.pathname !== '/app/assinatura') return destino;
+  url.searchParams.set('plan', plan);
+  return url.pathname + url.search + url.hash;
+}
+
 function initYear() {
   qsa('[data-year]').forEach((el) => {
     el.textContent = String(new Date().getFullYear());
@@ -276,9 +299,16 @@ function initRegister() {
         { name: name.value.trim(), email: email.value.trim(), password: password.value },
         { noRedirect: true }
       );
-      location.assign(safeNext(result && result.next, '/app/assinatura'));
+      location.assign(withChosenPlan(safeNext(result && result.next, '/app/assinatura')));
     },
   });
+
+  // Quem já tem conta e clica em "Entrar" não perde o plano que escolheu.
+  const plan = chosenPlan();
+  const loginLink = qs('.auth-alt a[href="/login"]');
+  if (plan && loginLink) {
+    loginLink.setAttribute('href', `/login?next=${encodeURIComponent(`/app/assinatura?plan=${plan}`)}`);
+  }
 }
 
 // ---------------------------------------------------------------------

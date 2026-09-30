@@ -49,5 +49,24 @@ module.exports = {
   // Permite que um simulado completo seja realmente completado pela IA quando
   // o banco ainda não tiver as 80 questões do recorte escolhido.
   simulado_ai_questions_max: 80,
+  // Moedas por dia de cada nível. Não acumulam: o saldo volta a este valor à
+  // meia-noite de São Paulo.
+  coins_daily_basico: 30,
+  coins_daily_pro: 60,
+  coins_daily_avancado: 100,
+  // Custo em moedas de cada ação que chama a IA (0 = grátis).
+  coin_cost_essay_correction: 20,
+  coin_cost_simulado_short: 10,
+  coin_simulado_short_max_questions: 30,
+  coin_cost_simulado_long: 30,
+  coin_cost_practice: 2,
+  coin_cost_questions: 5,
+  coin_cost_essay_theme: 5,
+  // Cota mensal de tokens do Tutor IA por nível.
+  tutor_tokens_basico: 1500000,
+  tutor_tokens_pro: 3000000,
+  tutor_tokens_avancado: 5000000,
+  // Menor cobrança de diferença no upgrade, em centavos.
+  upgrade_min_cents: 500,
   private_lessons_enabled: true,
 };

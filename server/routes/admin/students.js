@@ -10,6 +10,7 @@
  *   POST   /api/admin/students/:id/block       bloqueia e encerra sessões (token_version + 1)
  *   POST   /api/admin/students/:id/unblock
  *   POST   /api/admin/students/:id/grant-access { until: ISO | 'YYYY-MM-DD' | null }
+ *   POST   /api/admin/students/:id/coins      { amount: 1..500, note } → moedas extras só para hoje
  *   POST   /api/admin/students/:id/reset-password { password }
  *   DELETE /api/admin/students/:id
  *
@@ -24,6 +25,7 @@ const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const { USER_COLUMNS, sanitizeUser } = require('../../middleware/auth');
 const { computeAccess } = require('../../middleware/access');
+const coins = require('../../services/coins');
 const { parsePagination, paginate, parseSort } = require('../../utils/pagination');
 const { TIMEZONE, todayISO, addDays, eachDay, isISODate } = require('../../utils/dates');
 
@@ -81,6 +83,19 @@ const updateSchema = z
 const grantSchema = z.object({
   until: z.union([z.string().trim().min(10).max(40), z.null()]),
 });
+
+const coinGrantSchema = z
+  .object({
+    amount: z.coerce
+      .number()
+      .int('Use um número inteiro de moedas.')
+      .min(1, 'Dê pelo menos 1 moeda.')
+      .max(500, 'O máximo por vez é 500 moedas.'),
+    // O motivo é obrigatório: é o que o suporte lê depois para entender por
+    // que aquele aluno teve mais moedas num dia.
+    note: z.string().trim().min(3, 'Escreva o motivo em poucas palavras.').max(200),
+  })
+  .strict();
 
 const resetPasswordSchema = z.object({
   password: z.string().min(8, 'A senha deve ter pelo menos 8 caracteres.').max(128),
@@ -195,6 +210,37 @@ async function loadMetrics(userId, examId) {
   };
 }
 
+const COIN_LEDGER_LIMIT = 20;
+
+/**
+ * Moedas do aluno para a ficha: a carteira de hoje e os últimos lançamentos,
+ * com o nome de quem concedeu. Um erro aqui não derruba a ficha: o suporte
+ * ainda precisa ver e editar o resto do aluno se o livro de moedas falhar.
+ */
+async function loadCoins(user, access) {
+  try {
+    const [wallet, entries] = await Promise.all([
+      coins.getWallet({ user: { id: user.id, role: user.role }, access }),
+      coins.ledger(user.id, { limit: COIN_LEDGER_LIMIT }),
+    ]);
+    const adminIds = [...new Set(entries.map((entry) => entry.created_by).filter(Boolean))];
+    const admins = adminIds.length
+      ? await db.many('SELECT id, name FROM users WHERE id = ANY($1::uuid[])', [adminIds])
+      : [];
+    const names = new Map(admins.map((row) => [row.id, row.name]));
+    return {
+      wallet,
+      ledger: entries.map((entry) => ({
+        ...entry,
+        created_by_name: entry.created_by ? names.get(entry.created_by) || null : null,
+      })),
+    };
+  } catch (err) {
+    console.error(`[admin/alunos] não foi possível ler as moedas do aluno ${user.id}:`, err.message);
+    return null;
+  }
+}
+
 async function loadStudentDetail(id) {
   const user = await requireStudentRow(id);
   const profile = await loadProfile(id);
@@ -238,6 +284,7 @@ async function loadStudentDetail(id) {
     profile,
     access,
     subscription: access.subscription,
+    coins: await loadCoins(user, access),
     metrics,
     recent_activity: recentActivity,
     essays,
@@ -541,6 +588,38 @@ router.post(
       access,
       message: until ? 'Acesso liberado manualmente.' : 'Liberação manual removida.',
     });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Moedas extras (suporte)
+// ---------------------------------------------------------------------------
+/**
+ * Dá moedas ao aluno só para hoje. Elas somam ao saldo do dia e, como as do
+ * nível, não passam para amanhã. Serve ao suporte: uma correção que deu
+ * problema, uma cortesia pontual. Cada concessão fica no livro de moedas (com
+ * quem deu e o motivo) e na auditoria.
+ */
+router.post(
+  '/:id/coins',
+  validate({ params: idParams, body: coinGrantSchema }),
+  wrap(async (req, res) => {
+    const { id } = req.valid.params;
+    const { amount, note } = req.valid.body;
+    const user = await requireStudentRow(id);
+
+    const entry = await coins.grant(db, { userId: id, amount, adminId: req.admin ? req.admin.id : null, note });
+    await audit(req, 'student.coins_grant', 'user', id, { amount, note, day: entry.day });
+
+    const info = await loadCoins(user, await computeAccess(id));
+    const somadas = amount === 1 ? '1 moeda somada' : `${amount} moedas somadas`;
+    // Para quem não gasta moeda agora (plano antigo, cortesia, acesso aberto)
+    // a concessão fica registrada, mas só conta se ele passar a usar moedas
+    // ainda hoje — o painel avisa em vez de fingir que o saldo mudou.
+    const message = info && info.wallet && info.wallet.unlimited
+      ? `${somadas} ao dia de hoje. Hoje este aluno não gasta moedas, então elas só contam se isso mudar até a meia-noite.`
+      : `${somadas} ao saldo de hoje.`;
+    res.status(201).json({ grant: entry, coins: info, message });
   })
 );
 

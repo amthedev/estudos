@@ -162,6 +162,23 @@ function nowInSaoPaulo() {
   return { ...parts, date: `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`, time: `${pad(parts.hour)}:${pad(parts.minute)}` };
 }
 
+/**
+ * Instante em que começa o dia 'YYYY-MM-DD' em São Paulo (00:00 local) → Date.
+ *
+ * O deslocamento é lido do próprio fuso em vez de fixado em -3h: o Brasil já
+ * teve horário de verão e pode voltar a ter, e um "meia-noite" errado em uma
+ * hora faria as moedas do dia virarem na hora errada.
+ */
+function midnightInSaoPaulo(date) {
+  const iso = toISODate(date);
+  if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d);
+  const local = partsInTimezone(new Date(guess));
+  const offset = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) - guess;
+  return new Date(guess - offset);
+}
+
 /** Verdadeiro se a data é anterior a hoje (São Paulo). */
 function isPast(date) {
   const iso = toISODate(date);
@@ -202,6 +219,7 @@ module.exports = {
   formatBR,
   formatLongBR,
   nowInSaoPaulo,
+  midnightInSaoPaulo,
   isPast,
   minutesToTime,
   timeToMinutes,

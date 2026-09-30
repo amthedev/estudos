@@ -2504,6 +2504,115 @@ button.list-item {
 .topbar .chip-streak .icon {
   color: var(--warning);
 }
+/* Moedas de hoje: dourado da marca; sem saldo para a ação mais barata, vermelho */
+.topbar .chip-coins {
+  color: var(--gold-2);
+  border-color: rgba(226, 189, 89, .35);
+  background: var(--gold-soft);
+  font-family: var(--font-data);
+  font-weight: 700;
+}
+.topbar .chip-coins .icon {
+  color: var(--gold);
+}
+.topbar .chip-coins .chip-label {
+  margin-left: -4px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.topbar a.chip-coins:hover {
+  color: var(--gold-2);
+  border-color: rgba(226, 189, 89, .6);
+}
+.topbar .chip-coins.is-empty {
+  color: var(--danger);
+  border-color: rgba(255, 107, 107, .35);
+  background: var(--danger-soft);
+}
+.topbar .chip-coins.is-empty .icon {
+  color: var(--danger);
+}
+
+/* Custo em moedas dentro de botões e textos ("🪙 20") */
+.coin-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  padding: 1px 7px 1px 5px;
+  border: 1px solid rgba(226, 189, 89, .32);
+  border-radius: var(--radius-full);
+  background: var(--gold-soft);
+  color: var(--gold-2);
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.coin-cost .icon {
+  width: 12px;
+  height: 12px;
+  color: var(--gold);
+}
+.btn .coin-cost {
+  border-color: rgba(255, 255, 255, .14);
+  background: rgba(3, 9, 18, .24);
+  color: inherit;
+}
+.btn .coin-cost .icon {
+  width: 12px;
+  height: 12px;
+  color: var(--gold-2);
+}
+.btn.is-loading .coin-cost {
+  visibility: hidden;
+}
+
+/* Aviso de moedas esgotadas (modal aberto por handleCoinError) */
+.coin-alert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.coin-alert-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+.coin-alert-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+.coin-alert-figure span {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.coin-alert-figure strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: var(--fs-xl);
+}
+.coin-alert-figure .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--gold);
+}
+.coin-alert-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
 
 .search-box {
   position: relative;

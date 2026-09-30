@@ -14,6 +14,7 @@ import { html, raw, render, qs, on, debounce, modal, toast, setLoading, pageHead
 import { icon } from '../../core/icons.js';
 import { mdToText } from '../../core/markdown.js';
 import { difficultyLabel, difficultyTone } from '../../core/format.js';
+import { loadCoins, coinCost, costFor, handleCoinError } from '../../core/coins.js';
 import { mountQuestionRunner } from '../../components/question-runner.js';
 import { accentStyle, pager } from './subjects.js';
 
@@ -280,10 +281,12 @@ export default async function renderPage(ctx) {
                 <h3 class="qbank-generate-title">${icon('sparkles')}<span>Quer que a IA elabore agora?</span></h3>
                 <p class="qbank-generate-text">
                   Ela escreve cinco questões deste recorte, com resolução comentada, e elas ficam no
-                  banco para os outros alunos também.
+                  banco para os outros alunos também.${costFor('questions')
+                    ? ' Se nenhuma questão sair, as moedas voltam.'
+                    : ''}
                 </p>
                 <button type="button" class="btn btn-primary" data-action="generate">
-                  ${icon('sparkles')}<span>Elaborar questões deste assunto</span>
+                  ${icon('sparkles')}<span>Elaborar questões deste assunto</span>${coinCost(costFor('questions'))}
                 </button>
               </div>
             </section>`
@@ -316,10 +319,11 @@ export default async function renderPage(ctx) {
       toast(`${res.generated} ${res.generated === 1 ? 'questão elaborada' : 'questões elaboradas'}.`, { type: 'success' });
       await loadList();
     } catch (err) {
-      toast((err && err.message) || 'Não foi possível elaborar as questões agora.', { type: 'error' });
+      if (!handleCoinError(err)) toast((err && err.message) || 'Não foi possível elaborar as questões agora.', { type: 'error' });
     } finally {
       state.gerando = false;
       setLoading(trigger, false);
+      loadCoins();
     }
   }
 

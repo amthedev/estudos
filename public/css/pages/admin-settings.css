@@ -162,6 +162,13 @@
 .aplan-user:hover strong {
   color: var(--primary-2);
 }
+/* upgrades pagos sem troca: só aparece quando o suporte precisa agir */
+.aplan-unapplied {
+  border-color: var(--warning);
+}
+.aplan-unapplied .card-title .icon {
+  color: var(--warning);
+}
 
 /* ---------------------------------------------------------------------
    Plataforma
@@ -169,6 +176,18 @@
 .aplat-health,
 .aplat-ai-stats {
   gap: var(--s-3);
+}
+/* cotas de IA por nível, logo abaixo dos números do mês */
+.aplat-ai-quotas {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  line-height: 1.5;
+}
+.aplat-ai-quotas .icon {
+  flex: none;
+  margin-top: 2px;
 }
 .aplat-kv {
   grid-template-columns: max-content 1fr;

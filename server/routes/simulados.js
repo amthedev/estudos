@@ -5,7 +5,8 @@
  *
  *   GET   /api/simulados                        → { templates, history, stats, catalog, defaults, in_progress }
  *   GET   /api/simulados/catalog?subject_id=    → { topics } (assuntos da matéria com questões disponíveis)
- *   POST  /api/simulados/attempts               → tentativa criada com questões (sem gabarito)
+ *   POST  /api/simulados/attempts               → tentativa criada com questões (sem gabarito); custa moedas
+ *                                                 (402 insufficient_coins sem saldo)
  *   GET   /api/simulados/attempts?status=       → histórico (até 50)
  *   GET   /api/simulados/attempts/:id           → tentativa + questões (+ gabarito e resolução quando finalizada)
  *   PATCH /api/simulados/attempts/:id/answers   { question_id, option_id|null }
@@ -340,8 +341,12 @@ router.post(
   validate({ body: createSchema }),
   wrap(async (req, res) => {
     const body = req.valid.body;
+    // Montar custa moedas (pelo número de questões); o serviço cobra e devolve
+    // a moeda se a tentativa não chegar a ser criada.
     const created = await simulados.buildAttempt({
       userId: req.user.id,
+      user: req.user,
+      access: req.access,
       type: body.type,
       mode: body.mode || null,
       simuladoId: body.simulado_id || null,

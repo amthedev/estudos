@@ -13,6 +13,7 @@ import { html, render, qs, on, tabs, toast, setLoading, pageHeader, errorState, 
 import { icon } from '../../core/icons.js';
 import { md } from '../../core/markdown.js';
 import { fmtMinutes, fmtDateTime, pluralize } from '../../core/format.js';
+import { coinCost, costFor } from '../../core/coins.js';
 import { renderVideo } from '../../components/video-player.js';
 import { mountNotesEditor } from '../../components/notes-editor.js';
 import { accentStyle } from './subjects.js';
@@ -59,6 +60,9 @@ function practiceButton(lesson) {
         ${available
           ? 'Três questões dos assuntos da aula, no nível que você escolher.'
           : 'Três questões elaboradas na hora sobre os assuntos da aula, no nível que você escolher.'}
+        ${costFor('practice')
+          ? html`Se a IA precisar elaborar alguma, a prática usa ${coinCost(costFor('practice'))}; só com questões do banco, não gasta nada.`
+          : ''}
       </span>
     </p>`;
 }

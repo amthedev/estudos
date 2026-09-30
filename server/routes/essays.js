@@ -10,16 +10,21 @@
  *   GET    /api/essays/stats               → { count, avg, best, evolution[] }
  *   POST   /api/essays                     { exam_id?, theme_id?, theme_title?, content } → rascunho
  *   PUT    /api/essays/:id                 → altera o rascunho (somente status draft)
- *   POST   /api/essays/:id/submit          → corrige com IA de forma síncrona (até 90s)
+ *   POST   /api/essays/:id/submit          → envia para correção (200 corrigida, 202 ainda corrigindo)
  *   GET    /api/essays/:id                 → redação + correção + critérios da prova
  *   DELETE /api/essays/:id                 → apaga o rascunho (somente status draft)
  *
  * A correção usa sempre os critérios cadastrados para a PROVA da redação (services/essay.js).
  * Toda consulta filtra por user_id = req.user.id.
+ *
+ * Moedas (services/coins): a correção e o tema gerado por IA custam moedas do
+ * dia. Falhou, a moeda volta.
  */
+const crypto = require('node:crypto');
 const router = require('express').Router();
 const db = require('../db/pool');
 const essays = require('../services/essay');
+const coins = require('../services/coins');
 const { validate, z } = require('../middleware/validate');
 const { AppError, wrap } = require('../middleware/errors');
 const { requireStudent } = require('../middleware/auth');
@@ -30,6 +35,22 @@ const { TIMEZONE } = require('../utils/dates');
 const MAX_CONTENT_CHARS = essays.MAX_CONTENT_CHARS;
 /** Quanto o /submit espera pela correção antes de responder 202 e soltar. */
 const GRACA_DE_CORRECAO_MS = 12_000;
+
+/**
+ * A espera de verdade. Nos testes ela pode ser encurtada por
+ * ESSAY_CORRECTION_GRACE_MS: é o único jeito de exercitar a falha que chega
+ * DEPOIS do 202 sem cada teste custar doze segundos. Fora de teste a variável
+ * é ignorada.
+ */
+function gracaDeCorrecaoMs() {
+  if (process.env.NODE_ENV === 'test' && process.env.ESSAY_CORRECTION_GRACE_MS !== undefined) {
+    const ms = Number(process.env.ESSAY_CORRECTION_GRACE_MS);
+    if (Number.isFinite(ms) && ms >= 0) return ms;
+  }
+  return GRACA_DE_CORRECAO_MS;
+}
+
+const FALHA_GENERICA = 'Não foi possível corrigir a redação agora. Tente novamente em instantes.';
 
 /**
  * Correções em andamento neste processo, por id de redação → a Promise da
@@ -46,17 +67,38 @@ const GRACA_DE_CORRECAO_MS = 12_000;
  * rápida — o caso do mock nos testes, e de textos curtos — a resposta já sai
  * pronta; quando é longa, o /submit responde 202 e não segura a conexão.
  * Uma correção órfã de reinício é retomada no próximo envio e destravada no
- * boot pelo bootstrap.
+ * boot pelo bootstrap (essays.releaseInterruptedCorrections), e nos dois casos
+ * a moeda da correção interrompida volta ao aluno.
  */
 const correcoesEmCurso = new Map();
 
-function iniciarCorrecao(essayId) {
+/**
+ * Dispara a correção solta.
+ *
+ * O estorno da moeda mora no .catch, e não no handler: depois do 202 a falha
+ * acontece longe da requisição, e só este ponto vê TODA rejeição — inclusive
+ * as que correctEssay lança fora do próprio try (critérios, gravação da nota),
+ * que não passam pelo UPDATE para 'failed' de lá. Por isso aqui também se
+ * marca 'failed': sem isso a redação ficaria "em correção" com a moeda já
+ * devolvida. Tudo é aguardado antes de a Promise resolver, e a redação só sai
+ * do mapa no fim — o /submit recusa reenvio enquanto ela está no mapa, então
+ * nenhum reenvio consegue cobrar de novo no meio deste estorno.
+ */
+function iniciarCorrecao(essayId, userId) {
   if (correcoesEmCurso.has(essayId)) return correcoesEmCurso.get(essayId);
   const promessa = essays
     .correctEssay(essayId, { timeoutMs: essays.CORRECTION_TIMEOUT_MS })
-    .catch((err) => {
-      // correctEssay já grava status 'failed'; aqui é o log e o sinal para o /submit.
+    .catch(async (err) => {
       console.error(`[essays] correção de ${essayId} falhou: ${err && err.message ? err.message : err}`);
+      const mensagem = err instanceof AppError && err.message ? err.message : FALHA_GENERICA;
+      await db
+        .query(
+          `UPDATE essays SET status = 'failed', error_message = $2, corrected_at = NULL
+            WHERE id = $1 AND status = 'submitted'`,
+          [essayId, mensagem.slice(0, 1000)]
+        )
+        .catch((dbErr) => console.error(`[essays] não foi possível marcar ${essayId} como falha: ${dbErr.message}`));
+      await coins.refundByRef(userId, 'essay_correction', 'essay', essayId, 'falha na correção');
       return { falhou: true };
     })
     .finally(() => correcoesEmCurso.delete(essayId));
@@ -212,7 +254,26 @@ router.post(
   validate({ body: generateSchema }),
   wrap(async (req, res) => {
     const examId = await resolveExamId(req.user.id, (req.valid.body || {}).exam_id);
-    const theme = await essays.generateTheme(examId, { userId: req.user.id });
+
+    // Cada pedido é um tema novo, então a referência também é nova: dois
+    // cliques são dois temas e duas cobranças, como seriam duas chamadas à IA.
+    const { essay_theme: custo } = await coins.readCosts();
+    const { chargeId } = await coins.charge(db, {
+      user: req.user,
+      access: req.access,
+      action: 'essay_theme',
+      cost: custo,
+      refType: 'essay_theme',
+      refId: crypto.randomUUID(),
+    });
+
+    let theme;
+    try {
+      theme = await essays.generateTheme(examId, { userId: req.user.id });
+    } catch (err) {
+      await coins.refund(chargeId, 'falha ao gerar o tema');
+      throw err;
+    }
     res.status(201).json(theme);
   })
 );
@@ -399,31 +460,75 @@ router.post(
       throw new AppError(400, 'validation_error', 'Escreva a redação antes de enviar para correção.');
     }
 
+    // Correção desta redação rodando neste processo — inclusive uma longa que já
+    // passou da janela abaixo, ou uma que acabou de falhar e ainda está
+    // devolvendo a moeda. Reenviar agora cobraria de novo por uma correção que
+    // não vai acontecer duas vezes.
+    const emAndamento = () =>
+      new AppError(409, 'conflict', 'Esta redação já está sendo corrigida. Aguarde um instante.');
+    if (correcoesEmCurso.has(essay.id)) throw emAndamento();
+
     // "submitted" órfã: a correção anterior foi interrompida (reinício no meio) e
     // ninguém está corrigindo esta redação agora. Sem isto, reenviar era barrado
     // e a redação ficava "em correção" para sempre. Uma correção de verdade em
     // curso dura no máximo o timeout; passado isso com folga, é órfã e pode
     // recomeçar. Uma que ainda esteja dentro da janela é barrada, para não
     // rodar duas correções ao mesmo tempo.
+    const janelaSeg = Math.ceil((essays.CORRECTION_TIMEOUT_MS + 30_000) / 1000);
     if (essay.status === 'submitted') {
       const desde = essay.submitted_at ? Date.now() - new Date(essay.submitted_at).getTime() : Infinity;
-      if (desde < essays.CORRECTION_TIMEOUT_MS + 30_000) {
-        throw new AppError(409, 'conflict', 'Esta redação já está sendo corrigida. Aguarde um instante.');
-      }
+      if (desde < janelaSeg * 1000) throw emAndamento();
     }
 
-    await db.query(
-      `UPDATE essays SET status = 'submitted', submitted_at = now(), error_message = NULL
-        WHERE id = $1 AND user_id = $2`,
-      [essay.id, req.user.id]
-    );
+    // Mudar para 'submitted' e cobrar acontecem juntos ou não acontecem. A
+    // transição é condicional: com dois cliques, o segundo UPDATE espera a trava
+    // da linha, relê o status já 'submitted' e não pega nada — sai 409 sem
+    // cobrar. A condição da órfã repete a janela acima no banco pelo mesmo
+    // motivo: dois reenvios de uma órfã não podem passar juntos.
+    const { essay_correction: custo } = await coins.readCosts();
+    await db.tx(async (client) => {
+      const movida = await client.one(
+        `UPDATE essays SET status = 'submitted', submitted_at = now(), error_message = NULL
+          WHERE id = $1 AND user_id = $2
+            AND (status IN ('draft', 'failed')
+                 OR (status = 'submitted'
+                     AND (submitted_at IS NULL OR submitted_at < now() - make_interval(secs => $3))))
+          RETURNING id`,
+        [essay.id, req.user.id, janelaSeg]
+      );
+      if (!movida) throw emAndamento();
+
+      // Cobrança viva que sobrou do envio anterior — correção interrompida por
+      // reinício, ou falha cujo estorno não chegou a gravar — volta antes da
+      // nova. Feito com a linha da redação travada pela transição acima, nenhum
+      // reenvio paralelo chega aqui e devolve a cobrança nova por engano.
+      if (essay.status !== 'draft') {
+        await coins.refundByRef(
+          req.user.id,
+          'essay_correction',
+          'essay',
+          essay.id,
+          essay.status === 'submitted' ? 'correção interrompida' : 'falha na correção',
+          client
+        );
+      }
+
+      await coins.charge(client, {
+        user: req.user,
+        access: req.access,
+        action: 'essay_correction',
+        cost: custo,
+        refType: 'essay',
+        refId: essay.id,
+      });
+    });
 
     // A correção roda solta. Espera-se por ela só um instante: correção rápida
     // (texto curto, ou o mock dos testes) já volta pronta; correção longa
     // responde 202 e a tela acompanha por GET /:id, sem a borda cortar a
     // conexão no meio.
-    const promessa = iniciarCorrecao(essay.id);
-    await correcaoTerminaEm(promessa, GRACA_DE_CORRECAO_MS);
+    const promessa = iniciarCorrecao(essay.id, req.user.id);
+    await correcaoTerminaEm(promessa, gracaDeCorrecaoMs());
 
     const atual = await findEssayFull(req.user.id, essay.id);
     if (atual.status === 'failed') {

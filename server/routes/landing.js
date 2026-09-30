@@ -10,7 +10,8 @@
  *       plans: [...],                                  // só planos ativos, sem ids do provedor de pagamento
  *       testimonials: [...],                           // só depoimentos ativos
  *       faqs: [{ id, question, answer }],              // só perguntas ativas
- *       brand: { name, support_email }
+ *       brand: { name, support_email },
+ *       countdown: { exam_short_name, exam_date, days_left } | null   // ENEM com data futura
  *     }
  *
  * Regras:
@@ -22,6 +23,9 @@
  *     "Mensal — R$ 44,90".
  *   - Cada plano já chega com as contas prontas (monthly_equivalent_cents, savings_cents) para
  *     que a página não precise inventar número nenhum.
+ *   - A contagem regressiva usa a data da prova do ENEM cadastrada no painel (Provas → editar,
+ *     "Data da próxima prova"). Sem data, ou com a data já passada, countdown chega nulo e a
+ *     faixa não aparece.
  *
  * Cache em memória de 60 segundos, invalidado por invalidateLandingCache() sempre que o painel
  * salva algum conteúdo da página inicial (server/routes/admin/landing.js).
@@ -30,6 +34,8 @@ const router = require('express').Router();
 const db = require('../db/pool');
 const { wrap } = require('../middleware/errors');
 const settings = require('../services/settings');
+const coins = require('../services/coins');
+const dates = require('../utils/dates');
 
 const CACHE_TTL_MS = 60 * 1000;
 const PLANS_MARKER = /\{\{\s*planos\s*\}\}/gi;
@@ -38,7 +44,7 @@ const PLANS_MARKER = /\{\{\s*planos\s*\}\}/gi;
 const PUBLIC_PLAN_COLUMNS = [
   'id', 'slug', 'name', 'description', 'price_cents', 'currency', 'interval', 'interval_count',
   'duration_months', 'bonus_months', 'compare_price_cents', 'badge', 'trial_days', 'features',
-  'highlight', 'sort_order',
+  'highlight', 'sort_order', 'tier',
 ].join(', ');
 
 let cache = null; // { at: number, payload: object }
@@ -74,8 +80,12 @@ function accessMonths(plan) {
   return total > 0 ? total : null;
 }
 
-/** Plano no formato público, com as contas já feitas a partir do banco. */
-function publicPlan(row) {
+/**
+ * Plano no formato público, com as contas já feitas a partir do banco.
+ * `allowances` traz as moedas por dia e a cota do Tutor de cada nível, lidas
+ * das configurações; plano sem nível (antigo) chega com as duas nulas.
+ */
+function publicPlan(row, allowances = {}) {
   const price = Number(row.price_cents) || 0;
   const months = accessMonths(row);
   const compare = row.compare_price_cents === null || row.compare_price_cents === undefined
@@ -83,6 +93,8 @@ function publicPlan(row) {
     : Number(row.compare_price_cents);
   // economia só existe quando o preço de comparação é maior; nunca um número negativo
   const savings = compare !== null && compare > price ? compare - price : null;
+  const tier = coins.TIERS.includes(row.tier) ? row.tier : null;
+  const allowance = tier ? allowances[tier] : null;
 
   return {
     id: row.id,
@@ -102,12 +114,29 @@ function publicPlan(row) {
     highlight: Boolean(row.highlight),
     monthly_equivalent_cents: months ? Math.round(price / months) : null,
     savings_cents: savings,
+    tier,
+    daily_coins: allowance ? allowance.daily_coins : null,
+    tutor_monthly_tokens: allowance ? allowance.tutor_monthly_tokens : null,
   };
 }
 
 /** Lista dos planos ativos em texto, uma linha por plano: "Mensal — R$ 44,90". */
 function plansAsText(plans) {
   return plans.map((plan) => `${plan.name} — ${formatMoney(plan.price_cents, plan.currency)}`).join('\n');
+}
+
+/**
+ * Contagem regressiva até a prova, contada no dia civil de São Paulo.
+ *
+ * Roda a cada resposta, e não dentro do cache: o cache guarda só a data da
+ * prova, e os dias que faltam mudam à meia-noite. No dia da prova e depois
+ * dela, devolve nulo — "faltam 0 dias" não vende nada.
+ */
+function countdownFrom(exam, today = dates.todayISO()) {
+  if (!exam || !exam.exam_date) return null;
+  const daysLeft = dates.diffDays(today, exam.exam_date);
+  if (!(daysLeft > 0)) return null;
+  return { exam_short_name: exam.exam_short_name, exam_date: exam.exam_date, days_left: daysLeft };
 }
 
 /** Troca {{planos}} pela lista de preços do banco. Sem planos ativos, o marcador some. */
@@ -126,7 +155,7 @@ function applyPlansMarker(text, plansText) {
 // leitura do banco
 // ---------------------------------------------------------------------------
 async function loadPayload() {
-  const [blockRows, examRows, planRows, testimonialRows, faqRows, tourRows, brand] = await Promise.all([
+  const [blockRows, examRows, planRows, testimonialRows, faqRows, tourRows, brand, allowances, enem] = await Promise.all([
     db.many(
       `SELECT key, eyebrow, title, subtitle, body, items, cta_label, cta_href, image_url, sort_order
          FROM landing_blocks
@@ -166,9 +195,20 @@ async function loadPayload() {
         ORDER BY sort_order ASC, id ASC`
     ),
     settings.getMany(['brand_name', 'support_email']),
+    coins.tierAllowances(),
+    // A prova do ENEM é achada pelo slug; o nome curto é o plano B para uma
+    // base em que o slug foi trocado no painel. Não depende de "destaque":
+    // a contagem vale mesmo que o ENEM saia da vitrine de provas.
+    db.one(
+      `SELECT short_name AS exam_short_name, exam_date
+         FROM exams
+        WHERE active = true AND (slug = 'enem' OR upper(short_name) = 'ENEM')
+        ORDER BY (slug = 'enem') DESC, sort_order ASC
+        LIMIT 1`
+    ),
   ]);
 
-  const plans = planRows.map(publicPlan);
+  const plans = planRows.map((row) => publicPlan(row, allowances));
   const plansText = plansAsText(plans);
 
   const blocks = {};
@@ -202,6 +242,8 @@ async function loadPayload() {
       name: brand.brand_name,
       support_email: brand.support_email,
     },
+    // guardado cru (só a data); a conta dos dias é feita na resposta
+    countdown: enem ? { exam_short_name: enem.exam_short_name, exam_date: enem.exam_date } : null,
   };
 }
 
@@ -226,7 +268,7 @@ router.get(
   wrap(async (req, res) => {
     const payload = await getLanding();
     res.set('Cache-Control', 'public, max-age=60');
-    res.json(payload);
+    res.json({ ...payload, countdown: countdownFrom(payload.countdown) });
   })
 );
 
@@ -237,4 +279,5 @@ module.exports = {
   formatMoney,
   plansAsText,
   applyPlansMarker,
+  countdownFrom,
 };

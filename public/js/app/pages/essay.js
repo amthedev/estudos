@@ -18,6 +18,7 @@ import {
 import { icon } from '../../core/icons.js';
 import { md } from '../../core/markdown.js';
 import { fmtDate, fmtDateTime, fmtScore, fmtNumber, fmtPct, statusLabel, pluralize } from '../../core/format.js';
+import { loadCoins, coinCost, costFor, hasCoinLimit, handleCoinError } from '../../core/coins.js';
 
 let state = null;
 
@@ -219,8 +220,13 @@ function submittedView(essay) {
         </p>
         <div class="ess-state-actions">
           <button type="button" class="btn btn-ghost" data-action="reload-essay">${icon('refresh-cw')}<span>Atualizar</span></button>
-          <button type="button" class="btn btn-primary" data-action="resubmit">${icon('send')}<span>Enviar novamente</span></button>
+          <button type="button" class="btn btn-primary" data-action="resubmit">
+            ${icon('send')}<span>Enviar novamente</span>${coinCost(costFor('essay_correction'))}
+          </button>
         </div>
+        ${hasCoinLimit()
+          ? html`<p class="hint">As moedas da correção interrompida voltam antes do novo envio.</p>`
+          : ''}
       </section>`;
   }
 
@@ -241,10 +247,16 @@ function failedView(essay) {
       <p class="ess-state-text">
         ${essay.error_message || 'O serviço de correção não respondeu na última tentativa. Seu texto está guardado por inteiro.'}
       </p>
-      <p class="hint">Nada do que você escreveu foi perdido. Você pode reenviar agora mesmo.</p>
+      <p class="hint">
+        Nada do que você escreveu foi perdido. Você pode reenviar agora mesmo.${hasCoinLimit()
+          ? ' Correção que não termina não gasta moedas.'
+          : ''}
+      </p>
       <div class="ess-state-actions">
         <a class="btn btn-ghost" href="/app/redacao">${icon('arrow-left')}<span>Voltar</span></a>
-        <button type="button" class="btn btn-primary" data-action="resubmit">${icon('send')}<span>Enviar novamente</span></button>
+        <button type="button" class="btn btn-primary" data-action="resubmit">
+          ${icon('send')}<span>Enviar novamente</span>${coinCost(costFor('essay_correction'))}
+        </button>
       </div>
     </section>`;
 }
@@ -367,6 +379,8 @@ function acompanharCorrecao() {
       const mudou = essay.status !== state.essay.status;
       state.essay = essay;
       if (mudou) paint();
+      // correção que falhou devolve a moeda no servidor: o chip do topo acompanha
+      if (mudou && essay.status === 'failed') loadCoins();
     } catch {
       // uma falha de rede pontual não interrompe o acompanhamento
     }
@@ -382,14 +396,21 @@ async function resubmit(button) {
     const corrected = await api.post(`/api/essays/${encodeURIComponent(state.essay.id)}/submit`, {});
     if (!state) return;
     state.essay = corrected;
-    toast('Correção concluída.', { type: 'success' });
+    // O reenvio também pode voltar "em correção" (202): aí a tela acompanha
+    // sozinha, e dizer "concluída" seria antecipar.
+    if (corrected && corrected.status === 'corrected') toast('Correção concluída.', { type: 'success' });
     paint();
+    state.pollCount = 0;
+    acompanharCorrecao();
   } catch (err) {
-    toast(err && err.message ? err.message : 'Não foi possível corrigir agora. Tente novamente em instantes.', { type: 'error' });
+    if (!handleCoinError(err)) {
+      toast(err && err.message ? err.message : 'Não foi possível corrigir agora. Tente novamente em instantes.', { type: 'error' });
+    }
     if (state) await load();
   } finally {
     if (state) state.busy = false;
     if (button) setLoading(button, false);
+    loadCoins();
   }
 }
 

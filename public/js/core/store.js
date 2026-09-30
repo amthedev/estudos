@@ -1,8 +1,8 @@
 // =====================================================================
 // Foco Elite — estado global (ARCHITECTURE §6.1)
-// store.user, store.profile, store.exam, store.access, store.stats
+// store.user, store.profile, store.exam, store.access, store.stats, store.coins
 // store.on(event, fn) → unsubscribe; store.emit(event, data)
-// Eventos: 'user:updated', 'progress:updated', 'schedule:updated'
+// Eventos: 'user:updated', 'progress:updated', 'schedule:updated', 'coins:updated'
 // =====================================================================
 
 const listeners = new Map();
@@ -22,6 +22,11 @@ export const store = {
   admin: null,
   /** configurações públicas expostas pela API (ex.: private_lessons_enabled) */
   settings: null,
+  /**
+   * carteira de moedas do dia (GET /api/coins ou a chave `coins` de /api/auth/me):
+   * { unlimited, tier, tier_label, reason, daily, spent, granted, balance, day, resets_at, costs }
+   */
+  coins: null,
 
   /** Registra um ouvinte; devolve função para remover. */
   on(event, fn) {
@@ -59,7 +64,8 @@ export const store = {
 
   /**
    * Atualiza a sessão a partir de GET /api/auth/me
-   * ({ user, profile, exam, access, settings? }) e emite 'user:updated'.
+   * ({ user, profile, exam, access, coins, settings? }) e emite 'user:updated'
+   * (e 'coins:updated', quando a carteira veio junto).
    */
   setSession(session = {}) {
     if ('user' in session) store.user = session.user || null;
@@ -69,6 +75,13 @@ export const store = {
     if ('settings' in session) store.settings = session.settings || null;
     if ('stats' in session) store.stats = session.stats || null;
     store.emit('user:updated', { user: store.user, profile: store.profile, exam: store.exam, access: store.access });
+    if ('coins' in session) store.setCoins(session.coins);
+  },
+
+  /** Troca a carteira de moedas e emite 'coins:updated' (o chip do topo escuta). */
+  setCoins(coins) {
+    store.coins = coins && typeof coins === 'object' ? coins : null;
+    store.emit('coins:updated', store.coins);
   },
 
   /** Atualiza estatísticas do shell (ex.: streak) e emite 'progress:updated'. */
@@ -86,6 +99,7 @@ export const store = {
     store.stats = null;
     store.admin = null;
     store.settings = null;
+    store.coins = null;
     store.emit('user:updated', null);
   },
 

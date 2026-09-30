@@ -50,11 +50,18 @@ async function isSubscriptionRequired() {
   return toBool(await getSetting('require_subscription', config.requireSubscription));
 }
 
-/** Assinatura mais relevante do aluno (ativa primeiro; senão a mais recente). */
+/**
+ * Assinatura mais relevante do aluno (ativa primeiro; senão a mais recente).
+ *
+ * O nível do plano e o legacy_until vêm junto porque as moedas (services/coins)
+ * decidem o saldo a partir desta mesma linha: se cada um buscasse a sua, o
+ * acesso e o nível poderiam cair em assinaturas diferentes do mesmo aluno.
+ */
 async function findSubscription(userId) {
   return db.one(
     `SELECT s.id, s.status, s.plan_id, p.name AS plan_name, p.slug AS plan_slug, p.interval AS plan_interval,
-            p.price_cents AS plan_price_cents,
+            p.price_cents AS plan_price_cents, p.tier AS plan_tier, p.duration_months AS plan_duration_months,
+            s.legacy_until,
             s.provider_subscription_id, s.current_period_start, s.current_period_end,
             s.cancel_at_period_end, s.canceled_at, s.created_at, s.updated_at
        FROM subscriptions s

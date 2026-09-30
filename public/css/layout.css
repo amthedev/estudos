@@ -336,6 +336,9 @@
   .topbar .chip-streak {
     padding: 0 9px;
   }
+  .topbar .chip-coins {
+    padding: 0 9px;
+  }
   .page {
     padding: var(--page-pad-mobile);
     padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + var(--s-6));
@@ -345,8 +348,20 @@
   }
 }
 
+/* Tela estreita: o saldo de moedas diz o que o aluno ainda pode fazer hoje e
+   vale mais que a sequência de dias. Com o chip de moedas visível, a
+   sequência sai primeiro; o "/30" do chip sai por último. */
+@media (max-width: 480px) {
+  .topbar .chip-coins:not([hidden]) ~ .chip-streak {
+    display: none;
+  }
+}
+
 @media (max-width: 380px) {
   .topbar .chip-streak {
+    display: none;
+  }
+  .topbar .chip-coins .chip-label {
     display: none;
   }
 }

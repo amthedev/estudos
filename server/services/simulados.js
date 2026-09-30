@@ -5,8 +5,10 @@
  *
  *   const { buildAttempt, finishAttempt, getDefaults, countAvailable } = require('../services/simulados');
  *
- *   buildAttempt({ userId, type, mode, examId, subjectId, topicId, questionCount, durationMin, filters, simuladoId })
- *     → cria simulado_attempts com as questões sorteadas e devolve a tentativa.
+ *   buildAttempt({ userId, user, access, type, mode, examId, subjectId, topicId, questionCount, durationMin, filters, simuladoId })
+ *     → cobra as moedas do simulado, cria simulado_attempts com as questões sorteadas e devolve a tentativa.
+ *       - custo pelo número de questões da tentativa (curto até coin_simulado_short_max_questions,
+ *         longo acima), com ou sem IA; se a tentativa não chega a ser criada, a moeda volta.
  *       - type 'exam': distribui as questões pelos pesos de exam_subjects, respeitando a
  *         disponibilidade (questão vinculada à prova em question_exams ou assunto no syllabus
  *         exam_topics). Sobra de uma matéria é redistribuída às demais.
@@ -16,6 +18,9 @@
  *       - evita questões respondidas nos últimos 7 dias quando há questões inéditas suficientes.
  *       - embaralhamento determinístico: ordena por sha256(seed + question_id); a seed fica em
  *         config.seed para reproduzir o sorteio.
+ *
+ *   releaseInterruptedBuilds()
+ *     → no boot: devolve a moeda das montagens que um reinício interrompeu.
  *
  *   finishAttempt(userId, attemptId)
  *     → corrige, grava question_attempts (context 'simulado'), atualiza o caderno de erros,
@@ -27,6 +32,7 @@ const db = require('../db/pool');
 const { AppError } = require('../middleware/errors');
 const { todayISO } = require('../utils/dates');
 const questionAi = require('./question-ai');
+const coins = require('./coins');
 const { getSetting } = require('./settings');
 
 const MAX_QUESTIONS = 90;
@@ -307,12 +313,120 @@ async function loadProfileExam(userId) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Moedas
+// ---------------------------------------------------------------------------
+
+/**
+ * Depois de quanto tempo uma montagem cobrada e sem tentativa gravada é tida
+ * como interrompida: o prazo total do complemento por IA, com folga.
+ */
+const MONTAGEM_ORFA_SEG = Math.ceil((questionAi.PRAZO_TOTAL_MS + 4 * 60_000) / 1000);
+
+const MONTAGEM_EM_CURSO_MESSAGE =
+  'Seu simulado anterior ainda está sendo montado. Aguarde um instante — ele aparece na sua lista de simulados quando ficar pronto.';
+
+/**
+ * Cobra a montagem de um simulado.
+ *
+ * Montar com complemento por IA pode levar minutos, e a borda corta a conexão
+ * perto dos 100 segundos enquanto o servidor segue trabalhando. O aluno vê o
+ * erro, clica de novo, e sem esta conferência pagaria um segundo simulado (e
+ * mandaria a IA elaborar tudo outra vez) com o primeiro ainda a caminho. A
+ * cobrança de uma montagem em curso é a que existe sem tentativa gravada.
+ *
+ * Passado o prazo, a cobrança sem tentativa é de uma montagem que o reinício
+ * interrompeu: a moeda volta aqui mesmo, no próximo pedido do aluno.
+ *
+ * A trava por aluno é a mesma do coins.charge (e é reentrante na transação):
+ * conferir e cobrar ficam atômicos contra dois cliques simultâneos. O estorno
+ * da montagem interrompida usa a mesma conexão (ver coins.charge) e não é
+ * desfeito pela recusa de saldo da cobrança nova: a moeda é do aluno de
+ * qualquer jeito.
+ */
+async function chargeAttempt({ user, access, cost, attemptId }) {
+  let semSaldo = null;
+  const cobranca = await db.tx(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [user.id]);
+    const pendentes = await client.many(
+      `SELECT l.id, l.created_at > now() - make_interval(secs => $2) AS em_curso
+         FROM coin_ledger l
+        WHERE l.user_id = $1 AND l.action = 'simulado' AND l.ref_type = 'simulado_attempt'
+          AND l.kind = 'debit' AND l.refunded_at IS NULL
+          AND l.created_at > now() - interval '1 day'
+          AND NOT EXISTS (
+            SELECT 1 FROM simulado_attempts a WHERE a.user_id = l.user_id AND a.id::text = l.ref_id
+          )`,
+      [user.id, MONTAGEM_ORFA_SEG]
+    );
+    if (pendentes.some((linha) => linha.em_curso)) {
+      throw new AppError(409, 'already_charged', MONTAGEM_EM_CURSO_MESSAGE);
+    }
+    for (const linha of pendentes) await coins.refund(linha.id, 'montagem interrompida', client);
+
+    try {
+      return await coins.charge(client, {
+        user,
+        access,
+        action: 'simulado',
+        cost,
+        refType: 'simulado_attempt',
+        refId: attemptId,
+      });
+    } catch (err) {
+      // A recusa de saldo sai antes de qualquer escrita, e a transação segue
+      // boa para gravar o estorno acima.
+      if (!pendentes.length || !err || err.code !== 'insufficient_coins') throw err;
+      semSaldo = err;
+      return null;
+    }
+  });
+  if (semSaldo) throw semSaldo;
+  return cobranca;
+}
+
+/**
+ * Devolve, no boot, a moeda das montagens que o reinício interrompeu.
+ *
+ * Um reinício no meio da montagem (publicação nova, queda) mata a IA depois
+ * de a cobrança já ter sido gravada. Esperar o caminho lazy de chargeAttempt
+ * não basta: por MONTAGEM_ORFA_SEG o aluno ouvia que o simulado "ainda está
+ * sendo montado" e ia aparecer na lista — o que nunca acontece —, ficava sem
+ * as moedas do dia para corrigir redação, e se só voltasse amanhã a moeda
+ * voltava a um dia que já passou.
+ *
+ * Quem sobe sabe que nada está montando (uma instância só): toda cobrança
+ * viva de simulado sem tentativa gravada é de montagem interrompida. Só pode
+ * ser chamado no boot, antes de o servidor aceitar requisições
+ * (scripts/bootstrap.js); o caminho lazy de chargeAttempt segue cobrindo quem
+ * roda sem o bootstrap (npm start). O último dia basta, como lá: estorno de
+ * cobrança mais antiga não muda o saldo de ninguém.
+ *
+ * @returns {Promise<number>} quantas cobranças foram devolvidas
+ */
+async function releaseInterruptedBuilds() {
+  const rows = await db.many(
+    `UPDATE coin_ledger l
+        SET refunded_at = now(), refund_reason = 'montagem interrompida por reinício'
+      WHERE l.action = 'simulado' AND l.ref_type = 'simulado_attempt'
+        AND l.kind = 'debit' AND l.refunded_at IS NULL
+        AND l.created_at > now() - interval '1 day'
+        AND NOT EXISTS (
+          SELECT 1 FROM simulado_attempts a WHERE a.user_id = l.user_id AND a.id::text = l.ref_id
+        )
+      RETURNING l.id`
+  );
+  return rows.length;
+}
+
 /**
  * @param {object} input
  * @returns {Promise<object>} tentativa criada (linha de simulado_attempts) com `distribution` em config
  */
 async function buildAttempt({
   userId,
+  user = null,
+  access = null,
   type,
   mode = null,
   examId = null,
@@ -417,83 +531,107 @@ async function buildAttempt({
     ({ questions, distribution } = await selectFromPool({ poolOptions, questionCount: count, seed, recent }));
   }
 
-  // Banco curto: a IA completa. O modelo fixo do administrador é exceção — ele
-  // escolheu questão por questão, e acrescentar outra desfaria a escolha dele.
-  let generated = 0;
-  if (!curatedIds.length && questions.length < count) {
-    let novas = [];
-    try {
-      novas = await fillWithAi({
-        missing: count - questions.length,
-        examId: exam ? exam.id : null,
-        subjectId: type === 'subject' ? subject.id : null,
-        topicId: type === 'topic' ? topic.id : null,
-        filters: type === 'custom' ? filters : {},
-        difficulty: Array.isArray(filters.difficulty) && filters.difficulty.length ? filters.difficulty[0] : 2,
-        userId,
-      });
-    } catch (err) {
-      // Cota diária de IA esgotada: se o banco já deu questões, o simulado sai
-      // menor em vez de falhar inteiro. Jogar fora as questões reais já
-      // escolhidas por causa do complemento seria o pior dos dois mundos. Só
-      // quando não há NENHUMA questão o aluno precisa saber que não dá agora.
-      if (err && err.code === 'ai_limit_reached' && questions.length) {
-        // segue com o que o banco tem
-      } else {
-        throw err;
+  // A cobrança sai do número de questões que a tentativa vai ter — já com
+  // formato, quantidade pedida e teto aplicados —, e não do formato escolhido:
+  // um "mini" pedido com 90 questões é um simulado longo e paga como longo.
+  // Vale para todo simulado, com ou sem IA. Cobra-se aqui, antes da IA e da
+  // gravação, para que o aluno sem moedas receba a recusa sem nada ter sido
+  // gasto; o id da tentativa nasce agora para a cobrança apontar para ela.
+  const attemptId = crypto.randomUUID();
+  const { chargeId } = await chargeAttempt({
+    user: user || { id: userId },
+    access,
+    cost: await coins.simuladoCost(count),
+    attemptId,
+  });
+
+  try {
+    // Banco curto: a IA completa. O modelo fixo do administrador é exceção — ele
+    // escolheu questão por questão, e acrescentar outra desfaria a escolha dele.
+    let generated = 0;
+    if (!curatedIds.length && questions.length < count) {
+      let novas = [];
+      try {
+        novas = await fillWithAi({
+          missing: count - questions.length,
+          examId: exam ? exam.id : null,
+          subjectId: type === 'subject' ? subject.id : null,
+          topicId: type === 'topic' ? topic.id : null,
+          filters: type === 'custom' ? filters : {},
+          difficulty: Array.isArray(filters.difficulty) && filters.difficulty.length ? filters.difficulty[0] : 2,
+          userId,
+        });
+      } catch (err) {
+        // Cota diária de IA esgotada: se o banco já deu questões, o simulado sai
+        // menor em vez de falhar inteiro. Jogar fora as questões reais já
+        // escolhidas por causa do complemento seria o pior dos dois mundos. Só
+        // quando não há NENHUMA questão o aluno precisa saber que não dá agora.
+        if (err && err.code === 'ai_limit_reached' && questions.length) {
+          // segue com o que o banco tem
+        } else {
+          throw err;
+        }
+      }
+      if (novas.length) {
+        generated = novas.length;
+        questions = shuffleByHash(questions.concat(novas), seed);
+        distribution = summarizeDistribution(questions);
       }
     }
-    if (novas.length) {
-      generated = novas.length;
-      questions = shuffleByHash(questions.concat(novas), seed);
-      distribution = summarizeDistribution(questions);
+
+    if (!questions.length) {
+      throw new AppError(409, 'conflict', 'Ainda não há questões disponíveis para este simulado. Tente outra configuração.');
     }
+
+    let title;
+    if (template) title = template.name;
+    else if (type === 'exam') title = `Simulado ${exam.short_name}`;
+    else if (type === 'subject') title = `Simulado de ${subject.name}`;
+    else if (type === 'topic') title = `Simulado: ${topic.name}`;
+    else title = 'Simulado personalizado';
+
+    const config = {
+      seed,
+      type_label: TYPE_LABELS[type],
+      mode: mode && EXAM_MODES[mode] ? mode : null,
+      requested_count: count,
+      // O que saiu pode ser menos do que o pedido quando nem o banco nem a IA
+      // deram conta. Guardar os dois é o que permite explicar a diferença.
+      delivered_count: questions.length,
+      generated_count: generated,
+      duration_min: duration,
+      filters,
+      distribution,
+      template_id: template ? template.id : null,
+    };
+
+    // O await fica dentro do try: uma falha ao gravar também devolve a moeda.
+    return await db.one(
+      `INSERT INTO simulado_attempts
+         (id, user_id, simulado_id, title, type, exam_id, subject_id, topic_id, config, question_ids, duration_min)
+       VALUES ($11, $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::uuid[], $10)
+       RETURNING *`,
+      [
+        userId,
+        template ? template.id : null,
+        title,
+        type,
+        exam ? exam.id : null,
+        subject ? subject.id : null,
+        topic ? topic.id : null,
+        JSON.stringify(config),
+        questions.map((q) => q.id),
+        duration,
+        attemptId,
+      ]
+    );
+  } catch (err) {
+    // Tentativa não criada (sem questões, IA fora, falha ao gravar): a moeda
+    // volta. Tentativa criada e depois abandonada não devolve — o simulado
+    // foi montado.
+    await coins.refund(chargeId, 'simulado não foi criado');
+    throw err;
   }
-
-  if (!questions.length) {
-    throw new AppError(409, 'conflict', 'Ainda não há questões disponíveis para este simulado. Tente outra configuração.');
-  }
-
-  let title;
-  if (template) title = template.name;
-  else if (type === 'exam') title = `Simulado ${exam.short_name}`;
-  else if (type === 'subject') title = `Simulado de ${subject.name}`;
-  else if (type === 'topic') title = `Simulado: ${topic.name}`;
-  else title = 'Simulado personalizado';
-
-  const config = {
-    seed,
-    type_label: TYPE_LABELS[type],
-    mode: mode && EXAM_MODES[mode] ? mode : null,
-    requested_count: count,
-    // O que saiu pode ser menos do que o pedido quando nem o banco nem a IA
-    // deram conta. Guardar os dois é o que permite explicar a diferença.
-    delivered_count: questions.length,
-    generated_count: generated,
-    duration_min: duration,
-    filters,
-    distribution,
-    template_id: template ? template.id : null,
-  };
-
-  return db.one(
-    `INSERT INTO simulado_attempts
-       (user_id, simulado_id, title, type, exam_id, subject_id, topic_id, config, question_ids, duration_min)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::uuid[], $10)
-     RETURNING *`,
-    [
-      userId,
-      template ? template.id : null,
-      title,
-      type,
-      exam ? exam.id : null,
-      subject ? subject.id : null,
-      topic ? topic.id : null,
-      JSON.stringify(config),
-      questions.map((q) => q.id),
-      duration,
-    ]
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -707,6 +845,7 @@ module.exports = {
   TYPE_LABELS,
   getDefaults,
   buildAttempt,
+  releaseInterruptedBuilds,
   finishAttempt,
   countAvailable,
   loadAttemptQuestions,

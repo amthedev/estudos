@@ -8,7 +8,7 @@
  *   POST /api/auth/logout                                           → { ok }
  *   POST /api/auth/forgot-password { email }                        → { ok } (sempre 200)    [pub]
  *   POST /api/auth/reset-password  { token, password }              → { ok }                 [pub]
- *   GET  /api/auth/me                                               → { user, profile, exam, access }
+ *   GET  /api/auth/me                                               → { user, profile, exam, access, coins }
  *   PUT  /api/profile              dados/metas/disponibilidade      → { user, profile }
  *   PUT  /api/profile/password     { current_password, new_password } → { ok }
  *
@@ -25,6 +25,7 @@ const auth = require('../middleware/auth');
 const { computeAccess } = require('../middleware/access');
 const { getSetting } = require('../services/settings');
 const mailer = require('../services/mailer');
+const coins = require('../services/coins');
 const { generateResetToken, sha256 } = require('../utils/tokens');
 const { isISODate } = require('../utils/dates');
 
@@ -257,7 +258,15 @@ router.get(
   auth.requireStudent,
   wrap(async (req, res) => {
     const [{ profile, exam }, access] = await Promise.all([loadProfile(req.user.id), computeAccess(req.user.id)]);
-    res.json({ user: auth.sanitizeUser(req.user), profile, exam, access });
+    // A carteira é acessório da sessão: se a conta das moedas falhar, o app
+    // abre mesmo assim e o chip do topo simplesmente não aparece.
+    let wallet = null;
+    try {
+      wallet = await coins.getWallet({ user: req.user, access });
+    } catch (err) {
+      console.error('[auth] falha ao calcular as moedas do aluno:', err.message);
+    }
+    res.json({ user: auth.sanitizeUser(req.user), profile, exam, access, coins: wallet });
   })
 );
 

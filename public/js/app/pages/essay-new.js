@@ -9,6 +9,10 @@
 //              rascunho salvo automaticamente (POST /api/essays + PUT /api/essays/:id)
 //              e envio para correção (POST /api/essays/:id/submit, até 90 segundos).
 //
+// Corrigir e gerar tema custam moedas do dia (core/coins.js): os botões mostram
+// o custo, o envio confirma custo e saldo, e sem saldo abre o aviso com o
+// caminho para os planos em vez de um erro genérico.
+//
 // Aceita ?essay_id= para retomar um rascunho e ?theme_id= para já vir com o tema escolhido.
 // =====================================================================
 import { api, ApiError } from '../../core/api.js';
@@ -20,6 +24,7 @@ import {
 import { icon } from '../../core/icons.js';
 import { md } from '../../core/markdown.js';
 import { fmtScore, fmtNumber, pluralize } from '../../core/format.js';
+import { loadCoins, coinCost, costFor, hasCoinLimit, handleCoinError, coinsText, aiActionBlock } from '../../core/coins.js';
 
 const FREE_THEME = '__livre__';
 const AUTOSAVE_DELAY = 1500;
@@ -66,7 +71,23 @@ function currentExamLabel() {
   return exam ? exam.short_name || exam.name : 'Redação';
 }
 
-const aiAvailable = () => Boolean(state && state.aiStatus && state.aiStatus.available);
+/**
+ * A IA pode corrigir e gerar tema? Não é o `available` do status: ele fica
+ * falso quando a cota mensal do Tutor acaba, e a redação não tem nada a ver
+ * com o Tutor — quem limita a correção são as moedas do dia. O que barra aqui
+ * é a IA desligada ou a cota mensal geral de quem não gasta moedas (ver
+ * aiActionBlock).
+ */
+const aiBlock = () => aiActionBlock(state && state.aiStatus);
+const aiConfigured = () => !aiBlock();
+
+/** Aviso de por que a IA não pode ser usada agora (a IA desligada ou o limite do mês). */
+function aiBlockedNotice({ disabledTitle, disabledText, limitText }) {
+  if (aiBlock() === 'monthly_limit') {
+    return alertBox({ type: 'warning', title: 'O limite de uso da IA deste mês foi atingido', text: limitText });
+  }
+  return alertBox({ type: 'warning', title: disabledTitle, text: disabledText });
+}
 
 function paperLineCount() {
   const configured = Number(state && state.criteria && state.criteria.max_lines);
@@ -217,13 +238,17 @@ function stepTheme() {
       <section class="card">
         <div class="card-header">
           <h2 class="card-title">${icon('lightbulb')}<span>Sobre o que você vai escrever?</span></h2>
-          <button type="button" class="btn btn-secondary btn-sm" data-action="generate-theme" ${aiAvailable() ? '' : raw('disabled')}>
-            ${icon('sparkles')}<span>Gerar tema com IA</span>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="generate-theme" ${aiConfigured() ? '' : raw('disabled')}>
+            ${icon('sparkles')}<span>Gerar tema com IA</span>${coinCost(costFor('essay_theme'))}
           </button>
         </div>
         <div class="card-body">
-          ${!aiAvailable()
-            ? alertBox({ type: 'warning', title: 'A geração de temas por IA ainda não foi ativada pela equipe', text: 'Você pode escolher um dos temas cadastrados ou escrever sobre um tema livre.' })
+          ${!aiConfigured()
+            ? aiBlockedNotice({
+              disabledTitle: 'A geração de temas por IA ainda não foi ativada pela equipe',
+              disabledText: 'Você pode escolher um dos temas cadastrados ou escrever sobre um tema livre.',
+              limitText: 'A geração de temas volta no próximo ciclo. Enquanto isso, você pode escolher um dos temas cadastrados ou escrever sobre um tema livre.',
+            })
             : ''}
           ${state.themesError
             ? errorState({ title: 'Não foi possível carregar os temas', message: state.themesError.message, retry: 'reload-themes' })
@@ -355,14 +380,18 @@ function stepEditor() {
           <button type="button" class="btn btn-ghost" data-action="to-step-2">${icon('arrow-left')}<span>Trocar o tema</span></button>
           <div class="ess-actions-end">
             <a class="btn btn-secondary" href="/app/redacao">${icon('save')}<span>Salvar e sair</span></a>
-            <button type="button" class="btn btn-primary" data-action="submit" ${aiAvailable() ? '' : raw('disabled')}>
-              ${icon('send')}<span>Enviar para correção</span>
+            <button type="button" class="btn btn-primary" data-action="submit" ${aiConfigured() ? '' : raw('disabled')}>
+              ${icon('send')}<span>Enviar para correção</span>${coinCost(costFor('essay_correction'))}
             </button>
           </div>
         </div>
       </section>
-      ${!aiAvailable()
-        ? alertBox({ type: 'warning', title: 'A correção por IA ainda não foi ativada pela equipe', text: 'Seu texto continua salvo como rascunho e poderá ser enviado assim que a integração for configurada.' })
+      ${!aiConfigured()
+        ? aiBlockedNotice({
+          disabledTitle: 'A correção por IA ainda não foi ativada pela equipe',
+          disabledText: 'Seu texto continua salvo como rascunho e poderá ser enviado assim que a integração for configurada.',
+          limitText: 'Seu texto continua salvo como rascunho e poderá ser enviado para correção no próximo ciclo.',
+        })
         : ''}
     </div>`;
 }
@@ -387,9 +416,14 @@ function submitError(err) {
       <h2 class="ess-waiting-title">Não foi possível concluir a correção</h2>
       <p class="ess-waiting-text">${(err && err.message) || 'O serviço de correção não respondeu.'}</p>
       <p class="hint">Seu texto está guardado por inteiro. Você pode reenviar agora ou voltar depois pela lista de redações.</p>
+      ${err && err.correctionFailed && hasCoinLimit()
+        ? html`<p class="hint">Correção que não termina não gasta moedas: as desta tentativa já voltaram para você.</p>`
+        : ''}
       <div class="ess-state-actions">
         ${id ? html`<a class="btn btn-ghost" href="/app/redacao/${id}">${icon('file-text')}<span>Ver a redação</span></a>` : ''}
-        <button type="button" class="btn btn-primary" data-action="retry-submit">${icon('refresh-cw')}<span>Tentar novamente</span></button>
+        <button type="button" class="btn btn-primary" data-action="retry-submit">
+          ${icon('refresh-cw')}<span>Tentar novamente</span>${coinCost(costFor('essay_correction'))}
+        </button>
       </div>
     </section>`;
 }
@@ -521,10 +555,11 @@ async function generateTheme(button) {
     toast('Tema, proposta e textos motivadores gerados. Leia tudo antes de escrever.', { type: 'success' });
     paint();
   } catch (err) {
-    toast(err && err.message ? err.message : 'Não foi possível gerar um tema agora.', { type: 'error' });
+    if (!handleCoinError(err)) toast(err && err.message ? err.message : 'Não foi possível gerar um tema agora.', { type: 'error' });
   } finally {
     if (state) state.generating = false;
     if (button) setLoading(button, false);
+    loadCoins();
   }
 }
 
@@ -634,9 +669,34 @@ async function submitEssay({ skipConfirm = false } = {}) {
     return;
   }
 
+  let custo = 0;
+  let saldo = null;
+  if (!skipConfirm) {
+    // Saldo lido na hora: o do topo pode ter mudado em outra aba. Sem moedas
+    // suficientes, o aviso já sai aqui — o rascunho continua salvo e nada foi
+    // enviado.
+    const wallet = await loadCoins();
+    if (!state) return;
+    custo = costFor('essay_correction', wallet);
+    if (custo && hasCoinLimit(wallet)) {
+      saldo = Math.max(0, Number(wallet.balance) || 0);
+      if (saldo < custo) {
+        handleCoinError({
+          code: 'insufficient_coins',
+          details: { balance: saldo, cost: custo, daily: wallet.daily, tier: wallet.tier, resets_at: wallet.resets_at },
+        });
+        return;
+      }
+    }
+  }
+
+  const palavras = `Você escreveu ${fmtNumber(words, { digits: 0 })} ${pluralize(words, 'palavra', 'palavras', { withNumber: false })}.`;
+  const moedas = custo && saldo !== null
+    ? ` A correção usa ${coinsText(custo)}: você tem ${saldo} hoje e fica com ${saldo - custo}. Se a correção falhar, as moedas voltam.`
+    : '';
   const ok = skipConfirm || await confirm({
     title: 'Enviar para correção',
-    message: `Depois de enviada, a redação não pode mais ser editada. Você escreveu ${fmtNumber(words, { digits: 0 })} ${pluralize(words, 'palavra', 'palavras', { withNumber: false })}.`,
+    message: `Depois de enviada, a redação não pode mais ser editada. ${palavras}${moedas}`,
     confirmText: 'Enviar agora',
     icon: 'send',
   });
@@ -659,6 +719,9 @@ async function submitEssay({ skipConfirm = false } = {}) {
     let resultado = await api.post(`/api/essays/${encodeURIComponent(state.essay.id)}/submit`, {});
     if (!state || state.token !== token) return;
     if (resultado && resultado.status === 'submitted') {
+      // A moeda sai no envio, não no fim da correção: o chip do topo mostra o
+      // saldo novo já na tela de espera, que pode durar minutos.
+      loadCoins();
       resultado = (await aguardarCorrecao(state.essay.id, token)) || resultado;
       if (!state || state.token !== token) return;
     }
@@ -666,6 +729,8 @@ async function submitEssay({ skipConfirm = false } = {}) {
     state.submitting = false;
     if (resultado && resultado.status === 'failed') {
       state.submitError = new ApiError({ message: resultado.error_message || 'A correção não foi concluída. Envie novamente.' });
+      // falha da própria correção: o servidor já devolveu as moedas
+      state.submitError.correctionFailed = true;
       paint();
       return;
     }
@@ -678,8 +743,20 @@ async function submitEssay({ skipConfirm = false } = {}) {
     if (!state || state.token !== token) return;
     stopWaitingMessages();
     state.submitting = false;
+    if (handleCoinError(err)) {
+      // Sem moedas a redação nem saiu do rascunho: volta ao editor com o
+      // texto intacto e o autosave ligado de novo.
+      state.submitted = false;
+      state.step = 3;
+      paint();
+      return;
+    }
     state.submitError = err instanceof ApiError ? err : new ApiError({ message: 'Erro inesperado.' });
     paint();
+  } finally {
+    // deu certo, falhou ou voltou 202: o saldo do topo acompanha (a moeda de
+    // uma correção que falhou volta no servidor)
+    loadCoins();
   }
 }
 

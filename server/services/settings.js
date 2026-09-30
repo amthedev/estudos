@@ -50,6 +50,29 @@ const DEFAULTS = Object.freeze({
   // enquanto o banco de provas ainda está sendo abastecido.
   // Zero desliga o complemento por IA.
   simulado_ai_questions_max: 80,
+  // Moedas por dia de cada nível de plano. O saldo volta a este valor à
+  // meia-noite de São Paulo; o que sobrou do dia anterior não acumula.
+  // Zero deixa o nível sem moedas.
+  coins_daily_basico: 30,
+  coins_daily_pro: 60,
+  coins_daily_avancado: 100,
+  // Quanto custa cada ação que chama a IA. Zero deixa a ação grátis.
+  coin_cost_essay_correction: 20,
+  coin_cost_simulado_short: 10,
+  // Até quantas questões o simulado conta como curto; acima disso, longo.
+  coin_simulado_short_max_questions: 30,
+  coin_cost_simulado_long: 30,
+  coin_cost_practice: 2,
+  coin_cost_questions: 5,
+  coin_cost_essay_theme: 5,
+  // Cota mensal de tokens do Tutor IA por nível (mês civil de São Paulo). O
+  // Tutor não gasta moeda; o que segura o custo dele é esta cota.
+  tutor_tokens_basico: 1_500_000,
+  tutor_tokens_pro: 3_000_000,
+  tutor_tokens_avancado: 5_000_000,
+  // Menor cobrança de diferença no upgrade, em centavos: o Asaas recusa
+  // cobranças muito baixas.
+  upgrade_min_cents: 500,
   private_lessons_enabled: true,
   payment_provider: 'asaas',
   daily_quotes: [

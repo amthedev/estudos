@@ -6,8 +6,9 @@
  *   GET    /api/admin/plans                 todos os planos (inclusive inativos) com contagem de assinaturas
  *   GET    /api/admin/plans/:id
  *   POST   /api/admin/plans                 { name, slug?, description?, price_cents, currency?, interval, interval_count?,
- *                                             trial_days?, features?[], highlight?, active?, sort_order? }
- *   PUT    /api/admin/plans/:id
+ *                                             trial_days?, features?[], highlight?, active?, sort_order?,
+ *                                             tier? ('basico'|'pro'|'avancado'|null) }
+ *   PUT    /api/admin/plans/:id             sem `tier` no corpo, o nível gravado é mantido
  *   DELETE /api/admin/plans/:id             409 quando há assinaturas vinculadas (desative o plano)
  *   POST   /api/admin/plans/:id/sync-provider valida o plano com o Asaas
  *   GET    /api/admin/plans/provider-status   provedor ativo, ambiente e chave mascarada
@@ -46,6 +47,10 @@ const planSchema = z
     highlight: z.boolean().default(false),
     active: z.boolean().default(true),
     sort_order: z.number().int().min(0).max(1000).default(0),
+    // Nível do plano, que decide as moedas por dia e a cota do Tutor. Vazio é
+    // plano antigo, de antes das moedas. Opcional: planos sem nível continuam
+    // podendo ser cadastrados.
+    tier: nullable(z.enum(['basico', 'pro', 'avancado'])),
   })
   .strict()
   .superRefine((plan, ctx) => {
@@ -59,7 +64,7 @@ const planSchema = z
   });
 
 const PLAN_COLUMNS = `p.id, p.slug, p.name, p.description, p.price_cents, p.currency, p.interval, p.interval_count,
-  p.trial_days, p.duration_months, p.bonus_months, p.compare_price_cents, p.badge,
+  p.trial_days, p.duration_months, p.bonus_months, p.compare_price_cents, p.badge, p.tier,
   p.provider_plan_id, p.features, p.highlight, p.active, p.sort_order,
   p.created_at, p.updated_at,
   (SELECT count(*) FROM subscriptions s WHERE s.plan_id = p.id
@@ -115,16 +120,21 @@ router.post(
     const created = await db.one(
       `INSERT INTO plans (slug, name, description, price_cents, currency, interval, interval_count, trial_days,
                           duration_months, bonus_months, compare_price_cents, badge,
-                          features, highlight, active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16)
+                          features, highlight, active, sort_order, tier)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17)
        RETURNING id`,
       [
         slug, body.name, body.description ?? null, body.price_cents, body.currency, body.interval, body.interval_count,
         body.trial_days, body.duration_months, body.bonus_months, body.compare_price_cents ?? null, body.badge || null,
-        JSON.stringify(body.features), body.highlight, body.active, body.sort_order,
+        JSON.stringify(body.features), body.highlight, body.active, body.sort_order, body.tier ?? null,
       ]
     );
-    await audit(req, 'plan.create', 'plan', created.id, { name: body.name, price_cents: body.price_cents, interval: body.interval });
+    await audit(req, 'plan.create', 'plan', created.id, {
+      name: body.name,
+      price_cents: body.price_cents,
+      interval: body.interval,
+      tier: body.tier ?? null,
+    });
     res.status(201).json(await findPlan(created.id));
   })
 );
@@ -144,16 +154,21 @@ router.put(
       slug = slugify(body.slug);
     }
 
+    // Sem `tier` no corpo, o nível gravado fica. Um formulário que ainda não
+    // conhece o campo, ao salvar outro detalhe do plano, apagaria o nível — e
+    // os assinantes daquele plano perderiam as moedas do nível que pagaram.
+    const tier = body.tier === undefined ? before.tier ?? null : body.tier;
+
     await db.query(
       `UPDATE plans SET slug = $1, name = $2, description = $3, price_cents = $4, currency = $5, interval = $6,
               interval_count = $7, trial_days = $8, duration_months = $9, bonus_months = $10,
               compare_price_cents = $11, badge = $12, features = $13::jsonb, highlight = $14, active = $15,
-              sort_order = $16
-        WHERE id = $17`,
+              sort_order = $16, tier = $17
+        WHERE id = $18`,
       [
         slug, body.name, body.description ?? null, body.price_cents, body.currency, body.interval, body.interval_count,
         body.trial_days, body.duration_months, body.bonus_months, body.compare_price_cents ?? null, body.badge || null,
-        JSON.stringify(body.features), body.highlight, body.active, body.sort_order, id,
+        JSON.stringify(body.features), body.highlight, body.active, body.sort_order, tier, id,
       ]
     );
 
@@ -161,6 +176,7 @@ router.put(
     for (const key of ['name', 'price_cents', 'interval', 'interval_count', 'trial_days', 'duration_months', 'bonus_months', 'compare_price_cents', 'badge', 'active', 'highlight']) {
       if (before[key] !== body[key]) diff[key] = { from: before[key], to: body[key] };
     }
+    if ((before.tier ?? null) !== tier) diff.tier = { from: before.tier ?? null, to: tier };
     await audit(req, 'plan.update', 'plan', id, diff);
     res.json(await findPlan(id));
   })

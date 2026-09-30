@@ -9,7 +9,9 @@
 // que os botões "Perguntar ao Tutor" das outras telas chegam aqui.
 //
 // Quando GET /api/tutor/status devolve available=false, as conversas antigas
-// continuam legíveis, mas o envio fica desabilitado com um aviso sóbrio.
+// continuam legíveis, mas o envio fica desabilitado com um aviso sóbrio. O
+// Tutor não gasta moedas: cada nível de plano tem uma cota mensal de uso, e
+// quando ela acaba (tutor_quota_reached) o aviso oferece os planos.
 // =====================================================================
 import { api, ApiError } from '../../core/api.js';
 import { store } from '../../core/store.js';
@@ -20,6 +22,7 @@ import {
 import { icon } from '../../core/icons.js';
 import { md } from '../../core/markdown.js';
 import { fmtRelative, fmtTime, initials } from '../../core/format.js';
+import { handleCoinError } from '../../core/coins.js';
 
 /** Atalhos oferecidos abaixo do chat (ARCHITECTURE §6.4). */
 const SUGGESTIONS = [
@@ -91,8 +94,19 @@ function isNarrow() {
   return window.innerWidth < NARROW_WIDTH;
 }
 
-/** Mensagem do aviso quando a IA não está disponível. */
+/**
+ * Mensagem do aviso quando a IA não está disponível. A cota do nível acabar é
+ * diferente de a IA estar desligada: a primeira renova no dia 1º e tem saída
+ * pelo upgrade; a segunda depende da equipe.
+ */
 function unavailableNotice(status) {
+  if (status && status.configured && status.tutor_quota_reached) {
+    return {
+      title: 'A cota do Tutor IA deste mês acabou',
+      text: 'Você usou toda a cota do Tutor IA do seu plano neste mês. Ela renova no dia 1º do próximo mês — ou faça upgrade para ter mais. Suas conversas continuam disponíveis para consulta.',
+      upgrade: true,
+    };
+  }
   if (status && status.configured && status.limit_reached) {
     return {
       title: 'O limite de uso da IA deste mês foi atingido',
@@ -103,6 +117,24 @@ function unavailableNotice(status) {
     title: 'O Tutor IA ainda não foi ativado pela equipe',
     text: 'Assim que a integração for configurada, você poderá tirar dúvidas por aqui. Suas conversas anteriores continuam disponíveis.',
   };
+}
+
+/** Pinta o aviso de indisponibilidade (com "Ver planos" quando a saída é o upgrade). */
+function paintUnavailableNotice() {
+  const holder = qs('[data-tut-notice]', state.el);
+  if (!holder) return;
+  const notice = unavailableNotice(state.status);
+  render(
+    holder,
+    alertBox({
+      type: 'warning',
+      title: notice.title,
+      text: notice.text,
+      actions: notice.upgrade
+        ? html`<a class="btn btn-primary btn-sm" href="/app/assinatura">${icon('arrow-up-right')}<span>Ver planos</span></a>`
+        : '',
+    })
+  );
 }
 
 const canSend = () => Boolean(state && state.status && state.status.available);
@@ -586,6 +618,15 @@ async function sendMessage(text) {
         if (frame) cancelAnimationFrame(frame);
         const pending = qs('[data-tut-pending]', state.el);
         const message = (err && err.message) || 'O Tutor não conseguiu responder agora.';
+        // A cota do nível acabou no meio do mês: o envio trava como no status
+        // e o aviso fixo com "Ver planos" aparece sem precisar recarregar.
+        const quotaReached = Boolean(err && err.code === 'tutor_quota_reached');
+        if (quotaReached) {
+          state.status = { ...(state.status || {}), available: false, limit_reached: true, tutor_quota_reached: true };
+          paintUnavailableNotice();
+          const newButton = qs('[data-action="new"]', state.el);
+          if (newButton) newButton.disabled = true;
+        }
         if (answer.trim()) {
           const el = answerEl();
           if (el) render(el, md(answer));
@@ -607,7 +648,7 @@ async function sendMessage(text) {
         }
         state.stream = null;
         finish();
-        toast(message, { type: 'error' });
+        if (!(quotaReached && handleCoinError(err))) toast(message, { type: 'error' });
       },
     }
   );
@@ -736,8 +777,7 @@ export default async function renderTutor(ctx) {
   if (!state || state.token !== token) return;
 
   if (!canSend()) {
-    const notice = unavailableNotice(state.status);
-    render(qs('[data-tut-notice]', ctx.el), alertBox({ type: 'warning', title: notice.title, text: notice.text }));
+    paintUnavailableNotice();
     const newButton = qs('[data-action="new"]', ctx.el);
     if (newButton) newButton.disabled = true;
   }

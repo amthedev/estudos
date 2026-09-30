@@ -10,6 +10,8 @@
  *   await payments.createCheckout({ user, plan, successUrl, cancelUrl });  // → { url, provider }
  *   await payments.createPortal(user, returnUrl);                  // → { url|null, provider }
  *   await payments.syncPlan(plan);
+ *   await payments.quoteUpgrade({ user, planId });                 // → { fromPlan, toPlan, quote, ... }
+ *   await payments.createUpgrade({ user, planId });                // → { url, amount_cents, plan_change_id }
  *   await payments.handleWebhook({ provider, rawBody, headers });
  *
  * O Asaas é o único provedor de cobrança. A configuração `payment_provider=none`
@@ -21,7 +23,9 @@
 const config = require('../../config');
 const db = require('../../db/pool');
 const { getSetting } = require('../settings');
+const dates = require('../../utils/dates');
 const asaas = require('./asaas');
+const upgrade = require('./upgrade');
 
 const ADAPTERS = { asaas };
 const PROVIDER_NAMES = ['asaas', 'none'];
@@ -168,6 +172,20 @@ async function syncPlan(plan) {
 }
 
 // ---------------------------------------------------------------------------
+// Upgrade pela diferença (regras em ./upgrade.js)
+// ---------------------------------------------------------------------------
+/** Valida e cota o upgrade, sem gravar nada. */
+async function quoteUpgrade({ user, planId, now }) {
+  return upgrade.checkUpgrade({ userId: user.id, toPlanId: planId, now });
+}
+
+/** Abre o pedido de upgrade e a cobrança da diferença no provedor ativo. */
+async function createUpgrade({ user, planId }) {
+  await requireAdapter();
+  return upgrade.createUpgrade({ user, toPlanId: planId });
+}
+
+// ---------------------------------------------------------------------------
 // Gravação comum das assinaturas
 // ---------------------------------------------------------------------------
 /**
@@ -311,7 +329,25 @@ async function resolveUser(tx, { current, reference, customerId }) {
   return null;
 }
 
-async function resolvePlan(tx, { current, reference, checkout }) {
+/**
+ * Plano a gravar na assinatura por causa deste evento.
+ *
+ * Com a assinatura já conhecida, vale o plano que está nela, e não o da
+ * referência externa nem o do checkout. A referência é fixada quando a
+ * assinatura nasce e continua chegando em todo evento dela — renovação,
+ * atraso, cancelamento. Depois de um upgrade pela diferença ela ainda aponta
+ * para o plano antigo (o Asaas não promete reescrevê-la nas cobranças já
+ * geradas), e dar prioridade a ela desfazia o upgrade no primeiro evento que
+ * chegasse, inclusive o SUBSCRIPTION_DELETED do próprio cancelamento.
+ *
+ * A exceção é a compra nova (`newPurchase`): o Pix avulso reaproveita a mesma
+ * linha a cada compra, e ali o plano certo é o que acabou de ser comprado.
+ */
+async function resolvePlan(tx, { current, reference, checkout, newPurchase = false }) {
+  if (current && current.plan_id && !newPurchase) {
+    const row = await tx.one('SELECT * FROM plans WHERE id = $1', [current.plan_id]);
+    if (row) return row;
+  }
   if (reference.plan_id) {
     const row = await tx.one('SELECT * FROM plans WHERE id = $1', [reference.plan_id]);
     if (row) return row;
@@ -325,6 +361,40 @@ async function resolvePlan(tx, { current, reference, checkout }) {
     if (row) return row;
   }
   return null;
+}
+
+/** A migration que criou os níveis e tirou os planos antigos da vitrine. */
+const MIGRATION_DOS_NIVEIS = '218_moedas_e_niveis.sql';
+
+/**
+ * Compra de plano antigo que já estava em andamento quando os níveis entraram:
+ * teste de 24h no cartão, assinatura esperando a primeira cobrança, checkout
+ * do Pix aberto antes e pago depois.
+ *
+ * A migration 218 só deu legacy_until a quem já tinha período. No teste, o
+ * "período" era o das 24h; nos outros casos, nenhum. Esses alunos pagam o
+ * preço cheio do plano antigo, vendido como acesso completo, DEPOIS da
+ * migration — e sem isto passariam o período inteiro no Básico, sem upgrade
+ * (plano sem nível) e sem poder comprar outro (assinatura ativa). A primeira
+ * cobrança deles é a compra do pacote antigo, não uma renovação, então o
+ * legado acompanha o período comprado.
+ *
+ * Checkout aberto antes da migration é o critério porque ela tirou os planos
+ * antigos da vitrine: plano sem nível comprado depois disso é plano criado ou
+ * reativado no painel, e esse vale Básico, como decidido. A reserva é o teste
+ * que a própria migration pegou: legacy_until gravado e nenhum pagamento.
+ */
+async function oldPlanPurchaseInFlight(tx, { plan, current, checkout, first }) {
+  if (!plan || plan.tier) return false;
+  if (first && current && current.legacy_until) return true;
+  if (!checkout || !checkout.created_at) return false;
+  const migration = await tx.one('SELECT applied_at FROM schema_migrations WHERE name = $1', [MIGRATION_DOS_NIVEIS]);
+  return Boolean(migration && new Date(checkout.created_at).getTime() < new Date(migration.applied_at).getTime());
+}
+
+/** Legado até o fim do período que a compra acabou de conceder. */
+async function extendLegacyToPeriodEnd(tx, subscriptionId) {
+  await tx.query('UPDATE subscriptions SET legacy_until = current_period_end WHERE id = $1', [subscriptionId]);
 }
 
 /** Checkout mais provável para um evento cuja assinatura ainda não foi ligada localmente. */
@@ -346,9 +416,36 @@ async function findRelatedCheckout(tx, { userId, planId, subscriptionId, payment
   );
 }
 
+/**
+ * Evento de cobrança de upgrade? Então ele é aplicado ao pedido de upgrade e
+ * NÃO segue para a lógica de compra e renovação.
+ *
+ * Fica no topo de applyAsaasEvent e de applyAsaasCheckoutEvent, e não só em
+ * handleAsaasWebhook, porque o reprocessamento do painel e o script
+ * scripts/reprocessar-pagamentos.js chamam essas duas funções direto. Um
+ * pagamento de diferença que escapasse do desvio cairia no ramo do Pix avulso
+ * e daria ao aluno um período inteiro novo (ou criaria uma assinatura para
+ * quem assina no cartão).
+ *
+ * @returns {Promise<object|null>} resultado do upgrade, ou null se o evento não é de upgrade
+ */
+async function divertUpgrade(tx, event, info) {
+  const found = await upgrade.findUpgradeForEvent(tx, info);
+  if (!found) return null;
+  if (!found.change) {
+    console.warn(
+      `[pagamentos] evento ${event.type} com referência de upgrade sem pedido correspondente (${info.external_reference}). Ignorado.`
+    );
+    return { upgrade: true, skipped: 'pedido de upgrade desconhecido' };
+  }
+  return upgrade.applyUpgradeEvent(tx, found.change, event);
+}
+
 /** Atualiza apenas o estado operacional do checkout; acesso depende da assinatura/pagamento. */
 async function applyAsaasCheckoutEvent(tx, event) {
   const info = asaas.normalizeEvent(event.payload);
+  const deUpgrade = await divertUpgrade(tx, event, info);
+  if (deUpgrade) return deUpgrade;
   if (!info.checkout_id) return { skipped: 'evento sem checkout vinculado' };
 
   const nextStatus = {
@@ -362,7 +459,7 @@ async function applyAsaasCheckoutEvent(tx, event) {
     `UPDATE payment_checkouts
         SET status = $2, updated_at = now()
       WHERE provider = 'asaas' AND provider_checkout_id = $1
-      RETURNING id, provider_checkout_id, status, user_id, plan_id, payment_method, provider_subscription_id`,
+      RETURNING id, provider_checkout_id, status, user_id, plan_id, payment_method, provider_subscription_id, created_at`,
     [info.checkout_id, nextStatus]
   );
   if (!row) return { skipped: 'checkout desconhecido' };
@@ -390,10 +487,13 @@ async function applyAsaasCheckoutEvent(tx, event) {
   if (event.type === 'CHECKOUT_PAID' && row.payment_method === 'pix') {
     const plano = await tx.one('SELECT * FROM plans WHERE id = $1', [row.plan_id]);
     const credito = `checkout:${row.provider_checkout_id}`;
+    // FOR UPDATE: a cobrança deste mesmo Pix pode estar sendo aplicada agora,
+    // e a decisão abaixo depende do que ela gravar.
     const existente = await tx.one(
-      `SELECT id, last_payment_id FROM subscriptions
+      `SELECT id, status, current_period_end, last_payment_at, last_payment_id FROM subscriptions
         WHERE provider = 'asaas' AND user_id = $1 AND provider_subscription_id IS NULL
-        ORDER BY created_at DESC LIMIT 1`,
+        ORDER BY created_at DESC LIMIT 1
+        FOR UPDATE`,
       [row.user_id]
     );
     // Este checkout já concedeu o período: recalcular a partir de now() faria
@@ -401,8 +501,29 @@ async function applyAsaasCheckoutEvent(tx, event) {
     if (existente && existente.last_payment_id === credito) {
       return { ...row, subscription_id: existente.id, unchanged: 'cobrança já creditada' };
     }
+    const agora = new Date();
+    // A cobrança do Pix (PAYMENT_RECEIVED com a referência do checkout) pode
+    // chegar antes deste evento e já ter concedido o período. O checkout só
+    // abre para quem não tem assinatura vigente, então a linha vigente e paga
+    // desde o dia em que ele foi aberto foi paga por esta compra. Recalcular
+    // aqui não acrescentava nada e desfazia o que veio depois: um upgrade pago
+    // nesse meio-tempo voltava ao plano do checkout, com o pedido marcado como
+    // aplicado — ninguém ficava sabendo. O dia, e não a hora, porque a data de
+    // pagamento do Asaas chega sem hora (meio-dia UTC). Só a trava do
+    // reprocessamento passa a apontar para o checkout, como na ordem inversa.
+    if (
+      existente &&
+      existente.status === 'active' &&
+      existente.current_period_end &&
+      new Date(existente.current_period_end).getTime() > agora.getTime() &&
+      existente.last_payment_at &&
+      new Date(existente.last_payment_at).getTime() >=
+        dates.midnightInSaoPaulo(dates.toISODate(new Date(row.created_at))).getTime()
+    ) {
+      await tx.query('UPDATE subscriptions SET last_payment_id = $2 WHERE id = $1', [existente.id, credito]);
+      return { ...row, subscription_id: existente.id, unchanged: 'cobrança já creditada pelo pagamento' };
+    }
     if (plano) {
-      const agora = new Date();
       const meses = asaas.accessMonths(plano, { first: true });
       const assinatura = await applySubscription(tx, {
         id: existente ? existente.id : null,
@@ -419,6 +540,9 @@ async function applyAsaasCheckoutEvent(tx, event) {
         payment_method: row.payment_method,
         cancel_at_period_end: true, // pagamento único: não renova sozinho
       });
+      if (await oldPlanPurchaseInFlight(tx, { plan: plano, checkout: row })) {
+        await extendLegacyToPeriodEnd(tx, assinatura.id);
+      }
       return { ...row, subscription_id: assinatura.id, current_period_end: assinatura.current_period_end };
     }
   }
@@ -431,6 +555,9 @@ async function applyAsaasCheckoutEvent(tx, event) {
  */
 async function applyAsaasEvent(tx, event) {
   const info = asaas.normalizeEvent(event.payload);
+  // Antes de qualquer outra coisa: ver divertUpgrade.
+  const deUpgrade = await divertUpgrade(tx, event, info);
+  if (deUpgrade) return deUpgrade;
   const reference = asaas.parseReference(info.external_reference);
 
   // Pix é cobrança avulsa no Asaas — não existe assinatura do lado de lá, e o
@@ -486,7 +613,18 @@ async function applyAsaasEvent(tx, event) {
     subscriptionId: info.subscription_id,
     paymentMethod: info.payment_method,
   });
-  const plan = await resolvePlan(tx, { current, reference, checkout });
+
+  const now = new Date();
+  const previousEnd = current && current.current_period_end ? new Date(current.current_period_end) : null;
+  const stillPaid = Boolean(previousEnd && previousEnd.getTime() > now.getTime());
+
+  // Pagamento de Pix avulso depois que o período anterior acabou é compra
+  // nova sobre a linha reaproveitada: o plano vem do que foi comprado agora.
+  // Com o período ainda valendo (ou no cartão, cuja assinatura no Asaas é
+  // sempre a mesma), vale o plano gravado — que pode ter mudado por upgrade.
+  const newPurchase =
+    avulso && !stillPaid && (event.type === 'PAYMENT_CONFIRMED' || event.type === 'PAYMENT_RECEIVED');
+  const plan = await resolvePlan(tx, { current, reference, checkout, newPurchase });
 
   if (info.subscription_id && checkout && checkout.provider_subscription_id !== info.subscription_id) {
     await tx.query(
@@ -499,10 +637,6 @@ async function applyAsaasEvent(tx, event) {
     );
   }
 
-  const now = new Date();
-  const previousEnd = current && current.current_period_end ? new Date(current.current_period_end) : null;
-  const stillPaid = Boolean(previousEnd && previousEnd.getTime() > now.getTime());
-
   const patch = {
     id: current ? current.id : null,
     user_id: userId,
@@ -513,6 +647,11 @@ async function applyAsaasEvent(tx, event) {
     cancel_at_period_end: Boolean(current && current.cancel_at_period_end),
     payment_method: info.payment_method || (checkout && checkout.payment_method) || null,
   };
+  // O evento concede o período de uma compra (e não de uma renovação)? Aí o
+  // legado de uma compra de plano antigo em andamento na virada dos níveis
+  // acompanha o período — ver oldPlanPurchaseInFlight.
+  let compra = false;
+  let primeiraCobranca = false;
 
   switch (event.type) {
     case 'SUBSCRIPTION_CREATED': {
@@ -534,6 +673,7 @@ async function applyAsaasEvent(tx, event) {
         patch.current_period_start = trialActive ? now : null;
         patch.current_period_end = trialActive ? trialEnd : null;
         patch.cancel_at_period_end = false;
+        compra = trialActive;
         // O teste vale uma vez por aluno, e é aqui que ele de fato começa —
         // não na abertura do checkout, senão quem desistisse antes de pagar
         // perderia o direito sem ter usado.
@@ -582,6 +722,8 @@ async function applyAsaasEvent(tx, event) {
       patch.payment_method = (info.payment && info.payment.method) || patch.payment_method;
       // Pix avulso não renova sozinho: o acesso vale o período pago e acaba.
       patch.cancel_at_period_end = avulso;
+      compra = first || newPurchase;
+      primeiraCobranca = first;
       break;
     }
     case 'PAYMENT_OVERDUE': {
@@ -681,6 +823,9 @@ async function applyAsaasEvent(tx, event) {
   }
 
   const row = await applySubscription(tx, patch);
+  if (compra && (await oldPlanPurchaseInFlight(tx, { plan, current, checkout, first: primeiraCobranca }))) {
+    await extendLegacyToPeriodEnd(tx, row.id);
+  }
 
   // No plano anual promocional, a renovação vem depois dos 3 meses de bônus.
   if (event.type === 'SUBSCRIPTION_CREATED' && info.subscription_id && plan && Number(plan.bonus_months) > 0) {
@@ -754,6 +899,13 @@ module.exports = {
   applyAsaasEvent,
   applyAsaasCheckoutEvent,
   syncPlan,
+
+  quoteUpgrade,
+  createUpgrade,
+  pendingUpgrade: upgrade.pendingUpgrade,
+  unappliedUpgrades: upgrade.unappliedUpgrades,
+  upgradeQuote: upgrade.upgradeQuote,
+  applyUpgradeEvent: upgrade.applyUpgradeEvent,
 
   applySubscription,
   detectProvider,

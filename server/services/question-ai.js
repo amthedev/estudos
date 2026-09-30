@@ -576,6 +576,7 @@ module.exports = {
   PRAZO_TOTAL_MS,
   PRAZO_INTERATIVO_MS,
   difficultyOf,
+  assertDailyQuota,
   lessonTargets,
   bankCandidates,
   assignCandidates,

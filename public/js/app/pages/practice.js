@@ -10,12 +10,17 @@
 // context_id da aula para responder, e POST /api/schedule/after-practice
 // ao terminar, para o cronograma se adaptar ao desempenho.
 //
+// Moedas: só a questão elaborada pela IA custa (core/coins.js). Sem saldo, o
+// servidor não recusa — entrega o que o banco tem e manda um aviso, que fica
+// na tela junto das questões com o caminho para os planos.
+//
 // Exporta `practiceSummary`, o cartão de resultado reutilizado pelo
 // refazer do caderno de erros.
 // =====================================================================
 import { api } from '../../core/api.js';
-import { html, render, qs, on, toast, setLoading, pageHeader, emptyState, errorState, skeleton, ring } from '../../core/ui.js';
+import { html, render, qs, on, setLoading, pageHeader, emptyState, errorState, skeleton, ring, alertBox } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
+import { loadCoins, coinCost, costFor, handleCoinError } from '../../core/coins.js';
 import { mountQuestionRunner } from '../../components/question-runner.js';
 
 let cleanup = [];
@@ -93,6 +98,9 @@ export default async function renderPage(ctx) {
     loading: true,
     error: null,
     generating: null,
+    // aviso do servidor quando a prática veio menor que o pedido
+    notice: null,
+    noticeCode: null,
   };
 
   render(el, html`<div class="prc-page" data-body></div>`);
@@ -143,7 +151,12 @@ export default async function renderPage(ctx) {
           </div>
           <p class="hint prc-setup-hint">
             ${icon('info', { size: 14 })}
-            <span>As questões vêm do banco da plataforma. Quando não há questão do assunto neste nível, a IA elabora uma na hora.</span>
+            <span>
+              As questões vêm do banco da plataforma. Quando não há questão do assunto neste nível, a IA elabora uma na hora.
+              ${costFor('practice')
+                ? html`Só nesse caso a prática usa ${coinCost(costFor('practice'))}; com as questões do banco, não gasta nada.`
+                : ''}
+            </span>
           </p>
         </div>
       </section>`;
@@ -266,8 +279,25 @@ export default async function renderPage(ctx) {
       );
       return;
     }
-    render(body, html`${headerView()}<div data-summary></div><div class="prc-runner" data-runner></div>`);
+    render(body, html`${headerView()}${noticeView()}<div data-summary></div><div class="prc-runner" data-runner></div>`);
     mountRunner();
+  }
+
+  /**
+   * Aviso de prática menor que o pedido. Sem moedas, oferece os planos; com a
+   * cota diária de questões novas esgotada, só explica — ela volta amanhã.
+   */
+  function noticeView() {
+    if (!state.notice) return '';
+    const semMoedas = state.noticeCode === 'insufficient_coins';
+    return alertBox({
+      type: 'warning',
+      title: semMoedas ? 'Prática só com as questões do banco' : '',
+      text: state.notice,
+      actions: semMoedas
+        ? html`<a class="btn btn-secondary btn-sm" href="/app/assinatura">${icon('arrow-up-right')}<span>Ver planos</span></a>`
+        : '',
+    });
   }
 
   /** Monta o conjunto de questões na dificuldade escolhida. */
@@ -277,21 +307,30 @@ export default async function renderPage(ctx) {
     if (trigger) setLoading(trigger, true);
     state.step = 'generating';
     paint();
+    state.notice = null;
+    state.noticeCode = null;
     try {
       const result = await api.post(`/api/lessons/${encodeURIComponent(lessonId)}/practice`, {
         difficulty: state.difficulty,
       });
       state.questions = Array.isArray(result && result.questions) ? result.questions : [];
       state.step = 'running';
-      // O servidor avisa quando entregou menos do que queria — por exemplo,
-      // quando o aluno já pediu questões novas demais hoje.
-      if (result && result.notice) toast(result.notice, { type: 'warning' });
+      // O servidor avisa quando entregou menos do que queria — sem moedas
+      // para a IA, ou com questões novas demais pedidas hoje. O aviso fica na
+      // tela, acima das questões, em vez de sumir num toast.
+      if (result && result.notice) {
+        state.notice = result.notice;
+        state.noticeCode = result.notice_code || null;
+      }
     } catch (err) {
       state.step = 'setup';
-      state.error = (err && err.message) || 'Não foi possível preparar as questões desta aula.';
+      // Sem moedas e sem questão no banco: o aviso de moedas explica e leva
+      // aos planos; a tela volta à escolha do nível, sem erro genérico.
+      if (!handleCoinError(err)) state.error = (err && err.message) || 'Não foi possível preparar as questões desta aula.';
     } finally {
       state.generating = false;
       paint();
+      loadCoins();
     }
   }
 

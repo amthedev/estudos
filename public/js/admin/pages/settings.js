@@ -34,6 +34,7 @@ const ASAAS_EVENTS = [
 const SECTIONS = [
   { id: 'brand', label: 'Marca', icon: 'sparkles' },
   { id: 'access', label: 'Acesso', icon: 'shield-check' },
+  { id: 'coins', label: 'Moedas', icon: 'coins' },
   { id: 'openrouter', label: 'OpenRouter', icon: 'bot' },
   { id: 'asaas', label: 'Asaas', icon: 'credit-card' },
   { id: 'smtp', label: 'E-mail', icon: 'mail' },
@@ -96,7 +97,7 @@ function openrouterAside() {
       <dl class="kv aset-kv">
         <dt>Consumo do mês</dt>
         <dd>${num(used)} tokens em ${num(openrouter.month_requests)} chamadas</dd>
-        <dt>Cota por aluno</dt>
+        <dt>Cota do acesso completo</dt>
         <dd>${limit > 0 ? `${num(limit)} tokens por mês` : 'Sem cota definida'}</dd>
         ${openrouter.last_error
           ? html`<dt>Último erro</dt><dd class="text-danger" title="${fmtDateTime(openrouter.last_error.at)}">${openrouter.last_error.message} · ${fmtRelative(openrouter.last_error.at)}</dd>`
@@ -106,6 +107,23 @@ function openrouterAside() {
         type: 'info',
         title: 'A chave do OpenRouter fica no servidor',
         text: 'Ela é lida da variável de ambiente OPENROUTER_API_KEY e nunca é exibida nem editada por aqui. Sem a chave, o tutor e a correção de redação ficam indisponíveis.',
+      })}
+    </div>`;
+}
+
+function coinsAside() {
+  return html`
+    <div class="aset-integration">
+      ${alertBox({
+        type: 'info',
+        title: 'Como as moedas funcionam',
+        text:
+          'Cada nível de plano recebe um tanto de moedas por dia, e cada ação que usa a IA custa algumas. ' +
+          'O saldo volta ao valor do nível à meia-noite (horário de Brasília) e a sobra não acumula. ' +
+          'Se a IA falhar, a moeda volta sozinha. Custo 0 deixa a ação grátis. ' +
+          'O Tutor IA não gasta moedas: ele tem uma cota de tokens por mês em cada nível. ' +
+          'A equipe, os assinantes de planos antigos (até o fim do período pago) e as liberações manuais não gastam moedas.',
+        actions: html`<a class="btn btn-secondary btn-sm" href="/admin/planos">${icon('layers')}<span>Nível de cada plano</span></a>`,
       })}
     </div>`;
 }
@@ -277,7 +295,7 @@ function mountForms() {
       placeholder: 'deixe vazio para usar o modelo do tutor',
       hint: 'Ler prova é transcrição, não raciocínio: um modelo mais rápido termina cada trecho dentro do tempo da requisição.',
     },
-    { key: 'ai_student_monthly_token_limit', label: 'Cota mensal de tokens por aluno', type: 'number', min: 0, integer: true, hint: 'Cada aluno tem a sua cota; quem passar dela fica sem IA até o mês seguinte, sem afetar os outros. A equipe não tem cota. 3 milhões cobrem com folga um aluno que usa todo dia. Use 0 para não limitar.' },
+    { key: 'ai_student_monthly_token_limit', label: 'Cota mensal de tokens para acesso completo (planos antigos e cortesias)', type: 'number', min: 0, integer: true, hint: 'Vale só para quem não gasta moedas: assinantes de planos antigos, liberações manuais e plataforma aberta. Soma todo o uso de IA do aluno no mês; quem passar dela fica sem IA até o mês seguinte, sem afetar os outros. Alunos com nível usam as moedas e a cota do Tutor definidas em Moedas. A equipe não tem cota. Use 0 para não limitar.' },
     {
       key: 'simulado_ai_questions_max',
       label: 'Questões por IA em um simulado',
@@ -306,6 +324,78 @@ function mountForms() {
       }, 'Configurações do OpenRouter salvas.');
       await refreshIntegrations();
     },
+  }));
+
+  const whole = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+  };
+  const coinField = (key, label, hint, width = 'third') => ({ key, label, type: 'number', required: true, min: 0, integer: true, width, hint });
+  state.forms.push(buildForm(qs('#aset-form-coins', state.el), [
+    { type: 'section', label: 'Moedas por dia', hint: 'Quanto cada nível recebe por dia. Use 0 para deixar o nível sem moedas.' },
+    coinField('coins_daily_basico', 'Básico'),
+    coinField('coins_daily_pro', 'Pro'),
+    coinField('coins_daily_avancado', 'Avançado'),
+    { type: 'section', label: 'Quanto custa cada ação', hint: 'Em moedas. Use 0 para deixar a ação grátis.' },
+    coinField('coin_cost_essay_correction', 'Correção de redação', 'Cobrada ao enviar a redação para a IA corrigir.', 'half'),
+    coinField('coin_cost_essay_theme', 'Tema de redação criado pela IA', 'Botão "Gerar tema com IA" da nova redação.', 'half'),
+    coinField('coin_cost_simulado_short', 'Simulado curto', 'Simulado com até o número de questões definido ao lado.'),
+    { ...coinField('coin_simulado_short_max_questions', 'Simulado curto vai até (questões)', 'Acima disso, o simulado conta como longo.'), max: 90 },
+    coinField('coin_cost_simulado_long', 'Simulado longo', 'Simulado com mais questões que o limite do curto.'),
+    coinField('coin_cost_practice', 'Pratique da aula', 'Só é cobrado quando a IA precisa criar questões novas; com o banco suficiente, é grátis.', 'half'),
+    coinField('coin_cost_questions', 'Elaborar questões no banco', 'Botão "Elaborar questões deste assunto" do banco de questões.', 'half'),
+    {
+      type: 'section',
+      label: 'Tutor IA (tokens por mês)',
+      hint: 'O Tutor não gasta moedas: cada nível tem uma cota mensal de tokens, que renova no dia 1º. Atenção: aqui 0 BLOQUEIA o Tutor daquele nível — não quer dizer "sem limite", como na cota do acesso completo.',
+    },
+    coinField('tutor_tokens_basico', 'Básico (0 bloqueia o Tutor)', 'Tokens por mês de cada aluno do Básico.'),
+    coinField('tutor_tokens_pro', 'Pro (0 bloqueia o Tutor)', 'Tokens por mês de cada aluno do Pro.'),
+    coinField('tutor_tokens_avancado', 'Avançado (0 bloqueia o Tutor)', 'Tokens por mês de cada aluno do Avançado.'),
+    { type: 'section', label: 'Upgrade de plano' },
+    {
+      key: 'upgrade_min',
+      label: 'Cobrança mínima do upgrade (R$)',
+      type: 'number',
+      required: true,
+      min: 0,
+      step: '0.01',
+      hint: 'O aluno paga só a diferença proporcional ao tempo que falta. Quando a conta dá menos que isto, cobra-se este valor — o Asaas recusa cobranças muito baixas.',
+    },
+  ], {
+    values: {
+      coins_daily_basico: whole(s.coins_daily_basico),
+      coins_daily_pro: whole(s.coins_daily_pro),
+      coins_daily_avancado: whole(s.coins_daily_avancado),
+      coin_cost_essay_correction: whole(s.coin_cost_essay_correction),
+      coin_cost_essay_theme: whole(s.coin_cost_essay_theme),
+      coin_cost_simulado_short: whole(s.coin_cost_simulado_short),
+      coin_simulado_short_max_questions: whole(s.coin_simulado_short_max_questions),
+      coin_cost_simulado_long: whole(s.coin_cost_simulado_long),
+      coin_cost_practice: whole(s.coin_cost_practice),
+      coin_cost_questions: whole(s.coin_cost_questions),
+      tutor_tokens_basico: whole(s.tutor_tokens_basico),
+      tutor_tokens_pro: whole(s.tutor_tokens_pro),
+      tutor_tokens_avancado: whole(s.tutor_tokens_avancado),
+      upgrade_min: whole(s.upgrade_min_cents) / 100,
+    },
+    submitLabel: 'Salvar moedas',
+    onSubmit: (values) => save({
+      coins_daily_basico: whole(values.coins_daily_basico),
+      coins_daily_pro: whole(values.coins_daily_pro),
+      coins_daily_avancado: whole(values.coins_daily_avancado),
+      coin_cost_essay_correction: whole(values.coin_cost_essay_correction),
+      coin_cost_essay_theme: whole(values.coin_cost_essay_theme),
+      coin_cost_simulado_short: whole(values.coin_cost_simulado_short),
+      coin_simulado_short_max_questions: whole(values.coin_simulado_short_max_questions),
+      coin_cost_simulado_long: whole(values.coin_cost_simulado_long),
+      coin_cost_practice: whole(values.coin_cost_practice),
+      coin_cost_questions: whole(values.coin_cost_questions),
+      tutor_tokens_basico: whole(values.tutor_tokens_basico),
+      tutor_tokens_pro: whole(values.tutor_tokens_pro),
+      tutor_tokens_avancado: whole(values.tutor_tokens_avancado),
+      upgrade_min_cents: Math.round((Number(values.upgrade_min) || 0) * 100),
+    }, 'Moedas atualizadas. Valem para as próximas ações dos alunos.'),
   }));
 
   state.forms.push(buildForm(qs('#aset-form-schedule', state.el), [
@@ -405,6 +495,7 @@ function paint() {
       ${navigation()}
     ${sectionCard({ id: 'brand', title: 'Marca', subtitle: 'Nome, logo e contato de suporte.', icon: 'sparkles', aside: brandAside() })}
     ${sectionCard({ id: 'access', title: 'Acesso', subtitle: 'Quem pode estudar na plataforma.', icon: 'shield-check' })}
+    ${sectionCard({ id: 'coins', title: 'Moedas', subtitle: 'Moedas por dia de cada nível, custo das ações com IA e cota do Tutor.', icon: 'coins', aside: coinsAside() })}
     ${sectionCard({ id: 'openrouter', title: 'OpenRouter', subtitle: 'Tutor, correção de redação e geração de temas.', icon: 'bot', aside: openrouterAside() })}
     ${sectionCard({ id: 'asaas', title: 'Asaas', subtitle: 'Cartão, Pix e assinaturas.', icon: 'credit-card', body: asaasSection() })}
     ${sectionCard({ id: 'smtp', title: 'E-mail', subtitle: 'Envio de mensagens automáticas.', icon: 'mail', body: smtpSection() })}

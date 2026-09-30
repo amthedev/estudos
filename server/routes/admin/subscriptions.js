@@ -7,6 +7,7 @@
  *   GET  /api/admin/subscriptions/summary    { total, active, trialing, past_due, canceled, other, mrr_cents }
  *   GET  /api/admin/subscriptions/pendentes  pagamentos recebidos que não viraram acesso
  *   POST /api/admin/subscriptions/reprocessar reprocessa esses pagamentos
+ *   GET  /api/admin/subscriptions/upgrades-nao-aplicados  upgrades pagos que não trocaram o plano
  */
 const router = require('express').Router();
 const db = require('../../db/pool');
@@ -229,6 +230,23 @@ router.post(
         ? `${liberados.length} aluno(s) passaram a ter acesso.`
         : 'Nenhum aluno novo liberado — os pagamentos já estavam em dia.',
     });
+  })
+);
+
+/**
+ * Upgrades pagos que não trocaram o plano. O pagamento da diferença entrou,
+ * mas a assinatura já não estava como na cotação (renovou, mudou de plano,
+ * deixou de estar ativa), e o webhook não troca sozinho nesses casos. Cada
+ * item traz o motivo provável para o suporte decidir entre aplicar a troca e
+ * devolver o valor no Asaas. A devolução tira o item da lista: o webhook de
+ * estorno marca o pedido como 'refunded'.
+ */
+router.get(
+  '/upgrades-nao-aplicados',
+  wrap(async (req, res) => {
+    const items = await payments.unappliedUpgrades();
+    res.set('Cache-Control', 'no-store');
+    res.json({ total: items.length, items });
   })
 );
 

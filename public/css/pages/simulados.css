@@ -72,6 +72,37 @@
   font-size: var(--fs-xs);
 }
 
+/* custo do simulado com a quantidade padrão, no canto do cartão */
+.sim-type {
+  position: relative;
+}
+.sim-type-cost {
+  position: absolute;
+  top: var(--s-4);
+  right: var(--s-4);
+}
+.sim-type-cost .coin-cost {
+  margin: 0;
+}
+
+.sim-cost-rule {
+  margin: calc(-1 * var(--s-2)) 0 var(--s-4);
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+}
+
+.sim-mode .coin-cost {
+  margin: var(--s-1) 0 0;
+}
+
+.sim-start-cost {
+  display: inline-flex;
+}
+.sim-start-cost:empty {
+  display: none;
+}
+
 /* ---------------------------------------------------------------------
    Modelos e histórico
    --------------------------------------------------------------------- */
