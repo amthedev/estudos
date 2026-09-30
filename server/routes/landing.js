@@ -11,7 +11,8 @@
  *       testimonials: [...],                           // só depoimentos ativos
  *       faqs: [{ id, question, answer }],              // só perguntas ativas
  *       brand: { name, support_email },
- *       countdown: { exam_short_name, exam_date, days_left } | null   // ENEM com data futura
+ *       countdown: { exam_short_name, exam_date, days_left } | null,  // ENEM com data futura
+ *       activity: [{ first_name, exam_short_name, kind, tier, tier_label, at }]  // avisos reais (services/activity.js)
  *     }
  *
  * Regras:
@@ -26,15 +27,22 @@
  *   - A contagem regressiva usa a data da prova do ENEM cadastrada no painel (Provas → editar,
  *     "Data da próxima prova"). Sem data, ou com a data já passada, countdown chega nulo e a
  *     faixa não aparece.
+ *   - Os avisos de atividade (activity) são só compra paga e upgrade aplicado, com o primeiro
+ *     nome, a prova, o nível e a hora cheia. Desligados no painel, ou com menos avisos reais que
+ *     o mínimo configurado, chegam como lista vazia e a página não mostra o balão. Se a consulta
+ *     falhar, a landing continua de pé: a lista também chega vazia.
  *
  * Cache em memória de 60 segundos, invalidado por invalidateLandingCache() sempre que o painel
- * salva algum conteúdo da página inicial (server/routes/admin/landing.js).
+ * salva algum conteúdo da página inicial (server/routes/admin/landing.js) ou alguma configuração
+ * (server/routes/admin/settings.js), e quando o aluno muda no perfil algo que os avisos mostram
+ * (server/routes/auth.js).
  */
 const router = require('express').Router();
 const db = require('../db/pool');
 const { wrap } = require('../middleware/errors');
 const settings = require('../services/settings');
 const coins = require('../services/coins');
+const activity = require('../services/activity');
 const dates = require('../utils/dates');
 
 const CACHE_TTL_MS = 60 * 1000;
@@ -155,7 +163,7 @@ function applyPlansMarker(text, plansText) {
 // leitura do banco
 // ---------------------------------------------------------------------------
 async function loadPayload() {
-  const [blockRows, examRows, planRows, testimonialRows, faqRows, tourRows, brand, allowances, enem] = await Promise.all([
+  const [blockRows, examRows, planRows, testimonialRows, faqRows, tourRows, brand, allowances, enem, activityItems] = await Promise.all([
     db.many(
       `SELECT key, eyebrow, title, subtitle, body, items, cta_label, cta_href, image_url, sort_order
          FROM landing_blocks
@@ -206,6 +214,11 @@ async function loadPayload() {
         ORDER BY (slug = 'enem') DESC, sort_order ASC
         LIMIT 1`
     ),
+    // Os avisos são acessório: se a consulta falhar, a página sai sem eles.
+    activity.recentActivity().catch((err) => {
+      console.warn(`[landing] avisos de atividade indisponíveis: ${err.message}`);
+      return [];
+    }),
   ]);
 
   const plans = planRows.map((row) => publicPlan(row, allowances));
@@ -244,6 +257,7 @@ async function loadPayload() {
     },
     // guardado cru (só a data); a conta dos dias é feita na resposta
     countdown: enem ? { exam_short_name: enem.exam_short_name, exam_date: enem.exam_date } : null,
+    activity: activityItems,
   };
 }
 

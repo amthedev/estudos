@@ -73,6 +73,12 @@ const DEFAULTS = Object.freeze({
   // Menor cobrança de diferença no upgrade, em centavos: o Asaas recusa
   // cobranças muito baixas.
   upgrade_min_cents: 500,
+  // Avisos de atividade real na página inicial ("Ana assinou o Pro · há 2
+  // horas"): liga/desliga, quantos dias para trás e o mínimo de avisos para
+  // o balão aparecer. Abaixo do mínimo a landing não mostra nada.
+  activity_feed_enabled: true,
+  activity_feed_days: 14,
+  activity_feed_min_events: 3,
   private_lessons_enabled: true,
   payment_provider: 'asaas',
   daily_quotes: [

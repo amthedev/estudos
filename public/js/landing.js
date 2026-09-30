@@ -440,6 +440,179 @@ function initFaqs(data) {
     </details>`));
 }
 
+// Avisos de atividade real (compras pagas e upgrades aplicados), vindos de
+// /api/landing: um por vez num balão no canto, no máximo 8 por visita, cada
+// um uma vez só. Sem avisos, ou fechado nesta sessão, nada entra na página.
+const ACTIVITY_CLOSED_KEY = 'fe-activity-closed';
+const ACTIVITY_FIRST_MS = 8000;
+const ACTIVITY_STEP_MS = 9000;
+const ACTIVITY_MAX = 8;
+
+function activityClosed() {
+  try {
+    return window.sessionStorage.getItem(ACTIVITY_CLOSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function rememberActivityClosed() {
+  try {
+    window.sessionStorage.setItem(ACTIVITY_CLOSED_KEY, '1');
+  } catch {
+    /* sem armazenamento, o balão fecha só nesta página */
+  }
+}
+
+// A API manda a hora cheia; aqui vira "há 2 horas", "ontem", "há 3 dias".
+// Passadas 24 horas, conta o dia do calendário de quem está vendo: compra na
+// segunda às 20h vista na quarta de manhã foi anteontem, não "ontem".
+function activityWhen(iso, now = Date.now()) {
+  const at = new Date(iso);
+  const hours = Math.floor((now - at.getTime()) / 3600000);
+  if (hours < 1) return 'há menos de 1 hora';
+  if (hours < 24) return hours === 1 ? 'há 1 hora' : `há ${hours} horas`;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  at.setHours(0, 0, 0, 0);
+  const days = Math.round((today.getTime() - at.getTime()) / 86400000);
+  return days <= 1 ? 'ontem' : `há ${days} dias`;
+}
+
+// Artigo de cada prova na frase: "para o ENEM", "para a FUVEST". Prova que não
+// está aqui (cadastrada depois pelo painel) sai sem artigo, como no resto da
+// plataforma ("Data prevista para UFRJ"): seco, mas nunca no gênero errado.
+const EXAM_ARTICLES = {
+  ENEM: 'o',
+  'BARRO BRANCO': 'o',
+  MACKENZIE: 'o',
+  FUVEST: 'a',
+  UNICAMP: 'a',
+  UNESP: 'a',
+  FGV: 'a',
+  'PUC-SP': 'a',
+};
+
+function activityExam(shortName) {
+  if (!shortName) return '';
+  const article = EXAM_ARTICLES[String(shortName).trim().toUpperCase()];
+  return `, que estuda para ${article ? `${article} ` : ''}${shortName},`;
+}
+
+function activityLine(item, brand) {
+  const exam = activityExam(item.exam_short_name);
+  const action = item.kind === 'upgraded'
+    ? `subiu para o ${item.tier_label}`
+    : item.tier_label ? `assinou o ${item.tier_label}` : `assinou a ${brand}`;
+  return html`<strong>${item.first_name}</strong>${exam} ${action} <span class="activity-toast-when">· ${activityWhen(item.at)}</span>`;
+}
+
+function initActivity(data) {
+  const brand = (data && data.brand && data.brand.name) || 'plataforma';
+  const items = (data && Array.isArray(data.activity) ? data.activity : [])
+    .filter((item) => item && item.first_name && Number.isFinite(new Date(item.at).getTime()))
+    .filter((item) => item.kind !== 'upgraded' || item.tier_label)
+    .slice(0, ACTIVITY_MAX);
+  if (!items.length || activityClosed()) return;
+
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let box = null;
+  let text = null;
+  let index = 0;
+  let timer = 0;
+  let remaining = ACTIVITY_STEP_MS;
+  let startedAt = 0;
+  const pauses = new Set();
+
+  const schedule = (ms) => {
+    window.clearTimeout(timer);
+    remaining = ms;
+    startedAt = Date.now();
+    if (!pauses.size) timer = window.setTimeout(next, ms);
+  };
+  const pause = (reason) => {
+    if (!pauses.size) {
+      window.clearTimeout(timer);
+      remaining = Math.max(1000, remaining - (Date.now() - startedAt));
+    }
+    pauses.add(reason);
+  };
+  const resume = (reason) => {
+    if (!pauses.delete(reason) || pauses.size) return;
+    schedule(remaining);
+  };
+  const onVisibility = () => (document.hidden ? pause('hidden') : resume('hidden'));
+
+  const close = () => {
+    window.clearTimeout(timer);
+    document.removeEventListener('visibilitychange', onVisibility);
+    if (!box) return;
+    const el = box;
+    box = null;
+    el.classList.remove('in');
+    window.setTimeout(() => el.remove(), reduce ? 0 : 300);
+  };
+
+  const show = (item) => {
+    if (reduce || !text.childNodes.length) {
+      render(text, activityLine(item, brand));
+      return;
+    }
+    text.classList.add('swap');
+    window.setTimeout(() => {
+      if (!box) return;
+      render(text, activityLine(item, brand));
+      text.classList.remove('swap');
+    }, 200);
+  };
+
+  function next() {
+    if (!box) return;
+    if (index >= items.length) {
+      close();
+      return;
+    }
+    show(items[index]);
+    index += 1;
+    schedule(ACTIVITY_STEP_MS);
+  }
+
+  const start = () => {
+    if (activityClosed()) return;
+    box = document.createElement('div');
+    box.className = 'activity-toast';
+    box.setAttribute('role', 'status');
+    box.setAttribute('aria-live', 'polite');
+    render(box, html`
+      <span class="activity-toast-icon" aria-hidden="true">${icon('badge-check')}</span>
+      <p class="activity-toast-text"></p>
+      <button class="activity-toast-close" type="button" aria-label="Fechar avisos" title="Fechar">${icon('x')}</button>`);
+    text = qs('.activity-toast-text', box);
+    qs('.activity-toast-close', box).addEventListener('click', () => {
+      rememberActivityClosed();
+      close();
+    });
+    box.addEventListener('mouseenter', () => pause('hover'));
+    box.addEventListener('mouseleave', () => resume('hover'));
+    box.addEventListener('focusin', () => pause('focus'));
+    box.addEventListener('focusout', (event) => {
+      if (!(event.relatedTarget instanceof Node) || !box || !box.contains(event.relatedTarget)) resume('focus');
+    });
+    document.addEventListener('visibilitychange', onVisibility);
+    document.body.appendChild(box);
+    // o texto entra depois do balão, para o leitor de tela anunciar o aviso
+    window.requestAnimationFrame(() => {
+      if (!box) return;
+      box.classList.add('in');
+      next();
+    });
+  };
+
+  // ~8s depois de a página abrir, contando o tempo que a API levou
+  const elapsed = window.performance && typeof window.performance.now === 'function' ? window.performance.now() : 0;
+  window.setTimeout(start, Math.max(0, ACTIVITY_FIRST_MS - elapsed));
+}
+
 async function initResults() {
   const section = qs('#resultados');
   const postsEl = qs('#results-posts');
@@ -566,4 +739,5 @@ loadLanding().then((data) => {
   initContent(data);
   initTour(data);
   initFaqs(data);
+  initActivity(data);
 });

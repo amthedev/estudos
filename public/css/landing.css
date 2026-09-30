@@ -463,3 +463,23 @@ body { overflow-x: hidden; background: var(--ink); }
   .hero-media-wrap, .reveal, .section-visual::before, .section-visual img, .platform-tool, .platform-tool::after, .platform-tool img, .exam-card, .exam-card::after, .exam-art::before, .exam-art .icon, .method-flow::after, .method-flow li, .method-icon, .result-card, .result-card-media img, .media-open, .plan, .plan::before, .faq-item, .faq-item summary .icon { transition: none; }
   .js .hero-copy > *, .js .reveal:not(.in) { opacity: 1; transform: none; }
 }
+/* avisos de atividade real (compras pagas e upgrades), criados por initActivity() */
+.activity-toast { position: fixed; left: 24px; bottom: 24px; z-index: var(--z-dropdown); width: min(360px, calc(100vw - 48px)); display: grid; grid-template-columns: auto minmax(0px, 1fr) auto; align-items: center; gap: 12px; padding: 12px 8px 12px 14px; color: var(--text); background: rgba(10, 22, 36, 0.95); border: 1px solid var(--border-2); border-radius: 8px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36); backdrop-filter: blur(10px); opacity: 0; transform: translateY(10px); transition: opacity 260ms, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.activity-toast.in { opacity: 1; transform: none; }
+.activity-toast-icon { width: 32px; height: 32px; display: grid; place-items: center; color: var(--green); background: rgba(49, 216, 124, 0.1); border: 1px solid rgba(49, 216, 124, 0.22); border-radius: 50%; }
+.activity-toast-icon .icon { width: 16px; height: 16px; }
+.activity-toast-text { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.45; transition: opacity 200ms; }
+.activity-toast-text.swap { opacity: 0; }
+.activity-toast-text strong { color: #fff; font-weight: 700; }
+.activity-toast-when { color: var(--text-3); white-space: nowrap; }
+.activity-toast-close { width: 32px; height: 32px; display: grid; place-items: center; align-self: start; padding: 0; color: var(--text-3); background: transparent; border: 0; border-radius: 50%; cursor: pointer; transition: color 180ms, background 180ms; }
+.activity-toast-close:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.activity-toast-close:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.activity-toast-close .icon { width: 14px; height: 14px; }
+@media (max-width: 767px) {
+  .activity-toast { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-toast, .activity-toast-text, .activity-toast-close { transition: none; }
+  .activity-toast { transform: none; }
+}

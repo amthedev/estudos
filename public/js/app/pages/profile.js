@@ -1,13 +1,14 @@
 // =====================================================================
 // /app/perfil — dados pessoais, prova e metas, rotina de estudos, troca de
-// senha, situação da assinatura (com o nível e as moedas de hoje) e saída da conta.
+// senha, privacidade (avisos da página inicial), situação da assinatura (com
+// o nível e as moedas de hoje) e saída da conta.
 // Consome GET /api/auth/me, PUT /api/profile, PUT /api/profile/password,
 // GET /api/exams, /api/exams/:id/subjects e /api/billing/status.
 // =====================================================================
 import { api } from '../../core/api.js';
 import { store } from '../../core/store.js';
 import {
-  html, render as renderTo, toast, confirm, pageHeader, errorState, skeleton,
+  html, raw, render as renderTo, toast, confirm, pageHeader, errorState, skeleton,
   badge, alertBox, qs, qsa, setLoading, applyApiErrors, clearFieldErrors, fieldError, on,
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
@@ -286,6 +287,28 @@ function passwordCard() {
 }
 
 /**
+ * Avisos da página inicial ("Ana, que estuda para o ENEM, assinou o Pro").
+ * O interruptor grava na hora; ligado é o padrão.
+ */
+function privacyCard() {
+  const user = me.user || {};
+  const checked = user.show_in_activity !== false;
+  return html`
+    <section class="card pr-card" id="pr-privacy">
+      <div class="card-header"><h2 class="card-title">Privacidade</h2></div>
+      <div class="card-body">
+        <label class="switch-field pr-privacy" for="pr-show-activity">
+          <span class="pr-privacy-text">
+            <span class="switch-title">Aparecer nos avisos de novas assinaturas da página inicial (só o primeiro nome e a prova)</span>
+            <span class="hint">Seu sobrenome, e-mail e dados de pagamento nunca aparecem. Desligue para ficar de fora.</span>
+          </span>
+          <input type="checkbox" role="switch" class="switch" id="pr-show-activity" name="show_in_activity" ${checked ? raw('checked') : ''}>
+        </label>
+      </div>
+    </section>`;
+}
+
+/**
  * Nível e moedas de hoje, numa linha. Quem gasta moedas vê o saldo do dia;
  * quem não gasta (plano antigo, cortesia) vê até quando vale o acesso completo.
  */
@@ -409,6 +432,7 @@ function paint() {
         ${examCard()}
         ${routineCard()}
         ${passwordCard()}
+        ${privacyCard()}
         ${subscriptionCard()}
         ${sessionCard()}
       </div>`
@@ -439,6 +463,9 @@ function bind() {
       if (holder) renderTo(holder, examSpecificFields(exam));
     });
   }
+
+  const activitySwitch = qs('#pr-show-activity', page.el);
+  if (activitySwitch) activitySwitch.addEventListener('change', () => saveActivityPreference(activitySwitch));
 
   if (offClick) offClick();
   offClick = on(page.el, 'click', '[data-action]', (event, trigger) => {
@@ -520,6 +547,24 @@ async function saveProfile(form, kind) {
     setLoading(button, false);
     if (!applyApiErrors(form, err)) toast(err.message || 'Não foi possível salvar o perfil.', { type: 'error' });
   }
+}
+
+async function saveActivityPreference(input) {
+  const wanted = input.checked;
+  input.disabled = true;
+  try {
+    const result = await api.put('/api/profile', { show_in_activity: wanted });
+    me = { ...me, user: result.user };
+    store.setSession({ user: me.user, profile: me.profile, exam: me.exam });
+    toast(
+      wanted ? 'Você volta a aparecer nos avisos da página inicial.' : 'Pronto: você não aparece mais nos avisos da página inicial.',
+      { type: 'success' }
+    );
+  } catch (err) {
+    input.checked = !wanted;
+    toast(err.message || 'Não foi possível salvar a preferência.', { type: 'error' });
+  }
+  input.disabled = false;
 }
 
 async function savePassword(form) {

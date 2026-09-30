@@ -68,5 +68,10 @@ module.exports = {
   tutor_tokens_avancado: 5000000,
   // Menor cobrança de diferença no upgrade, em centavos.
   upgrade_min_cents: 500,
+  // Avisos de atividade real na página inicial: liga/desliga, janela em dias
+  // e mínimo de avisos para o balão aparecer.
+  activity_feed_enabled: true,
+  activity_feed_days: 14,
+  activity_feed_min_events: 3,
   private_lessons_enabled: true,
 };

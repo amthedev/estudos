@@ -9,7 +9,7 @@
  *   POST /api/auth/forgot-password { email }                        → { ok } (sempre 200)    [pub]
  *   POST /api/auth/reset-password  { token, password }              → { ok }                 [pub]
  *   GET  /api/auth/me                                               → { user, profile, exam, access, coins }
- *   PUT  /api/profile              dados/metas/disponibilidade      → { user, profile }
+ *   PUT  /api/profile              dados/metas/disponibilidade/avisos → { user, profile }
  *   PUT  /api/profile/password     { current_password, new_password } → { ok }
  *
  * O basePath é '/api' porque o módulo também atende /api/profile (ver ARCHITECTURE §4).
@@ -28,6 +28,7 @@ const mailer = require('../services/mailer');
 const coins = require('../services/coins');
 const { generateResetToken, sha256 } = require('../utils/tokens');
 const { isISODate } = require('../utils/dates');
+const { invalidateLandingCache } = require('./landing');
 
 const RESET_TTL_MINUTES = 60;
 
@@ -63,6 +64,8 @@ const profileSchema = z
   .object({
     name: nameSchema.optional(),
     avatar_url: nullable(z.string().trim().url().max(500)),
+    // Aparecer (só o primeiro nome e a prova) nos avisos de novas assinaturas da página inicial.
+    show_in_activity: z.boolean().optional(),
     exam_id: nullable(z.string().uuid()),
     other_exam_name: nullable(z.string().trim().max(120)),
     study_days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
@@ -310,6 +313,10 @@ router.put(
         userParams.push(body.avatar_url);
         userSets.push(`avatar_url = $${userParams.length}`);
       }
+      if (body.show_in_activity !== undefined) {
+        userParams.push(body.show_in_activity);
+        userSets.push(`show_in_activity = $${userParams.length}`);
+      }
       if (userSets.length > 0) {
         userParams.push(userId);
         await client.query(`UPDATE users SET ${userSets.join(', ')} WHERE id = $${userParams.length}`, userParams);
@@ -330,6 +337,12 @@ router.put(
         await client.query(`UPDATE student_profiles SET ${sets.join(', ')} WHERE user_id = $${params.length}`, params);
       }
     });
+
+    // Os avisos da página inicial levam o primeiro nome e a prova: quem sai
+    // deles (ou troca o nome ou a prova) não espera o cache de 60s da landing.
+    if (['show_in_activity', 'name', 'exam_id'].some((field) => body[field] !== undefined)) {
+      invalidateLandingCache();
+    }
 
     // Mudou prova ou disponibilidade e o onboarding já foi feito → recalcula o cronograma
     const scheduleChanged = SCHEDULE_FIELDS.some(

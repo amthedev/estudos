@@ -34,6 +34,7 @@ const ASAAS_EVENTS = [
 const SECTIONS = [
   { id: 'brand', label: 'Marca', icon: 'sparkles' },
   { id: 'access', label: 'Acesso', icon: 'shield-check' },
+  { id: 'landing', label: 'Página inicial', icon: 'home' },
   { id: 'coins', label: 'Moedas', icon: 'coins' },
   { id: 'openrouter', label: 'OpenRouter', icon: 'bot' },
   { id: 'asaas', label: 'Asaas', icon: 'credit-card' },
@@ -326,6 +327,53 @@ function mountForms() {
     },
   }));
 
+  // Avisos de atividade real na página inicial (compras pagas e upgrades).
+  const inRange = (value, min, max, fallback) => {
+    const n = Math.floor(Number(value));
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+  };
+  state.forms.push(buildForm(qs('#aset-form-landing', state.el), [
+    {
+      key: 'activity_feed_enabled',
+      label: 'Mostrar avisos de novas assinaturas na página inicial',
+      type: 'switch',
+      width: 'full',
+      hint: 'Um balão discreto no canto da página com compras pagas e upgrades de verdade, como "Ana, que estuda para o ENEM, assinou o Pro · há 2 horas". Sai só o primeiro nome, a prova e o nível. Cortesias, testes não pagos, a equipe e quem desligou no perfil nunca aparecem.',
+    },
+    {
+      key: 'activity_feed_days',
+      label: 'Mostrar o que aconteceu nos últimos (dias)',
+      type: 'number',
+      required: true,
+      min: 1,
+      max: 90,
+      integer: true,
+      hint: 'Compras e upgrades mais antigos que isso não aparecem.',
+    },
+    {
+      key: 'activity_feed_min_events',
+      label: 'Mínimo de avisos para o balão aparecer',
+      type: 'number',
+      required: true,
+      min: 1,
+      max: 20,
+      integer: true,
+      hint: 'Com menos avisos reais que isso no período, a página não mostra nada. Nenhum aviso é repetido ou inventado para completar.',
+    },
+  ], {
+    values: {
+      activity_feed_enabled: s.activity_feed_enabled !== false,
+      activity_feed_days: inRange(s.activity_feed_days, 1, 90, 14),
+      activity_feed_min_events: inRange(s.activity_feed_min_events, 1, 20, 3),
+    },
+    submitLabel: 'Salvar página inicial',
+    onSubmit: (values) => save({
+      activity_feed_enabled: Boolean(values.activity_feed_enabled),
+      activity_feed_days: inRange(values.activity_feed_days, 1, 90, 14),
+      activity_feed_min_events: inRange(values.activity_feed_min_events, 1, 20, 3),
+    }, 'Avisos da página inicial atualizados.'),
+  }));
+
   const whole = (value, fallback = 0) => {
     const n = Number(value);
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
@@ -476,7 +524,7 @@ function mountForms() {
 function header() {
   return pageHeader({
     title: 'Configurações',
-    subtitle: 'Marca, regras de acesso, integrações e padrões de estudo da plataforma.',
+    subtitle: 'Marca, regras de acesso, página inicial, integrações e padrões de estudo da plataforma.',
     actions: html`<button type="button" class="btn btn-secondary" data-action="reload">${icon('refresh-cw')}<span>Atualizar</span></button>`,
   });
 }
@@ -495,6 +543,7 @@ function paint() {
       ${navigation()}
     ${sectionCard({ id: 'brand', title: 'Marca', subtitle: 'Nome, logo e contato de suporte.', icon: 'sparkles', aside: brandAside() })}
     ${sectionCard({ id: 'access', title: 'Acesso', subtitle: 'Quem pode estudar na plataforma.', icon: 'shield-check' })}
+    ${sectionCard({ id: 'landing', title: 'Página inicial', subtitle: 'Avisos de novas assinaturas para quem visita o site.', icon: 'home' })}
     ${sectionCard({ id: 'coins', title: 'Moedas', subtitle: 'Moedas por dia de cada nível, custo das ações com IA e cota do Tutor.', icon: 'coins', aside: coinsAside() })}
     ${sectionCard({ id: 'openrouter', title: 'OpenRouter', subtitle: 'Tutor, correção de redação e geração de temas.', icon: 'bot', aside: openrouterAside() })}
     ${sectionCard({ id: 'asaas', title: 'Asaas', subtitle: 'Cartão, Pix e assinaturas.', icon: 'credit-card', body: asaasSection() })}

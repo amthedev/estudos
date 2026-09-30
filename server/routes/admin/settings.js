@@ -20,6 +20,7 @@ const settings = require('../../services/settings');
 const ai = require('../../services/ai');
 const payments = require('../../services/payments');
 const mailer = require('../../services/mailer');
+const { invalidateLandingCache } = require('../landing');
 
 /** URL absoluta (https://…) ou caminho interno (/assets/brand/foco-elite-logo.png). */
 const assetUrl = z
@@ -84,6 +85,20 @@ const settingsBody = z
     tutor_tokens_pro: wholeNumber(1_000_000_000),
     tutor_tokens_avancado: wholeNumber(1_000_000_000),
     upgrade_min_cents: wholeNumber(1_000_000),
+    // Avisos de atividade real na página inicial.
+    activity_feed_enabled: z.boolean().optional(),
+    activity_feed_days: z.coerce
+      .number()
+      .int('Use um número inteiro de dias.')
+      .min(1, 'Use pelo menos 1 dia.')
+      .max(90, 'Use no máximo 90 dias.')
+      .optional(),
+    activity_feed_min_events: z.coerce
+      .number()
+      .int('Use um número inteiro.')
+      .min(1, 'Use pelo menos 1 aviso.')
+      .max(20, 'A página mostra no máximo 20 avisos.')
+      .optional(),
     private_lessons_enabled: z.boolean().optional(),
     daily_quotes: dailyQuotes.optional(),
     // provedor de pagamento ativo: as chaves ficam no ambiente, aqui só a escolha
@@ -140,6 +155,9 @@ router.put(
     const body = req.valid.body;
     const keys = Object.keys(body);
     const saved = await settings.setMany(body);
+    // A página inicial guarda o conteúdo por 60s e parte dele vem daqui (marca,
+    // avisos de atividade): o que o painel salva aparece na próxima visita.
+    invalidateLandingCache();
     await audit(req, 'settings.update', 'settings', null, { keys });
     res.json(withExtras(saved));
   })

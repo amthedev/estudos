@@ -71,6 +71,19 @@
   color: var(--text);
 }
 
+/* avisos da página inicial: texto à esquerda, interruptor à direita */
+.pr-privacy {
+  padding: 0;
+  cursor: pointer;
+}
+
+.pr-privacy-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .pr-logout .card-body {
   flex-direction: row;
 }
