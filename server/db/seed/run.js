@@ -524,6 +524,44 @@ async function seedCuratedAssets(client, ctx) {
 }
 
 
+/** Chave em settings que marca os comentários de alunos como já semeados. */
+const STUDENT_COMMENTS_FLAG = 'seed_comentarios_alunos_2026_09';
+
+/**
+ * Comentários de alunos da faixa do topo da página inicial (depoimentos só
+ * com texto). Entram UMA vez: o seed roda a cada boot, e sem a trava um
+ * comentário apagado no painel voltaria no deploy seguinte. Mesmo na primeira
+ * vez, um comentário igual (nome e texto) que já exista não é duplicado.
+ */
+async function seedStudentComments(client, ctx) {
+  const done = await client.query('SELECT 1 FROM settings WHERE key = $1', [STUDENT_COMMENTS_FLAG]);
+  if (done.rowCount) {
+    ctx.summary.bump('testimonials', 'kept');
+    return;
+  }
+  for (const comment of data.curatedAssets.studentComments || []) {
+    const existing = await client.query(
+      'SELECT 1 FROM testimonials WHERE name = $1 AND content = $2',
+      [comment.name, comment.content]
+    );
+    if (existing.rowCount) {
+      ctx.summary.bump('testimonials', 'kept');
+      continue;
+    }
+    await client.query(
+      `INSERT INTO testimonials (name, content, sort_order, active)
+       VALUES ($1, $2, $3, true)`,
+      [comment.name, comment.content, comment.sort_order]
+    );
+    ctx.summary.bump('testimonials', 'created');
+  }
+  await client.query(
+    `INSERT INTO settings (key, value, updated_at) VALUES ($1, to_jsonb(now()::text), now())
+     ON CONFLICT (key) DO NOTHING`,
+    [STUDENT_COMMENTS_FLAG]
+  );
+}
+
 /**
  * "Por dentro da plataforma": as telas mostradas na landing. Dedup por image_url;
  * quando a imagem já existe, sincroniza título/legenda/ordem para permitir ajustes
@@ -871,6 +909,7 @@ async function runSeed(options = {}) {
     say('[seed]   página inicial');     await seedLanding(client, ctx);
     say('[seed]   acervo de provas e resultados'); await seedCuratedAssets(client, ctx);
     say('[seed]   por dentro da plataforma'); await seedPlatformTour(client, ctx);
+    say('[seed]   comentários de alunos'); await seedStudentComments(client, ctx);
     say('[seed]   planos de estudo');   await seedStudyPlans(client, ctx);
   });
 

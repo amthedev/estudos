@@ -255,4 +255,61 @@ const platformTour = [
   { title: 'Escolha sua prova', caption: 'Selecione o objetivo e receba um plano sob medida.', image_url: publishedUrl('/assets/platform-tour/escolha-prova.webp'), sort_order: 12 },
 ];
 
-module.exports = { testimonials, pastExams, platformTour };
+// Comentários de alunos enviados pelo Guilherme em 30/09/2026, com o texto
+// exatamente como cada um escreveu. Aparecem na faixa do topo da página
+// inicial. Entram UMA vez (ver seedStudentComments): depois disso quem manda é
+// o painel, e um comentário apagado lá não volta no próximo deploy.
+const studentComments = [
+  ['Lucas', 'comecei essa semana e já consegui me organizar bem melhor kkkkk antes eu estudava qualquer coisa'],
+  ['Mariana', 'Gostei bastante, principalmente de mostrar certinho oq eu tenho que estudar no dia'],
+  ['João', 'pra barro branco tá ajudando demais, eu tava muito perdido nos conteúdos'],
+  ['Ana', 'as questões depois da aula são mt boas, achei que tinha entendido e errei 2 kkkkk'],
+  ['Pedro', 'interface muito boa mano, não fica aquela coisa cheia de informação na tela'],
+  ['Beatriz', 'comecei ontem e fiquei umas 3 horas estudando sem nem perceber'],
+  ['Rafael', 'o cronograma foi oq mais gostei até agora'],
+  ['Gabi', 'eu literalmente não sabia por onde começar pro enem, agr pelo menos tenho uma direção 😭'],
+  ['Matheus', 'bem melhor que ficar fazendo cronograma no notion toda semana e nunca seguir kkkkk'],
+  ['Larissa', 'Achei bem fácil de usar, em poucos minutos já tinha organizado tudo'],
+  ['Davi', 'tem umas coisas que ainda tô descobrindo mas até agora gostei bastante'],
+  ['Camila', 'a parte de ver meu desempenho nas questões me deu um choque KKKKK preciso estudar matemática urgente'],
+  ['Felipe', 'pra quem estuda sozinho ajuda muito'],
+  ['Julia', 'finalmente uma plataforma que não me deixa mais perdida ainda kkkkk'],
+  ['Gustavo', 'Tô usando pra Barro Branco e gostei bastante da separação dos assuntos'],
+  ['Amanda', 'achei muito bom ter questão logo depois do conteúdo, ajuda a saber se aprendeu msm'],
+  ['Bruno', 'simples e direto, gostei disso'],
+  ['Isabela', 'Eu sempre começava a estudar e parava porque não sabia oq fazer depois. O cronograma ajudou bastante nisso'],
+  ['Carlos', 'os simulados são bons dms'],
+  ['Vitória', 'comecei por recomendação de um amigo e até agora tô curtindo bastante'],
+  ['Thiago', 'o melhor pra mim é conseguir ver tudo que já completei'],
+  ['Eduarda', 'eu amo marcar as coisas como concluídas KKKKK dá vontade de continuar estudando'],
+  ['Henrique', 'Estou usando há alguns dias. Muito organizado e fácil de entender.'],
+  ['Sofia', 'achei lindo e muito prático'],
+  ['Gabriel', 'Eu tava estudando totalmente errado antes kkkkk agora tô seguindo os assuntos na ordem'],
+  ['Letícia', 'o cronograma baseado na data da prova salvou muito'],
+  ['Arthur', 'mano a parte das questões é viciante kkkkk quero ficar acertando tudo'],
+  ['Bianca', 'gostei pq mostra onde tô pior, já descobri que natureza tá acabando comigo 😭'],
+  ['Caio', 'bem completo pelo valor, sinceramente'],
+  ['Manu', 'comecei hoje, primeira impressão foi muito boa'],
+  ['Leonardo', 'uso mais no pc mas no celular também ficou tranquilo'],
+  ['Yasmin', 'Eu tava procurando exatamente algo assim pra organizar meus estudos pro enem'],
+  ['Murilo', 'sem enrolação, entra e já sabe oq tem que estudar'],
+  ['Nicole', 'fiz meu primeiro simulado hoje e fui pior do que eu esperava KKKKK mas pelo menos agora sei onde melhorar'],
+  ['Samuel', 'pra concurso é bom demais conseguir separar tudo por matéria e assunto'],
+  ['Luana', 'Gostei bastante das explicações quando erro uma questão'],
+  ['Renan', 'pensei que ia ser complicado de configurar mas foi bem rápido'],
+  ['Alice', 'tô conseguindo estudar todo dia desde que comecei 🥹'],
+  ['Diego', 'o negócio de acompanhar porcentagem de progresso me faz querer completar logo kkk'],
+  ['Fernanda', 'Eu precisava muito de algo que simplesmente dissesse ‘estuda isso hoje’ 😂'],
+  ['Igor', 'comecei focado na Barro Branco. Até agora tá atendendo bem'],
+  ['Heloisa', 'muito mais organizado do que ficar com 300 pdf aberto no computador'],
+  ['André', 'as provas antigas dentro da plataforma facilitam muito'],
+  ['Melissa', 'eu sou extremamente desorganizada e consegui usar de boa kkkkk então tá aprovado'],
+  ['Vinícius', 'Gostei de conseguir acompanhar meus acertos por matéria'],
+  ['Carolina', 'fiz umas aulas ontem e hoje já apareceu certinho oq eu precisava continuar'],
+  ['Daniel', 'Ainda tô começando mas gostei bastante da proposta e da organização'],
+  ['Lívia', 'parece besteira mas ver a barrinha de progresso subindo dá uma motivação absurda kkkkk'],
+  ['Enzo', 'tava usando planilha antes. aqui ficou 10x mais prático'],
+  ['Maria', 'primeira vez que consigo seguir um cronograma por mais de alguns dias 😂 tô gostando muito'],
+].map(([name, content], index) => ({ name, content, sort_order: 1000 + index }));
+
+module.exports = { testimonials, pastExams, platformTour, studentComments };

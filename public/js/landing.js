@@ -102,105 +102,54 @@ function initHeroMotion() {
   hero.addEventListener('pointerleave', reset);
 }
 
-const SOCIAL_NAMES = [
-  'Ana Clara', 'João Pedro', 'Mariana', 'Lucas', 'Beatriz', 'Rafael', 'Gabriela', 'Pedro Henrique', 'Camila', 'Gustavo',
-  'Larissa', 'Matheus', 'Isabela', 'Felipe', 'Amanda', 'Bruno', 'Julia', 'Caio', 'Letícia', 'Vinícius',
-  'Bianca', 'Thiago', 'Sofia', 'Eduardo', 'Manuela', 'Henrique', 'Carolina', 'Vitor', 'Lívia', 'Daniel',
-  'Fernanda', 'Arthur', 'Nicole', 'Leonardo', 'Yasmin', 'Murilo', 'Helena', 'Davi', 'Luana', 'Samuel',
-  'Clara', 'Miguel', 'Rebeca', 'Enzo', 'Laura', 'Diego', 'Maria Eduarda', 'André', 'Valentina', 'Cauã'
-];
-
-const SOCIAL_COMMENTS = [
-  'Gostei muito da organização das aulas.',
-  'O cronograma deixou tudo mais claro.',
-  'Agora sei exatamente o que estudar.',
-  'As questões ajudam demais na revisão.',
-  'A plataforma é bem fácil de acompanhar.',
-  'Curti os simulados e o acompanhamento.',
-  'Meu estudo ficou mais constante.',
-  'Os resumos são diretos e ajudam muito.',
-  'A rotina ficou bem mais leve.',
-  'Finalmente parei de estudar perdido.'
-];
-
-function socialWhen(index) {
-  const hours = (index * 7) % 72 + 1;
-  if (hours < 24) return hours === 1 ? 'há 1 hora' : `há ${hours} horas`;
-  const days = Math.floor(hours / 24);
-  return days === 1 ? 'ontem' : `há ${days} dias`;
-}
-
-function buildSocialProofItems() {
-  const items = [];
-  SOCIAL_NAMES.forEach((name, nameIndex) => {
-    SOCIAL_COMMENTS.forEach((comment, commentIndex) => {
-      const index = nameIndex * SOCIAL_COMMENTS.length + commentIndex;
-      items.push({
-        name,
-        comment,
-        when: socialWhen(index),
-        exam: ['ENEM', 'Barro Branco', 'Vestibulares'][index % 3]
-      });
-    });
-  });
-
-  return items
-    .map((item, index) => ({ item, sort: (index * 37 + 17) % items.length }))
-    .sort((a, b) => a.sort - b.sort)
-    .map(({ item }) => item);
-}
+// Comentários de alunos no topo: os depoimentos só em texto cadastrados no
+// painel (os que têm foto ou vídeo vão para a seção de resultados), com o nome
+// e as palavras de quem escreveu. A faixa corre devagar e sem parar, passando
+// por todos, e pausa com o mouse ou o foco em cima; para quem prefere menos
+// movimento, fica parada e rola na mão.
+const SOCIAL_SECONDS_PER_CARD = 7;
 
 function socialProofCard(item) {
   return html`
     <article class="social-proof-card">
-      <p><strong>${item.name}</strong> começou ${item.when} <span>· ${item.exam}</span></p>
-      <q>${item.comment}</q>
+      <p><strong>${item.name}</strong>${item.exam_short_name ? html` <span>· ${item.exam_short_name}</span>` : ''}</p>
+      <q>${item.content}</q>
     </article>`;
 }
 
-function initSocialProof() {
+function initSocialProof(data) {
   const box = qs('#social-proof');
   if (!box) return;
-  const items = buildSocialProofItems();
-  const visible = 4;
+  const comments = (data && Array.isArray(data.testimonials) ? data.testimonials : [])
+    .filter((item) => item && item.name && item.content && !item.image_url && !item.video_url);
+  if (!comments.length) {
+    box.hidden = true;
+    return;
+  }
+
+  // Cada visita começa num ponto diferente da lista, para quem volta à página
+  // não ler sempre os mesmos primeiro.
+  const offset = Math.floor(Math.random() * comments.length);
+  const items = comments.slice(offset).concat(comments.slice(0, offset));
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   render(box, html`
     <div class="social-proof-head">
-      <span>Movimento da comunidade</span>
-      <strong>${items.length}+ comentários recentes</strong>
+      <span>O que os alunos estão dizendo</span>
+      <strong>${items.length} ${items.length === 1 ? 'comentário' : 'comentários'}</strong>
     </div>
-    <div class="social-proof-viewport">
-      <div class="social-proof-stack" aria-live="polite"></div>
+    <div class="social-proof-viewport${reduce ? ' is-static' : ''}">
+      <div class="social-proof-track">
+        <div class="social-proof-group">${items.map(socialProofCard)}</div>
+        ${reduce ? '' : html`<div class="social-proof-group" aria-hidden="true">${items.map(socialProofCard)}</div>`}
+      </div>
     </div>`);
+  box.hidden = false;
 
-  const stack = qs('.social-proof-stack', box);
-  if (!stack) return;
-
-  let index = 0;
-  let paused = false;
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const show = () => {
-    const next = Array.from({ length: visible }, (_, offset) => items[(index + offset) % items.length]);
-    render(stack, next.map(socialProofCard));
-  };
-
-  show();
-  if (reduce) return;
-
-  const timer = window.setInterval(() => {
-    if (paused) return;
-    index = (index + 1) % items.length;
-    stack.classList.add('swap');
-    window.setTimeout(() => {
-      show();
-      stack.classList.remove('swap');
-    }, 260);
-  }, 5200);
-
-  box.addEventListener('mouseenter', () => { paused = true; });
-  box.addEventListener('mouseleave', () => { paused = false; });
-  box.addEventListener('focusin', () => { paused = true; });
-  box.addEventListener('focusout', () => { paused = false; });
-  window.addEventListener('pagehide', () => window.clearInterval(timer), { once: true });
+  // A faixa tem duas cópias lado a lado e anda metade do comprimento: quando
+  // a primeira some, a segunda está no mesmo lugar e o giro não dá salto.
+  const track = qs('.social-proof-track', box);
+  if (track && !reduce) track.style.setProperty('--social-proof-duration', `${items.length * SOCIAL_SECONDS_PER_CARD}s`);
 }
 
 function normalizePlans(data) {
@@ -831,7 +780,6 @@ document.documentElement.classList.add('js');
 initNav();
 initScrollMotion();
 initHeroMotion();
-initSocialProof();
 initMediaViewer();
 initYear();
 observeReveal(qsa('.reveal'));
@@ -839,6 +787,7 @@ initPlans();
 initResults();
 loadLanding().then((data) => {
   initContent(data);
+  initSocialProof(data);
   initTour(data);
   initFaqs(data);
   initActivity(data);
