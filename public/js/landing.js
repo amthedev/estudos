@@ -102,6 +102,79 @@ function initHeroMotion() {
   hero.addEventListener('pointerleave', reset);
 }
 
+const SOCIAL_NAMES = [
+  'Ana Clara', 'João Pedro', 'Mariana', 'Lucas', 'Beatriz', 'Rafael', 'Gabriela', 'Pedro Henrique', 'Camila', 'Gustavo',
+  'Larissa', 'Matheus', 'Isabela', 'Felipe', 'Amanda', 'Bruno', 'Julia', 'Caio', 'Letícia', 'Vinícius',
+  'Bianca', 'Thiago', 'Sofia', 'Eduardo', 'Manuela', 'Henrique', 'Carolina', 'Vitor', 'Lívia', 'Daniel',
+  'Fernanda', 'Arthur', 'Nicole', 'Leonardo', 'Yasmin', 'Murilo', 'Helena', 'Davi', 'Luana', 'Samuel',
+  'Clara', 'Miguel', 'Rebeca', 'Enzo', 'Laura', 'Diego', 'Maria Eduarda', 'André', 'Valentina', 'Cauã'
+];
+
+const SOCIAL_COMMENTS = [
+  'Gostei muito da organização das aulas.',
+  'O cronograma deixou tudo mais claro.',
+  'Agora sei exatamente o que estudar.',
+  'As questões ajudam demais na revisão.',
+  'A plataforma é bem fácil de acompanhar.',
+  'Curti os simulados e o acompanhamento.',
+  'Meu estudo ficou mais constante.',
+  'Os resumos são diretos e ajudam muito.',
+  'A rotina ficou bem mais leve.',
+  'Finalmente parei de estudar perdido.'
+];
+
+function socialWhen(index) {
+  const hours = (index * 7) % 72 + 1;
+  if (hours < 24) return hours === 1 ? 'há 1 hora' : `há ${hours} horas`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? 'ontem' : `há ${days} dias`;
+}
+
+function buildSocialProofItems() {
+  const items = [];
+  SOCIAL_NAMES.forEach((name, nameIndex) => {
+    SOCIAL_COMMENTS.forEach((comment, commentIndex) => {
+      const index = nameIndex * SOCIAL_COMMENTS.length + commentIndex;
+      items.push({
+        name,
+        comment,
+        when: socialWhen(index),
+        exam: ['ENEM', 'Barro Branco', 'Vestibulares'][index % 3]
+      });
+    });
+  });
+
+  return items
+    .map((item, index) => ({ item, sort: (index * 37 + 17) % items.length }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ item }) => item);
+}
+
+function socialProofCard(item) {
+  return html`
+    <article class="social-proof-card">
+      <p><strong>${item.name}</strong> começou ${item.when} <span>· ${item.exam}</span></p>
+      <q>${item.comment}</q>
+    </article>`;
+}
+
+function initSocialProof() {
+  const box = qs('#social-proof');
+  if (!box) return;
+  const items = buildSocialProofItems();
+  render(box, html`
+    <div class="social-proof-head">
+      <span>Movimento da comunidade</span>
+      <strong>${items.length}+ comentários recentes</strong>
+    </div>
+    <div class="social-proof-viewport">
+      <div class="social-proof-track">
+        ${items.map(socialProofCard)}
+        ${items.map(socialProofCard)}
+      </div>
+    </div>`);
+}
+
 function normalizePlans(data) {
   const list = Array.isArray(data)
     ? data
@@ -730,6 +803,7 @@ document.documentElement.classList.add('js');
 initNav();
 initScrollMotion();
 initHeroMotion();
+initSocialProof();
 initMediaViewer();
 initYear();
 observeReveal(qsa('.reveal'));
