@@ -12,7 +12,8 @@
 //   4. Conferir as questões encontradas e mandar para o banco.
 //
 // APIs: /api/admin/exam-imports (criar, enviar texto, varrer, conferir,
-// importar) e /api/admin/uploads para guardar o PDF.
+// importar) e /api/admin/uploads para guardar o PDF. Remover as questões de
+// uma prova para ler de novo fica em ../remove-exam-questions.js.
 // =====================================================================
 import { api } from '../../core/api.js';
 import {
@@ -23,6 +24,7 @@ import { icon } from '../../core/icons.js';
 import { fmtDateTime, fmtNumber, truncate, pluralize } from '../../core/format.js';
 import { extractPdfText, splitForUpload, PdfSemTexto } from '../../components/pdf-text.js';
 import { uploadFile } from '../../components/file-input.js';
+import { openRemoveExamQuestions } from '../remove-exam-questions.js';
 
 let cleanup = [];
 let state = null;
@@ -639,11 +641,18 @@ function paint() {
       ${header}
       <div class="xim-current">
         <div class="xim-current-head">
-          <h2 class="xim-current-title">${state.current.title}</h2>
-          <span class="xim-row-sub">
-            ${state.current.exam_short_name || 'Sem vestibular'}${state.current.year ? ` · ${state.current.year}` : ''}
-            ${state.current.answer_key_count ? ` · gabarito com ${state.current.answer_key_count} respostas` : ' · sem gabarito'}
-          </span>
+          <div>
+            <h2 class="xim-current-title">${state.current.title}</h2>
+            <span class="xim-row-sub">
+              ${state.current.exam_short_name || 'Sem vestibular'}${state.current.year ? ` · ${state.current.year}` : ''}
+              ${state.current.answer_key_count ? ` · gabarito com ${state.current.answer_key_count} respostas` : ' · sem gabarito'}
+            </span>
+          </div>
+          ${state.current.past_exam_id
+            ? html`<button type="button" class="btn btn-ghost btn-sm" data-action="remove-exam-questions" ${state.busy ? 'disabled' : ''}>
+                ${icon('rotate-ccw')}<span>Remover questões desta prova</span>
+              </button>`
+            : ''}
         </div>
         ${readStep()}
         ${reviewStep()}
@@ -1094,10 +1103,27 @@ export default async function renderPage(ctx) {
     on(ctx.el, 'change', '[data-action="fix-topic"]', (event, trigger) =>
       patchItem(trigger.dataset.item, { topic_slug: trigger.value })
     ),
+    on(ctx.el, 'click', '[data-action="remove-exam-questions"]', async () => {
+      // A prova inteira, não só esta leitura: as leituras da mesma prova
+      // reaproveitam as questões umas das outras, e ler de novo só funciona
+      // com o banco limpo de todas elas.
+      const job = state.current;
+      if (!job || !job.past_exam_id) return;
+      const prova = (state.provas || []).find((p) => p.id === job.past_exam_id);
+      const resultado = await openRemoveExamQuestions({ id: job.past_exam_id, title: prova ? prova.title : job.title });
+      if (!resultado || !state) return;
+      // A leitura aberta foi apagada junto: volta para a lista, onde a prova
+      // aparece de novo como não lida.
+      state.current = null;
+      state.provaEscolhida = job.past_exam_id;
+      await loadList();
+    }),
     on(ctx.el, 'click', '[data-action="delete"]', async (event, trigger) => {
       const ok = await confirm({
         title: 'Excluir esta leitura?',
-        message: 'As questões que já foram para o banco continuam lá. O que ainda não foi conferido se perde.',
+        message:
+          'As questões que já foram para o banco continuam lá. O que ainda não foi conferido se perde. ' +
+          'Para tirar as questões também e ler a prova de novo, abra a leitura e use "Remover questões desta prova".',
         danger: true,
         confirmText: 'Excluir',
       });

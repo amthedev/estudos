@@ -756,6 +756,43 @@ function mockExamQuestions(prompt) {
   return { questions };
 }
 
+/**
+ * Assuntos lidos dos títulos de aulas (services/lesson-topics.js). Cada trecho
+ * do título casa pelo nome com o catálogo que veio no prompt; o que não casa
+ * volta como assunto novo — o bastante para exercitar a validação contra o
+ * catálogo e o cadastro sem duplicar.
+ */
+function mockLessonTopics(prompt) {
+  const plano = (valor) =>
+    String(valor || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const catalogo = [];
+  for (const linha of String(prompt).matchAll(/^- ([a-z0-9-]+) — ([^[\n]+?)(?:\s*\[.*)?$/gm)) {
+    catalogo.push({ slug: linha[1], nome: plano(linha[2]) });
+  }
+  // trecho de vídeo, não de conteúdo: o modelo de verdade devolve "topics": []
+  const generico = /^(exercicios?|revisao|resolucao|questoes|lista|simulado|introducao|aula)( [a-z0-9 ]*)?$/;
+  const lessons = [...String(prompt).matchAll(/^ITEM\s+(\d+)\s*\|\s*(.+)$/gm)].map((linha) => {
+    const trechos = linha[2]
+      .split(/\s*(?:,|;|\/|\+|&|\s+e\s+)\s*/i)
+      .map((trecho) => trecho.trim())
+      .filter((trecho) => plano(trecho).length > 1 && !generico.test(plano(trecho)));
+    const topics = trechos.slice(0, 3).map((trecho) => {
+      const alvo = plano(trecho);
+      const par = catalogo.find((item) => item.nome === alvo || item.nome.startsWith(`${alvo} `));
+      return par
+        ? { label: trecho, topic_slug: par.slug, subtopic_slug: null, new_topic: null }
+        : { label: trecho, topic_slug: null, subtopic_slug: null, new_topic: trecho };
+    });
+    return { item: Number(linha[1]), topics };
+  });
+  return { lessons };
+}
+
 /** Questões de simulação, uma por assunto pedido, no formato que o serviço espera. */
 function mockQuestions(prompt) {
   const pedido = Number.parseInt((prompt.match(/Elabore (\d+)/) || [])[1], 10);
@@ -864,7 +901,8 @@ function createMockClient() {
           const prompt = messagesText(messages);
           let content;
           if (wantsJson) {
-            if (/"grammar_errors"/.test(prompt)) content = JSON.stringify(mockCorrection(prompt));
+            if (/"new_topic"/.test(prompt)) content = JSON.stringify(mockLessonTopics(prompt));
+            else if (/"grammar_errors"/.test(prompt)) content = JSON.stringify(mockCorrection(prompt));
             else if (/"support_texts"/.test(prompt)) content = JSON.stringify(mockTheme(prompt));
             else if (/"classifications"/.test(prompt)) content = JSON.stringify(mockExamClassifications(prompt));
             else if (/"answer_source"/.test(prompt)) content = JSON.stringify(mockExamQuestions(prompt));

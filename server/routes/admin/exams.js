@@ -196,7 +196,10 @@ router.get(
     const items = await db.many(
       `SELECT t.id, t.subject_id, s.name AS subject_name, t.slug, t.name, t.sort_order, t.active,
               (et.topic_id IS NOT NULL) AS in_exam, et.weight,
-              (SELECT count(*)::int FROM lessons l WHERE l.topic_id = t.id AND l.active) AS lessons_total
+              -- aulas que cobrem o assunto, como principal ou secundário (lesson_topics)
+              (SELECT count(DISTINCT lt.lesson_id)::int FROM lesson_topics lt
+                 JOIN lessons l ON l.id = lt.lesson_id AND l.active
+                WHERE lt.topic_id = t.id) AS lessons_total
          FROM topics t
          JOIN subjects s ON s.id = t.subject_id
          LEFT JOIN exam_topics et ON et.topic_id = t.id AND et.exam_id = $1

@@ -5,7 +5,7 @@
  *
  *   GET    /api/admin/lessons                 lista paginada (q, subject_id, topic_id, subtopic_id, exam_id,
  *                                             difficulty, status=active|inactive, sort, dir)
- *   GET    /api/admin/lessons/:id             aula completa com exam_ids
+ *   GET    /api/admin/lessons/:id             aula completa com exam_ids e topics[] (assuntos na ordem)
  *   POST   /api/admin/lessons                 cria (slug gerado do título; exam_ids → lesson_exams
  *                                             + garante exam_topics/exam_subjects)
  *   PUT    /api/admin/lessons/:id             edita (parcial)
@@ -13,10 +13,23 @@
  *   PATCH  /api/admin/lessons/reorder         { ids[] } → sort_order pela posição
  *   POST   /api/admin/lessons/import          cadastra várias aulas de uma vez a partir de
  *                                             vídeos já enviados ao armazenamento da plataforma
+ *   POST   /api/admin/lessons/analyze-titles  { subject_id, titles[] } → proposta de assuntos por
+ *                                             título, SEM gravar nada
+ *   POST   /api/admin/lessons/reidentify      { ids[] } → reidentifica os assuntos pelo título e grava
+ *   POST   /api/admin/lessons/:id/reidentify  o mesmo, para uma aula
+ *   POST   /api/admin/lessons/requeue-questions      { ids[] } → "Preparar as questões de novo"
+ *   POST   /api/admin/lessons/:id/requeue-questions  o mesmo, para uma aula (devolve a aula)
  *
  * As videoaulas são arquivos enviados pelo painel (MP4, WEBM ou MOV). O envio em
  * si acontece em POST /api/admin/uploads, que grava em fluxo; aqui chegam apenas
  * os caminhos resultantes.
+ *
+ * Assuntos da aula: uma aula cobre de 1 a 3 assuntos da mesma matéria
+ * (lesson_topics, na ordem do título). Quem escreve aceita
+ *   topics: [{ topic_id?, subtopic_id?, new_topic_name?, label?, source?: 'manual'|'ia' }]
+ * e o formato antigo (topic_id + subtopic_id, um assunto só). lessons.topic_id
+ * é sempre o primeiro da lista. Cadastrar a aula ou mudar os assuntos dela põe
+ * as questões da aula na fila (questions_status = 'pending').
  */
 const router = require('express').Router();
 const db = require('../../db/pool');
@@ -31,13 +44,33 @@ const { join: pathJoin } = require('node:path');
 const fsp = require('node:fs/promises');
 const uploads = require('../../services/uploads');
 const { parsePagination, paginate, parseSort } = require('../../utils/pagination');
-const { ensureExamCoverage, assertExamsExist } = require('./content');
+const { assertExamsExist } = require('./content');
+const lessonTopics = require('../../services/lesson-topics');
+const lessonQuestions = require('../../services/lesson-questions');
 
 const uuid = z.string().uuid();
 const idParams = z.object({ id: uuid });
 const emptyToUndefined = (value) => (value === '' ? undefined : value);
 const optionalUuid = z.preprocess(emptyToUndefined, uuid.optional());
+const nullableUuid = z.preprocess((v) => (v === '' ? null : v), uuid.nullable().optional());
 const nullableUrl = nullableFileRef(2000, 'Informe um endereço válido ou envie o arquivo.');
+
+/** Um assunto da aula: existente (topic_id/subtopic_id) ou novo, pelo nome. */
+const topicChoice = z
+  .object({
+    topic_id: nullableUuid,
+    subtopic_id: nullableUuid,
+    new_topic_name: z.string().trim().min(2, 'Informe pelo menos 2 caracteres.').max(120).nullable().optional(),
+    label: z.string().trim().max(200).nullable().optional(),
+    source: z.enum(['manual', 'ia']).optional(),
+  })
+  .refine((v) => Boolean(v.topic_id || v.subtopic_id || v.new_topic_name), {
+    message: 'Escolha um assunto ou informe o nome do assunto novo.',
+  });
+const topicsField = z
+  .array(topicChoice)
+  .min(1, 'Escolha pelo menos um assunto para a aula.')
+  .max(lessonTopics.MAX_ASSUNTOS, `Uma aula tem no máximo ${lessonTopics.MAX_ASSUNTOS} assuntos.`);
 
 const lessonBody = z.object({
   title: z.string().trim().min(3, 'Informe pelo menos 3 caracteres.').max(200),
@@ -47,8 +80,10 @@ const lessonBody = z.object({
   duration_min: z.coerce.number().int().min(1).max(600).optional(),
   teacher_name: z.string().trim().max(120).nullable().optional(),
   subject_id: uuid,
-  topic_id: uuid,
-  subtopic_id: z.preprocess((v) => (v === '' ? null : v), uuid.nullable().optional()),
+  // formato antigo, um assunto só; sem ele e sem topics, o assunto sai do título
+  topic_id: optionalUuid,
+  subtopic_id: nullableUuid,
+  topics: topicsField.optional(),
   difficulty: z.coerce.number().int().min(1).max(3).optional(),
   sort_order: z.coerce.number().int().min(0).max(100000).optional(),
   summary: z.string().max(200000).nullable().optional(),
@@ -87,12 +122,24 @@ const SELECT_LESSON = `
          l.teacher_name, l.difficulty, l.sort_order, l.active, l.summary, l.created_at, l.updated_at,
          l.subject_id, s.name AS subject_name, s.color AS subject_color, s.icon AS subject_icon,
          l.topic_id, t.name AS topic_name, l.subtopic_id, st.name AS subtopic_name,
+         coalesce(tp.topics, '[]'::json) AS topics,
+         l.questions_status, l.questions_error, l.questions_updated_at,
          coalesce(ex.exams, '[]'::json) AS exams,
          coalesce(ex.exam_ids, '{}'::uuid[]) AS exam_ids
     FROM lessons l
     JOIN subjects s ON s.id = l.subject_id
     JOIN topics t ON t.id = l.topic_id
     LEFT JOIN subtopics st ON st.id = l.subtopic_id
+    LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object(
+               'position', lt.position, 'topic_id', lt.topic_id, 'topic_name', tt.name, 'topic_slug', tt.slug,
+               'subtopic_id', lt.subtopic_id, 'subtopic_name', sst.name, 'label', lt.label, 'source', lt.source
+             ) ORDER BY lt.position) AS topics
+        FROM lesson_topics lt
+        JOIN topics tt ON tt.id = lt.topic_id
+        LEFT JOIN subtopics sst ON sst.id = lt.subtopic_id
+       WHERE lt.lesson_id = l.id
+    ) tp ON true
     LEFT JOIN LATERAL (
       SELECT json_agg(json_build_object('id', e.id, 'slug', e.slug, 'short_name', e.short_name) ORDER BY e.sort_order, e.name) AS exams,
              array_agg(e.id) AS exam_ids
@@ -165,15 +212,71 @@ async function assertVideoFile(url) {
 }
 
 // ---------------------------------------------------------------------------
+// Assuntos da aula
+// ---------------------------------------------------------------------------
+
+/** Provas em que a aula cai: os assuntos dela entram no conteúdo programático dessas provas. */
+async function lessonExamIds(lessonId) {
+  const rows = await db.many('SELECT exam_id FROM lesson_exams WHERE lesson_id = $1', [lessonId]);
+  return rows.map((row) => row.exam_id);
+}
+
+/**
+ * Os assuntos de uma aula nova a partir do corpo da requisição:
+ * topics[] (escolhidos no painel) > topic_id (formato antigo) > o título.
+ */
+async function topicsForNewLesson(req, body, examIds) {
+  if (body.topics && body.topics.length) {
+    return lessonTopics.resolveTopics(body.subject_id, body.topics, { req, examIds });
+  }
+  if (body.topic_id) {
+    await assertClassification(body);
+    return lessonTopics.resolveTopics(
+      body.subject_id,
+      [{ topic_id: body.topic_id, subtopic_id: body.subtopic_id ?? null }],
+      { req, examIds }
+    );
+  }
+  const [found] = await lessonTopics.identify({ subjectId: body.subject_id, titles: [body.title] });
+  if (!found || !found.topics.length) {
+    const message = 'Não deu para identificar o assunto pelo título. Escolha o assunto da aula.';
+    throw new AppError(400, 'validation_error', message, [{ path: 'topics', message }]);
+  }
+  return lessonTopics.resolveTopics(body.subject_id, found.topics, { req, examIds, source: 'ia' });
+}
+
+/** O que a resposta conta de cada assunto gravado. */
+function topicSummary(list) {
+  return list.map((t) => ({
+    topic_id: t.topic_id,
+    topic_name: t.topic_name,
+    subtopic_id: t.subtopic_id,
+    subtopic_name: t.subtopic_name,
+    label: t.label,
+    source: t.source,
+    created: t.created,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Cadastro em massa
 //
 // A equipe envia os arquivos das videoaulas pelo painel e cadastra todas de
-// uma vez dentro do mesmo assunto. Os vídeos já subiram por
+// uma vez dentro da mesma matéria. Os vídeos já subiram por
 // POST /api/admin/uploads; aqui chegam só os caminhos, o título e a duração
 // que o navegador leu de cada arquivo.
+//
+// O assunto deixou de ser um só para o lote: cada aula traz os seus (topics,
+// normalmente a proposta de analyze-titles conferida na tela). O assunto do
+// lote, quando vem, é o PADRÃO para as aulas que chegam sem topics. Sem
+// nenhum dos dois, o assunto sai do título aqui mesmo — com o prazo da
+// identificação; para lote grande, a tela chama analyze-titles antes.
 // ---------------------------------------------------------------------------
 
 const MAX_IMPORT = 200;
+const MAX_REIDENTIFY = 100;
+/** Pôr de novo na fila é só um UPDATE: cabe a seleção de várias páginas da lista. */
+const MAX_REQUEUE = 1000;
 
 const importItems = z
   .array(
@@ -185,6 +288,7 @@ const importItems = z
       video_bytes: z.coerce.number().int().min(0).nullable().optional(),
       video_mime: z.string().trim().max(80).nullable().optional(),
       thumbnail_url: nullableUrl,
+      topics: topicsField.optional(),
     })
   )
   .min(1, 'Envie pelo menos um vídeo.')
@@ -195,7 +299,8 @@ router.post(
   validate({
     body: z.object({
       subject_id: uuid,
-      topic_id: uuid,
+      // assunto padrão: vale para as aulas que chegam sem topics
+      topic_id: optionalUuid,
       subtopic_id: optionalUuid,
       difficulty: z.coerce.number().int().min(1).max(3).optional(),
       teacher_name: z.string().trim().max(120).nullable().optional(),
@@ -208,13 +313,43 @@ router.post(
   }),
   wrap(async (req, res) => {
     const body = req.valid.body;
-    await assertClassification(body);
+    const subject = await db.one('SELECT id FROM subjects WHERE id = $1', [body.subject_id]);
+    if (!subject) {
+      throw new AppError(400, 'validation_error', 'Matéria não encontrada.', [{ path: 'subject_id', message: 'Matéria não encontrada.' }]);
+    }
+    let padrao = null;
+    if (body.topic_id) {
+      await assertClassification(body);
+      padrao = [{ topic_id: body.topic_id, subtopic_id: body.subtopic_id ?? null }];
+    }
     const examIds = await assertExamsExist(db, body.exam_ids);
     const skipExisting = body.skip_existing !== false;
 
-    let order = Number(
-      (await db.one('SELECT coalesce(max(sort_order), 0) AS last FROM lessons WHERE topic_id = $1', [body.topic_id])).last
-    );
+    // Aulas sem assunto num lote sem assunto padrão: o assunto sai do título,
+    // numa identificação só para o lote (uma chamada de IA serve 30 títulos).
+    const semAssunto = padrao
+      ? []
+      : body.items.map((item, index) => (item.topics && item.topics.length ? -1 : index)).filter((index) => index >= 0);
+    const identificadas = new Map();
+    if (semAssunto.length) {
+      const found = await lessonTopics.identify({
+        subjectId: body.subject_id,
+        titles: semAssunto.map((index) => body.items[index].title),
+      });
+      semAssunto.forEach((index, k) => identificadas.set(index, found[k]));
+    }
+
+    // A ordem continua de onde o assunto principal de cada aula parou.
+    const ordens = new Map();
+    async function nextOrder(topicId) {
+      if (!ordens.has(topicId)) {
+        const row = await db.one('SELECT coalesce(max(sort_order), 0) AS last FROM lessons WHERE topic_id = $1', [topicId]);
+        ordens.set(topicId, Number(row.last) || 0);
+      }
+      const next = ordens.get(topicId) + 1;
+      ordens.set(topicId, next);
+      return next;
+    }
 
     const created = [];
     const errors = [];
@@ -240,11 +375,38 @@ router.post(
           }
         }
 
+        let escolha;
+        let source = 'manual';
+        if (item.topics && item.topics.length) {
+          escolha = item.topics;
+        } else if (padrao) {
+          escolha = padrao;
+        } else {
+          const found = identificadas.get(index);
+          if (!found || !found.topics.length) {
+            const motivo = found && found.error ? ` (${found.error})` : '';
+            errors.push({
+              line,
+              title,
+              message: `Não deu para identificar o assunto pelo título${motivo}. Escolha o assunto desta aula.`,
+            });
+            continue;
+          }
+          escolha = found.topics;
+          source = 'ia';
+        }
+        const assuntos = await lessonTopics.resolveTopics(body.subject_id, escolha, {
+          req,
+          examIds,
+          source,
+          path: `items.${index}.topics`,
+        });
+        const principal = assuntos[0];
+
         const slug = await uniqueSlug(title, async (candidate) =>
           Boolean(await db.one('SELECT 1 FROM lessons WHERE slug = $1', [candidate]))
         );
-        order += 1;
-        const position = order;
+        const position = await nextOrder(principal.topic_id);
         const minutes = item.duration_min
           || (item.video_seconds ? Math.max(1, Math.round(item.video_seconds / 60)) : null)
           || body.duration_min
@@ -256,38 +418,213 @@ router.post(
           const row = await client.one(
             `INSERT INTO lessons (subject_id, topic_id, subtopic_id, slug, title, video_url, video_provider,
                                   thumbnail_url, duration_min, teacher_name, difficulty, sort_order, active,
-                                  video_bytes, video_mime, video_seconds)
-             VALUES ($1, $2, $3, $4, $5, $6, 'upload', $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+                                  video_bytes, video_mime, video_seconds, questions_status, questions_updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, 'upload', $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending', now())
+             RETURNING id`,
             [
-              body.subject_id, body.topic_id, body.subtopic_id ?? null, slug, title,
+              body.subject_id, principal.topic_id, principal.subtopic_id, slug, title,
               item.video_url, item.thumbnail_url ?? null, minutes,
               body.teacher_name ?? null, body.difficulty ?? 2, position, body.active ?? true,
               item.video_bytes ?? null, item.video_mime ?? null, item.video_seconds ?? null,
             ]
           );
+          await lessonTopics.writeLessonTopics(client, row.id, assuntos);
           if (examIds.length) {
             await client.query(
               'INSERT INTO lesson_exams (lesson_id, exam_id) SELECT $1, e FROM unnest($2::uuid[]) AS e ON CONFLICT DO NOTHING',
               [row.id, examIds]
             );
-            await ensureExamCoverage(client, examIds, { topicId: body.topic_id, subjectId: body.subject_id });
+            await lessonTopics.coverLessonTopics(client, examIds, body.subject_id, assuntos);
           }
           return row.id;
         });
 
-        created.push({ id, title, video_url: item.video_url, duration_min: minutes });
+        created.push({ id, title, video_url: item.video_url, duration_min: minutes, topics: topicSummary(assuntos) });
       } catch (err) {
         errors.push({ line, title, message: (err && err.message) || 'Não foi possível cadastrar esta aula.' });
       }
     }
 
     await audit(req, 'lesson.import', 'lesson', null, {
-      topic_id: body.topic_id,
+      subject_id: body.subject_id,
+      topic_id: body.topic_id ?? null,
+      identified_by_title: semAssunto.length,
       imported: created.length,
       failed: errors.length,
     });
 
     res.status(created.length ? 201 : 200).json({ imported: created.length, failed: errors.length, created, errors });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Identificação dos assuntos pelo título
+// ---------------------------------------------------------------------------
+
+/**
+ * Proposta de assuntos para cada título, sem gravar nada. A tela do envio em
+ * massa chama assim que os arquivos são escolhidos, para o administrador
+ * conferir os assuntos antes de enviar.
+ *
+ *   → { subject_id, items: [{ title, via, error?, topics: [{ label, topic_id, subtopic_id,
+ *                                                         new_topic_name, topic_name, subtopic_name }] }] }
+ */
+router.post(
+  '/analyze-titles',
+  validate({
+    body: z.object({
+      subject_id: uuid,
+      titles: z.array(z.string().max(300)).min(1, 'Envie pelo menos um título.').max(MAX_IMPORT),
+    }),
+  }),
+  wrap(async (req, res) => {
+    const { subject_id: subjectId, titles } = req.valid.body;
+    const items = await lessonTopics.identify({ subjectId, titles });
+    res.json({ subject_id: subjectId, items });
+  })
+);
+
+/**
+ * Reidentifica os assuntos das aulas pelo título e grava. Serve para as aulas
+ * cadastradas antes de a aula ter vários assuntos: todas ficaram com o
+ * assunto único que tinham.
+ */
+async function reidentify(req, ids) {
+  const lessons = await db.many(
+    `SELECT l.id, l.title, l.subject_id,
+            coalesce(array_agg(le.exam_id) FILTER (WHERE le.exam_id IS NOT NULL), '{}'::uuid[]) AS exam_ids
+       FROM lessons l
+       LEFT JOIN lesson_exams le ON le.lesson_id = l.id
+      WHERE l.id = ANY($1::uuid[])
+      GROUP BY l.id`,
+    [ids]
+  );
+  const bySubject = new Map();
+  for (const lesson of lessons) {
+    if (!bySubject.has(lesson.subject_id)) bySubject.set(lesson.subject_id, []);
+    bySubject.get(lesson.subject_id).push(lesson);
+  }
+
+  // um prazo para a requisição inteira, não para cada matéria
+  const deadline = Date.now() + lessonTopics.PRAZO_INTERATIVO_MS;
+  const results = new Map();
+  for (const [subjectId, group] of bySubject) {
+    const found = await lessonTopics.identify({
+      subjectId,
+      titles: group.map((lesson) => lesson.title),
+      deadlineMs: Math.max(0, deadline - Date.now()),
+    });
+    for (const [k, lesson] of group.entries()) {
+      const proposta = found[k];
+      const base = { id: lesson.id, title: lesson.title, via: proposta.via };
+      if (!proposta.topics.length) {
+        results.set(lesson.id, {
+          ...base,
+          status: 'sem_assunto',
+          message: proposta.error
+            ? `Não deu para identificar o assunto pelo título (${proposta.error}). A aula ficou como estava.`
+            : 'Nenhum assunto reconhecido no título. A aula ficou como estava.',
+        });
+        continue;
+      }
+      try {
+        const assuntos = await lessonTopics.resolveTopics(subjectId, proposta.topics, {
+          req,
+          examIds: lesson.exam_ids,
+          source: 'ia',
+        });
+        const { changed } = await db.tx(async (client) => {
+          const out = await lessonTopics.writeLessonTopics(client, lesson.id, assuntos);
+          await lessonTopics.coverLessonTopics(client, lesson.exam_ids, subjectId, assuntos);
+          return out;
+        });
+        results.set(lesson.id, { ...base, status: changed ? 'atualizada' : 'sem_mudanca' });
+      } catch (err) {
+        results.set(lesson.id, { ...base, status: 'erro', message: (err && err.message) || 'Não foi possível gravar.' });
+      }
+    }
+  }
+
+  const rows = lessons.length ? await db.many(`${SELECT_LESSON} WHERE l.id = ANY($1::uuid[])`, [lessons.map((l) => l.id)]) : [];
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const items = ids
+    .filter((id) => results.has(id))
+    .map((id) => {
+      const lesson = byId.get(id);
+      if (lesson) delete lesson.summary;
+      return { ...results.get(id), lesson: lesson || null };
+    });
+  const count = (status) => items.filter((item) => item.status === status).length;
+  const summary = {
+    updated: count('atualizada'),
+    unchanged: count('sem_mudanca'),
+    unidentified: count('sem_assunto'),
+    failed: count('erro'),
+    not_found: ids.length - items.length,
+  };
+  await audit(req, 'lesson.reidentify', 'lesson', ids.length === 1 ? ids[0] : null, { ids: ids.slice(0, MAX_REIDENTIFY), ...summary });
+  return { ...summary, items };
+}
+
+router.post(
+  '/reidentify',
+  validate({ body: z.object({ ids: z.array(uuid).min(1).max(MAX_REIDENTIFY, `Reidentifique no máximo ${MAX_REIDENTIFY} aulas por vez.`) }) }),
+  wrap(async (req, res) => {
+    res.json(await reidentify(req, Array.from(new Set(req.valid.body.ids))));
+  })
+);
+
+router.post(
+  '/:id/reidentify',
+  validate({ params: idParams }),
+  wrap(async (req, res) => {
+    const result = await reidentify(req, [req.valid.params.id]);
+    if (!result.items.length) throw new AppError(404, 'not_found', 'Aula não encontrada.');
+    res.json(result.items[0]);
+  })
+);
+
+/**
+ * "Preparar as questões de novo". A fila (services/lesson-questions.js) para
+ * de tentar uma aula depois de três rodadas ruins, e a aula pronta pode ter
+ * perdido uma questão apagada no banco; sem esta ação a aula ficava em
+ * "Falharam" para sempre, e o jeito era trocar os assuntos e desfazer a troca.
+ * A rodada seguinte só pede à IA o que ainda falta. A aula que já está na fila
+ * ou sendo preparada fica como está.
+ */
+router.post(
+  '/requeue-questions',
+  validate({
+    body: z.object({
+      ids: z.array(uuid).min(1).max(MAX_REQUEUE, `Marque no máximo ${MAX_REQUEUE} aulas por vez.`),
+    }),
+  }),
+  wrap(async (req, res) => {
+    const ids = Array.from(new Set(req.valid.body.ids));
+    const queued = await lessonQuestions.requeue(ids);
+    await audit(req, 'lesson.questions_requeue', 'lesson', ids.length === 1 ? ids[0] : null, {
+      requested: ids.length,
+      ids: queued,
+    });
+    res.json({ queued: queued.length, unchanged: ids.length - queued.length, ids: queued });
+  })
+);
+
+router.post(
+  '/:id/requeue-questions',
+  validate({ params: idParams }),
+  wrap(async (req, res) => {
+    const { id } = req.valid.params;
+    const current = await db.one('SELECT questions_status FROM lessons WHERE id = $1', [id]);
+    if (!current) throw new AppError(404, 'not_found', 'Aula não encontrada.');
+    const queued = await lessonQuestions.requeue([id]);
+    if (!queued.length) {
+      throw new AppError(409, 'conflict', 'As questões desta aula já estão na fila ou sendo preparadas agora.');
+    }
+    await audit(req, 'lesson.questions_requeue', 'lesson', id, { requested: 1, ids: queued });
+    const lesson = await db.one(`${SELECT_LESSON} WHERE l.id = $1`, [id]);
+    delete lesson.summary;
+    res.json(lesson);
   })
 );
 
@@ -330,8 +667,9 @@ router.get(
     if (q.q) add(`(fe_unaccent(l.title) ILIKE fe_unaccent(?) OR l.search_vector @@ plainto_tsquery('portuguese', fe_unaccent(?)))`, `%${q.q}%`);
     if (q.q) clauses[clauses.length - 1] = clauses[clauses.length - 1].replace('?', `$${params.length}`);
     if (q.subject_id) add('l.subject_id = ?', q.subject_id);
-    if (q.topic_id) add('l.topic_id = ?', q.topic_id);
-    if (q.subtopic_id) add('l.subtopic_id = ?', q.subtopic_id);
+    // a aula aparece no filtro de qualquer um dos assuntos dela, não só do principal
+    if (q.topic_id) add('EXISTS (SELECT 1 FROM lesson_topics ltf WHERE ltf.lesson_id = l.id AND ltf.topic_id = ?)', q.topic_id);
+    if (q.subtopic_id) add('EXISTS (SELECT 1 FROM lesson_topics lsf WHERE lsf.lesson_id = l.id AND lsf.subtopic_id = ?)', q.subtopic_id);
     if (q.difficulty) add('l.difficulty = ?', q.difficulty);
     if (q.status) add('l.active = ?', q.status === 'active');
     if (q.exam_id) add('EXISTS (SELECT 1 FROM lesson_exams le2 WHERE le2.lesson_id = l.id AND le2.exam_id = ?)', q.exam_id);
@@ -372,32 +710,40 @@ router.post(
   validate({ body: lessonBody }),
   wrap(async (req, res) => {
     const body = req.valid.body;
-    await assertClassification(body);
     const examIds = await assertExamsExist(db, body.exam_ids);
     if (body.video_url) await assertVideoFile(body.video_url);
+    // por último: pode cadastrar assunto novo, e nada antes disso pode falhar depois
+    const topics = await topicsForNewLesson(req, body, examIds);
+    const principal = topics[0];
     const slug = await uniqueSlug(body.title, async (s) => Boolean(await db.one('SELECT 1 FROM lessons WHERE slug = $1', [s])));
     const video = videoMeta(body.video_url, body.thumbnail_url);
-    const order = body.sort_order ?? Number((await db.one('SELECT coalesce(max(sort_order), 0) + 1 AS next FROM lessons WHERE topic_id = $1', [body.topic_id])).next);
+    const order = body.sort_order ?? Number((await db.one('SELECT coalesce(max(sort_order), 0) + 1 AS next FROM lessons WHERE topic_id = $1', [principal.topic_id])).next);
 
     const id = await db.tx(async (client) => {
       const row = await client.one(
         `INSERT INTO lessons (subject_id, topic_id, subtopic_id, slug, title, description, video_url, video_provider,
-                              thumbnail_url, duration_min, teacher_name, difficulty, summary, sort_order, active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+                              thumbnail_url, duration_min, teacher_name, difficulty, summary, sort_order, active,
+                              questions_status, questions_updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending', now()) RETURNING id`,
         [
-          body.subject_id, body.topic_id, body.subtopic_id ?? null, slug, body.title, body.description ?? null,
+          body.subject_id, principal.topic_id, principal.subtopic_id, slug, body.title, body.description ?? null,
           video.video_url, video.video_provider, video.thumbnail_url, body.duration_min ?? 30, body.teacher_name ?? null,
           body.difficulty ?? 2, body.summary ?? null, order, body.active ?? true,
         ]
       );
+      await lessonTopics.writeLessonTopics(client, row.id, topics);
       if (examIds.length) {
         await client.query('INSERT INTO lesson_exams (lesson_id, exam_id) SELECT $1, e FROM unnest($2::uuid[]) AS e ON CONFLICT DO NOTHING', [row.id, examIds]);
-        await ensureExamCoverage(client, examIds, { topicId: body.topic_id, subjectId: body.subject_id });
+        await lessonTopics.coverLessonTopics(client, examIds, body.subject_id, topics);
       }
       return row.id;
     });
     const lesson = await db.one(`${SELECT_LESSON} WHERE l.id = $1`, [id]);
-    await audit(req, 'lesson.create', 'lesson', id, { title: body.title, exam_ids: examIds });
+    await audit(req, 'lesson.create', 'lesson', id, {
+      title: body.title,
+      exam_ids: examIds,
+      topic_ids: topics.map((t) => t.topic_id),
+    });
     res.status(201).json(lesson);
   })
 );
@@ -412,19 +758,52 @@ router.put(
     if (!current) throw new AppError(404, 'not_found', 'Aula não encontrada.');
     if (body.video_url) await assertVideoFile(body.video_url);
 
-    const merged = {
-      subject_id: body.subject_id ?? current.subject_id,
-      topic_id: body.topic_id ?? current.topic_id,
-      subtopic_id: body.subtopic_id === undefined ? current.subtopic_id : body.subtopic_id,
-    };
-    if (body.subject_id || body.topic_id || body.subtopic_id !== undefined) {
+    const subjectId = body.subject_id ?? current.subject_id;
+    const examIds = body.exam_ids !== undefined ? await assertExamsExist(db, body.exam_ids) : null;
+
+    // Os assuntos que a aula passa a ter, ou null quando não mudam.
+    let nextTopics = null;
+    if (body.topics && body.topics.length) {
+      nextTopics = await lessonTopics.resolveTopics(subjectId, body.topics, {
+        req,
+        examIds: examIds ?? (await lessonExamIds(id)),
+      });
+    } else if (body.subject_id || body.topic_id || body.subtopic_id !== undefined) {
+      // Formato antigo: troca só o assunto principal e mantém os outros que
+      // continuam na matéria da aula.
+      const merged = {
+        subject_id: subjectId,
+        topic_id: body.topic_id ?? current.topic_id,
+        subtopic_id: body.subtopic_id === undefined ? current.subtopic_id : body.subtopic_id,
+      };
       // se a matéria/assunto mudou e o subassunto antigo não bate, ele é descartado
       if (body.subtopic_id === undefined && body.topic_id && body.topic_id !== current.topic_id) merged.subtopic_id = null;
       await assertClassification(merged);
+      const mudou = merged.subject_id !== current.subject_id
+        || merged.topic_id !== current.topic_id
+        || (merged.subtopic_id || null) !== (current.subtopic_id || null);
+      if (mudou) {
+        const others = await db.many(
+          `SELECT lt.topic_id, lt.subtopic_id, lt.label, lt.source
+             FROM lesson_topics lt JOIN topics t ON t.id = lt.topic_id
+            WHERE lt.lesson_id = $1 AND lt.position > 1 AND t.subject_id = $2
+            ORDER BY lt.position`,
+          [id, merged.subject_id]
+        );
+        const principalKey = `${merged.topic_id}/${merged.subtopic_id || ''}`;
+        nextTopics = [
+          { topic_id: merged.topic_id, subtopic_id: merged.subtopic_id || null, label: null, source: 'manual' },
+          ...others.filter((t) => `${t.topic_id}/${t.subtopic_id || ''}` !== principalKey),
+        ].slice(0, lessonTopics.MAX_ASSUNTOS);
+      }
     }
-    const examIds = body.exam_ids !== undefined ? await assertExamsExist(db, body.exam_ids) : null;
 
-    const fields = { ...body, ...merged };
+    const fields = { ...body };
+    // o assunto principal é gravado junto com lesson_topics, logo abaixo
+    delete fields.topic_id;
+    delete fields.subtopic_id;
+    delete fields.topics;
+    delete fields.exam_ids;
     if (body.video_url !== undefined || body.thumbnail_url !== undefined) {
       const video = videoMeta(
         body.video_url === undefined ? current.video_url : body.video_url,
@@ -437,11 +816,11 @@ router.put(
       }
       Object.assign(fields, video);
     }
-    delete fields.exam_ids;
 
+    let topicsChanged = false;
     await db.tx(async (client) => {
       const allowed = ['title', 'description', 'video_url', 'video_provider', 'thumbnail_url', 'duration_min', 'teacher_name',
-        'subject_id', 'topic_id', 'subtopic_id', 'difficulty', 'sort_order', 'summary', 'active'];
+        'subject_id', 'difficulty', 'sort_order', 'summary', 'active'];
       const sets = [];
       const params = [];
       for (const key of allowed) {
@@ -453,16 +832,24 @@ router.put(
         params.push(id);
         await client.query(`UPDATE lessons SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
       }
+      if (nextTopics) {
+        // assunto novo ou outra ordem: as questões da aula voltam para a fila
+        ({ changed: topicsChanged } = await lessonTopics.writeLessonTopics(client, id, nextTopics));
+      }
       if (examIds) {
         await client.query('DELETE FROM lesson_exams WHERE lesson_id = $1 AND NOT (exam_id = ANY($2::uuid[]))', [id, examIds]);
         if (examIds.length) {
           await client.query('INSERT INTO lesson_exams (lesson_id, exam_id) SELECT $1, e FROM unnest($2::uuid[]) AS e ON CONFLICT DO NOTHING', [id, examIds]);
-          await ensureExamCoverage(client, examIds, { topicId: merged.topic_id, subjectId: merged.subject_id });
         }
+      }
+      if (nextTopics || (examIds && examIds.length)) {
+        const covered = nextTopics || (await client.many('SELECT topic_id FROM lesson_topics WHERE lesson_id = $1', [id]));
+        const exams = examIds ?? (await client.many('SELECT exam_id FROM lesson_exams WHERE lesson_id = $1', [id])).map((r) => r.exam_id);
+        await lessonTopics.coverLessonTopics(client, exams, subjectId, covered);
       }
     });
     const lesson = await db.one(`${SELECT_LESSON} WHERE l.id = $1`, [id]);
-    await audit(req, 'lesson.update', 'lesson', id, { changes: Object.keys(body) });
+    await audit(req, 'lesson.update', 'lesson', id, { changes: Object.keys(body), topics_changed: topicsChanged });
     res.json(lesson);
   })
 );

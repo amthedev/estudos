@@ -82,7 +82,10 @@ router.get(
       ),
       db.many(
         `SELECT t.id, t.name, t.description, t.subject_id, s.name AS subject_name, s.color AS subject_color, s.icon AS subject_icon,
-                (SELECT count(*) FROM lessons l WHERE l.topic_id = t.id AND l.active = true) AS lessons_total
+                -- aulas do assunto, inclusive as que o têm como assunto secundário
+                (SELECT count(DISTINCT lt.lesson_id) FROM lesson_topics lt
+                   JOIN lessons l ON l.id = lt.lesson_id AND l.active = true
+                  WHERE lt.topic_id = t.id) AS lessons_total
            FROM topics t
            JOIN subjects s ON s.id = t.subject_id
           WHERE t.active = true AND s.active = true

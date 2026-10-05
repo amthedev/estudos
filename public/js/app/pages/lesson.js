@@ -1,9 +1,12 @@
 // =====================================================================
 // Foco Elite — /app/aulas/:id
 // Aula em duas colunas: à esquerda o player e as abas Resumo / Minhas
-// Anotações; à direita a ficha da aula (caminho, dificuldade, duração,
-// provas onde cai, professor) com concluir, praticar, tutor, favorito e
-// navegação entre aulas.
+// Anotações; à direita a ficha da aula (matéria, assuntos, dificuldade,
+// duração, provas onde cai, professor) com concluir, praticar, tutor,
+// favorito e navegação entre aulas.
+//
+// Uma aula cobre de 1 a 3 assuntos (lesson.topics, na ordem do título); cada
+// um vira um chip que leva à página do assunto.
 //
 // APIs: GET /api/lessons/:id, POST /api/lessons/:id/start,
 // POST /api/lessons/:id/complete, PUT /api/lessons/:id/note.
@@ -22,8 +25,31 @@ import { difficultyBadge, favoriteButton, bindFavorites } from './lessons.js';
 let cleanup = [];
 let notesEditor = null;
 
-function pathLine(lesson) {
-  return [lesson.subject_name, lesson.topic_name, lesson.subtopic_name].filter(Boolean).join(' › ');
+/** Os assuntos da aula; resposta antiga, sem a lista, vira o assunto único. */
+function lessonTopics(lesson) {
+  if (Array.isArray(lesson.topics) && lesson.topics.length) return lesson.topics;
+  return lesson.topic_id
+    ? [{ topic_id: lesson.topic_id, topic_name: lesson.topic_name, subtopic_name: lesson.subtopic_name }]
+    : [];
+}
+
+function topicLabel(topic) {
+  return topic.subtopic_name ? `${topic.topic_name} › ${topic.subtopic_name}` : topic.topic_name;
+}
+
+function topicsBlock(lesson) {
+  const topics = lessonTopics(lesson);
+  if (!topics.length) return '';
+  return html`
+    <div class="lsn-side-topics">
+      <span class="lsn-side-label">${topics.length > 1 ? 'Assuntos da aula' : 'Assunto da aula'}</span>
+      <div class="chip-group lsn-side-topics-list">
+        ${topics.map(
+          (topic) => html`
+            <a class="chip chip-sm" href="/app/materias/${lesson.subject_id}/assuntos/${topic.topic_id}">${topicLabel(topic)}</a>`
+        )}
+      </div>
+    </div>`;
 }
 
 function completeButton(lesson) {
@@ -73,7 +99,8 @@ function sideCard(lesson) {
     <aside class="lsn-side" ${accentStyle(lesson.subject_color)}>
       <div class="card lsn-side-card">
         <div class="card-body">
-          <div class="lsn-side-path">${icon(lesson.subject_icon || 'book-open', { size: 14 })}<span>${pathLine(lesson)}</span></div>
+          <div class="lsn-side-path">${icon(lesson.subject_icon || 'book-open', { size: 14 })}<span>${lesson.subject_name}</span></div>
+          ${topicsBlock(lesson)}
           <div class="lsn-side-badges">
             ${difficultyBadge(lesson.difficulty)}
             ${badge(fmtMinutes(lesson.duration_min), 'gray', { icon: 'clock' })}
@@ -189,18 +216,24 @@ export default async function renderPage(ctx) {
       return;
     }
     const lesson = state.lesson;
+    // Com um assunto, o caminho passa por ele; com vários, nenhum deles é "o"
+    // caminho da aula — os chips da ficha levam a cada um.
+    const topics = lessonTopics(lesson);
+    const crumbs = [
+      { label: 'Aulas', href: '/app/aulas' },
+      { label: lesson.subject_name, href: `/app/materias/${lesson.subject_id}` },
+      ...(topics.length === 1
+        ? [{ label: topics[0].topic_name, href: `/app/materias/${lesson.subject_id}/assuntos/${topics[0].topic_id}` }]
+        : []),
+      { label: lesson.title },
+    ];
     render(
       body,
       html`
         ${pageHeader({
           title: lesson.title,
           subtitle: lesson.description || '',
-          breadcrumb: [
-            { label: 'Aulas', href: '/app/aulas' },
-            { label: lesson.subject_name, href: `/app/materias/${lesson.subject_id}` },
-            { label: lesson.topic_name, href: `/app/materias/${lesson.subject_id}/assuntos/${lesson.topic_id}` },
-            { label: lesson.title },
-          ],
+          breadcrumb: crumbs,
           actions: favoriteButton('lesson', lesson.id, lesson.favorited),
         })}
         <div class="lsn-layout">

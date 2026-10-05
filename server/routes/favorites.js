@@ -104,7 +104,10 @@ const RESOLVERS = {
     list: `
       SELECT ${BASE_COLUMNS}, t.name AS title, t.description, t.id AS topic_id,
              t.subject_id, s.name AS subject_name, s.color AS subject_color, s.icon AS subject_icon,
-             (SELECT count(*)::int FROM lessons l WHERE l.topic_id = t.id AND l.active) AS lessons_total
+             -- mesma contagem da página do assunto: principal e secundário (lesson_topics)
+             (SELECT count(DISTINCT lt.lesson_id)::int FROM lesson_topics lt
+                JOIN lessons l ON l.id = lt.lesson_id AND l.active
+               WHERE lt.topic_id = t.id) AS lessons_total
         FROM favorites f
         JOIN topics t ON t.id = f.item_id AND t.active
         JOIN subjects s ON s.id = t.subject_id AND s.active

@@ -410,3 +410,74 @@
 .lu-head-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 .lu-actions { width: 48px; text-align: right; }
 .lu-queue { margin-top: var(--s-5); }
+
+/* Assuntos de cada aula, lidos do título. A coluna tem largura limitada para
+   o título continuar legível; nome de assunto comprido ("Regra de três
+   simples e composta") quebra dentro do chip em vez de esticar a tabela. */
+.lu-drop-note { margin-top: var(--s-3); }
+.lu-topics-cell { min-width: 240px; max-width: 360px; }
+.lu-table .lu-title { min-width: 220px; }
+.lu-topics { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lu-topic {
+  height: auto; min-height: 26px; padding-block: 3px;
+  white-space: normal; line-height: 1.3; text-align: left;
+}
+.lu-topic.is-new { border-style: dashed; border-color: rgba(245, 166, 35, .55); }
+.lu-topic-name {
+  background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+button.lu-topic-name:hover { color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
+.lu-topic-main { font-size: 10px; font-weight: 700; color: var(--text-3); }
+.lu-topic-new {
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--warning);
+}
+.lu-topic-select {
+  width: auto; max-width: 220px; height: 28px;
+  padding: 0 30px 0 10px; background-position: right 8px center;
+  border-radius: var(--radius-full); font-size: var(--fs-xs);
+}
+.lu-topic-add { border-style: dashed; color: var(--text-2); background-color: transparent; }
+.lu-topics-reread { width: 28px; height: 28px; }
+.lu-topics-loading { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-3); font-size: 12px; }
+.lu-spinner { width: 14px; height: 14px; border-width: 2px; flex: 0 0 auto; }
+.lu-topics-hint { color: var(--text-3); font-size: 12px; }
+.lu-topics-alert { display: inline-flex; align-items: center; gap: 4px; color: var(--warning); font-size: 12px; font-weight: 500; }
+.lu-topics-note { flex-basis: 100%; color: var(--text-3); font-size: 12px; }
+.lu-row-blocked > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+.lu-blocked, .lu-new-topics {
+  display: flex; align-items: flex-start; gap: var(--s-2);
+  margin: var(--s-2) 0 0; font-size: 13px; color: var(--warning);
+}
+.lu-new-topics { color: var(--text-2); }
+.lu-new-topics .icon { color: var(--primary-2); flex: 0 0 auto; margin-top: 2px; }
+.lu-blocked .icon { flex: 0 0 auto; margin-top: 2px; }
+
+/* ---------------------------------------------------------------------------
+   Admin › Aula: assuntos da aula em chips (.af-topic)
+   --------------------------------------------------------------------------- */
+.af-topics { gap: 6px; }
+.af-topic {
+  height: auto; min-height: 30px; padding-block: 4px;
+  white-space: normal; line-height: 1.3; text-align: left;
+}
+.af-topic.is-new { border-style: dashed; border-color: rgba(245, 166, 35, .55); }
+.af-topic-order { font-size: 11px; font-weight: 700; color: var(--text-3); }
+.af-topic-new {
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--warning);
+}
+.af-topics-loading { display: flex; align-items: center; gap: var(--s-2); margin: 0; color: var(--text-3); font-size: var(--fs-sm); }
+.af-spinner { width: 16px; height: 16px; flex: 0 0 auto; }
+.af-topics-note { margin-top: var(--s-2); }
+.af-identify { align-self: flex-start; margin-top: var(--s-1); }
+.af-topic-picker { display: flex; flex-direction: column; gap: var(--s-2); }
+.af-topic-picker[hidden] { display: none; }
+.af-topic-picker .btn { align-self: flex-start; }
+.af-qstatus { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); }
+.af-qstatus-label { color: var(--text-2); }
+.af-qstatus-error { flex-basis: 100%; color: var(--danger); font-size: var(--fs-xs); }
+/* Na fila depois de uma falha: é espera, não erro. */
+.af-qstatus-error.is-waiting { color: var(--text-2); }
+.af-qstatus-retry { margin-left: auto; }

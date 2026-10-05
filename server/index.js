@@ -8,6 +8,7 @@ const config = require('./config');
 const { createApp } = require('./app');
 const db = require('./db/pool');
 const { persistProcessError } = require('./middleware/errors');
+const lessonQuestions = require('./services/lesson-questions');
 
 function maskDatabaseUrl(url) {
   try {
@@ -39,6 +40,9 @@ async function main() {
       ? `${config.host}:${config.port} — ${config.appUrl}`
       : `http://localhost:${config.port}`;
     console.log(`${config.brandName} v${config.version} — ${config.env} — ${onde}`);
+    // Questões das aulas recém-cadastradas, preparadas em segundo plano. A
+    // fila mora no banco; o laço só começa depois que o servidor já atende.
+    lessonQuestions.start();
   });
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
@@ -71,6 +75,9 @@ async function main() {
     shuttingDown = true;
     const queda = Boolean(err);
     console.log(`\n[servidor] ${signal} recebido, encerrando...`);
+    // Nenhuma aula nova sai da fila daqui em diante. A que estiver no meio
+    // fica em 'generating' e volta para a fila no próximo boot.
+    lessonQuestions.stop();
 
     const forceExit = setTimeout(() => {
       console.error('[servidor] encerramento forçado.');

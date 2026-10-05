@@ -8,6 +8,12 @@
  *   POST   /api/admin/content/<tipo>                     cria (slug gerado a partir do nome, único no escopo)
  *   PUT    /api/admin/content/<tipo>/:id                 edita (parcial; renomear mantém o slug)
  *   DELETE /api/admin/content/<tipo>/:id                 exclui — 409 quando há vínculos (com contagens)
+ *   DELETE /api/admin/content/topics/:id { confirm }     assunto que só é secundário de aulas: 409 com
+ *                                                        secondary_only; com confirm: true sai das aulas
+ *                                                        (elas ficam com os outros assuntos)
+ *
+ * Aulas têm até três assuntos (lesson_topics). As contagens de aulas por assunto e
+ * subassunto contam o principal e os secundários; por matéria, cada aula conta uma vez.
  *   PATCH  /api/admin/content/<tipo>/reorder { ids[] }   define sort_order pela posição em ids
  *   PUT    /api/admin/content/topics/:id/exams { exam_ids[] }  provas em que o assunto cai (exam_topics)
  *
@@ -178,7 +184,7 @@ router.get(
                 coalesce(st.c, 0)::int AS subtopics_count,
                 coalesce(ex.ids, '{}'::uuid[]) AS exam_ids
            FROM topics t
-           LEFT JOIN (SELECT topic_id, count(*) AS c FROM lessons GROUP BY topic_id) l ON l.topic_id = t.id
+           LEFT JOIN (SELECT topic_id, count(DISTINCT lesson_id) AS c FROM lesson_topics GROUP BY topic_id) l ON l.topic_id = t.id
            LEFT JOIN (SELECT topic_id, count(*) AS c FROM questions GROUP BY topic_id) q ON q.topic_id = t.id
            LEFT JOIN (SELECT topic_id, count(*) AS c FROM subtopics GROUP BY topic_id) st ON st.topic_id = t.id
            LEFT JOIN (SELECT topic_id, array_agg(exam_id) AS ids FROM exam_topics GROUP BY topic_id) ex ON ex.topic_id = t.id
@@ -189,7 +195,7 @@ router.get(
                 coalesce(l.c, 0)::int AS lessons_count,
                 coalesce(q.c, 0)::int AS questions_count
            FROM subtopics st
-           LEFT JOIN (SELECT subtopic_id, count(*) AS c FROM lessons WHERE subtopic_id IS NOT NULL GROUP BY subtopic_id) l ON l.subtopic_id = st.id
+           LEFT JOIN (SELECT subtopic_id, count(DISTINCT lesson_id) AS c FROM lesson_topics WHERE subtopic_id IS NOT NULL GROUP BY subtopic_id) l ON l.subtopic_id = st.id
            LEFT JOIN (SELECT subtopic_id, count(*) AS c FROM questions WHERE subtopic_id IS NOT NULL GROUP BY subtopic_id) q ON q.subtopic_id = st.id
           ORDER BY st.topic_id, st.sort_order, st.name`
       ),
@@ -530,27 +536,141 @@ router.put(
   })
 );
 
+/**
+ * Excluir um assunto:
+ *   - aulas em que ele é o PRINCIPAL sairiam junto (lessons.topic_id é ON DELETE CASCADE) e
+ *     questões levam tentativas e caderno de erros dos alunos → 409, como sempre foi;
+ *   - aulas em que ele é só SECUNDÁRIO não somem: perdem este assunto e continuam com os
+ *     outros. O primeiro pedido volta 409 com a contagem (secondary_only) para o painel
+ *     avisar; o segundo, com confirm: true, exclui;
+ *   - questões que a plataforma preparou para essas aulas neste assunto, e que nenhum aluno
+ *     usou, não bloqueiam: saem junto, no mesmo pedido confirmado. Sem isso o caminho de
+ *     apagar o assunto que a IA criou errado quase nunca ficava aberto — a fila de questões
+ *     das aulas (services/lesson-questions.js) gera a questão do assunto novo em segundos,
+ *     bem antes de alguém notar o erro.
+ */
+const topicDeleteBody = z.object({ confirm: z.boolean().optional() });
+
+/**
+ * Questão do assunto (q.topic_id) preparada pela plataforma para uma aula em que ele não é
+ * o principal, e que ninguém usou: sem resposta, aviso, favorito ou simulado. É a única que
+ * pode sair junto com o assunto — a que um aluno já respondeu leva o histórico dele.
+ */
+const QUESTAO_PREPARADA_SEM_USO = `
+  coalesce(q.generated_by_ai, false)
+  AND q.lesson_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM lessons pl WHERE pl.id = q.lesson_id AND pl.topic_id <> q.topic_id)
+  AND NOT EXISTS (SELECT 1 FROM question_attempts qa WHERE qa.question_id = q.id)
+  AND NOT EXISTS (SELECT 1 FROM question_reports qr WHERE qr.question_id = q.id)
+  AND NOT EXISTS (SELECT 1 FROM favorites f WHERE f.item_type = 'question' AND f.item_id = q.id)
+  AND NOT EXISTS (SELECT 1 FROM simulados sm WHERE q.id = ANY(sm.question_ids))
+  AND NOT EXISTS (SELECT 1 FROM simulado_attempts sa WHERE q.id = ANY(sa.question_ids))`;
+
+async function topicDeleteCounts(conn, id) {
+  return conn.one(
+    `SELECT (SELECT count(*) FROM lessons WHERE topic_id = $1)::int AS lessons,
+            (SELECT count(DISTINCT lt.lesson_id) FROM lesson_topics lt JOIN lessons l ON l.id = lt.lesson_id
+              WHERE lt.topic_id = $1 AND l.topic_id <> $1)::int AS secondary_lessons,
+            (SELECT count(*) FROM questions q
+              WHERE q.topic_id = $1 AND NOT (${QUESTAO_PREPARADA_SEM_USO}))::int AS questions,
+            (SELECT count(*) FROM questions q
+              WHERE q.topic_id = $1 AND ${QUESTAO_PREPARADA_SEM_USO})::int AS lesson_questions`,
+    [id]
+  );
+}
+
+/** O 409 de quem tem aula principal ou questão de verdade: nem a confirmação passa. */
+function blockedTopicError(counts) {
+  const parts = [];
+  if (counts.lessons) parts.push(pluralPt(counts.lessons, 'aula', 'aulas'));
+  if (counts.questions) parts.push(pluralPt(counts.questions, 'questão', 'questões'));
+  const secundarias = counts.secondary_lessons
+    ? ` Ele também é assunto secundário de ${pluralPt(counts.secondary_lessons, 'aula', 'aulas')}.`
+    : '';
+  return new AppError(
+    409,
+    'conflict',
+    `O assunto possui ${parts.join(' e ')}.${secundarias} Mova ou exclua esse conteúdo antes.`,
+    counts
+  );
+}
+
 router.delete(
   '/topics/:id',
-  validate({ params: idParams }),
+  validate({ params: idParams, body: topicDeleteBody }),
   wrap(async (req, res) => {
     const { id } = req.valid.params;
     const topic = await db.one('SELECT id, name FROM topics WHERE id = $1', [id]);
     if (!topic) throw new AppError(404, 'not_found', 'Assunto não encontrado.');
-    const counts = await db.one(
-      `SELECT (SELECT count(*) FROM lessons WHERE topic_id = $1)::int AS lessons,
-              (SELECT count(*) FROM questions WHERE topic_id = $1)::int AS questions`,
-      [id]
-    );
-    if (counts.lessons > 0 || counts.questions > 0) {
-      const parts = [];
-      if (counts.lessons) parts.push(pluralPt(counts.lessons, 'aula', 'aulas'));
-      if (counts.questions) parts.push(pluralPt(counts.questions, 'questão', 'questões'));
-      throw new AppError(409, 'conflict', `O assunto possui ${parts.join(' e ')}. Mova ou exclua esse conteúdo antes.`, counts);
+    const counts = await topicDeleteCounts(db, id);
+    if (counts.lessons > 0 || counts.questions > 0) throw blockedTopicError(counts);
+    if ((counts.secondary_lessons > 0 || counts.lesson_questions > 0) && !req.valid.body.confirm) {
+      const n = counts.secondary_lessons;
+      const m = counts.lesson_questions;
+      const avisos = [];
+      if (n) {
+        avisos.push(
+          `O assunto aparece como assunto secundário em ${pluralPt(n, 'aula', 'aulas')}. ` +
+            `Excluir tira o assunto ${n === 1 ? 'dessa aula' : 'dessas aulas'}; ` +
+            `${n === 1 ? 'ela continua publicada' : 'elas continuam publicadas'} com os outros assuntos.`
+        );
+      }
+      if (m) {
+        avisos.push(
+          m === 1
+            ? 'A questão que a plataforma preparou automaticamente para as aulas neste assunto, e que nenhum aluno usou, sai junto.'
+            : `As ${m} questões que a plataforma preparou automaticamente para as aulas neste assunto, e que nenhum aluno usou, saem junto.`
+        );
+      }
+      throw new AppError(409, 'conflict', avisos.join(' '), { ...counts, secondary_only: true });
     }
-    await db.query('DELETE FROM topics WHERE id = $1', [id]);
-    await audit(req, 'content.topic.delete', 'topic', id, { name: topic.name });
-    res.json({ ok: true });
+
+    const { lessonIds, removedQuestions } = await db.tx(async (client) => {
+      // Trava o assunto: aula nova apontando para ele e resposta de aluno numa questão dele
+      // esperam a exclusão terminar, e a conta abaixo é a que vale.
+      await client.query('SELECT id FROM topics WHERE id = $1 FOR UPDATE', [id]);
+      await client.query('SELECT id FROM questions WHERE topic_id = $1 ORDER BY id FOR UPDATE', [id]);
+      const atual = await topicDeleteCounts(client, id);
+      if (atual.lessons > 0 || atual.questions > 0) throw blockedTopicError(atual);
+      const preparadas = await client.many(
+        `SELECT q.id FROM questions q WHERE q.topic_id = $1 AND ${QUESTAO_PREPARADA_SEM_USO}`,
+        [id]
+      );
+      const questionIds = preparadas.map((row) => row.id);
+      if (questionIds.length) await client.query('DELETE FROM questions WHERE id = ANY($1::uuid[])', [questionIds]);
+
+      const rows = await client.many('SELECT DISTINCT lesson_id FROM lesson_topics WHERE topic_id = $1', [id]);
+      const ids = rows.map((row) => row.lesson_id);
+      // o CASCADE de lesson_topics tira o assunto das aulas; a aula fica
+      await client.query('DELETE FROM topics WHERE id = $1', [id]);
+      if (ids.length) {
+        // fecha o buraco na ordem dos assuntos ([1, 3] → [1, 2]); a posição 1 nunca é deste
+        // assunto (ele não é o principal de nenhuma aula), então só sobe quem estava depois
+        await client.query(
+          `UPDATE lesson_topics lt SET position = r.n
+             FROM (SELECT lesson_id, position, row_number() OVER (PARTITION BY lesson_id ORDER BY position) AS n
+                     FROM lesson_topics WHERE lesson_id = ANY($1::uuid[])) r
+            WHERE lt.lesson_id = r.lesson_id AND lt.position = r.position AND lt.position <> r.n`,
+          [ids]
+        );
+        // as três questões da prática eram divididas também por este assunto: as aulas que
+        // já tinham questões geradas voltam para a fila e são redistribuídas
+        await client.query(
+          `UPDATE lessons
+              SET questions_status = 'pending', questions_error = NULL, questions_updated_at = now(),
+                  questions_attempts = 0, questions_retry_at = NULL
+            WHERE id = ANY($1::uuid[]) AND questions_status <> 'none'`,
+          [ids]
+        );
+      }
+      return { lessonIds: ids, removedQuestions: questionIds };
+    });
+    await audit(req, 'content.topic.delete', 'topic', id, {
+      name: topic.name,
+      ...(lessonIds.length ? { removed_from_lessons: lessonIds } : {}),
+      ...(removedQuestions.length ? { removed_lesson_questions: removedQuestions } : {}),
+    });
+    res.json({ ok: true, lessons_updated: lessonIds.length, lesson_questions_removed: removedQuestions.length });
   })
 );
 
@@ -596,14 +716,18 @@ router.delete(
     const { id } = req.valid.params;
     const subtopic = await db.one('SELECT id, name FROM subtopics WHERE id = $1', [id]);
     if (!subtopic) throw new AppError(404, 'not_found', 'Subassunto não encontrado.');
+    // conta também as aulas em que o subassunto é de um assunto secundário (lesson_topics)
     const counts = await db.one(
       `SELECT (SELECT count(*) FROM lessons WHERE subtopic_id = $1)::int AS lessons,
+              (SELECT count(DISTINCT lt.lesson_id) FROM lesson_topics lt JOIN lessons l ON l.id = lt.lesson_id
+                WHERE lt.subtopic_id = $1 AND l.subtopic_id IS DISTINCT FROM $1)::int AS secondary_lessons,
               (SELECT count(*) FROM questions WHERE subtopic_id = $1)::int AS questions`,
       [id]
     );
-    if (counts.lessons > 0 || counts.questions > 0) {
+    if (counts.lessons > 0 || counts.secondary_lessons > 0 || counts.questions > 0) {
       const parts = [];
-      if (counts.lessons) parts.push(pluralPt(counts.lessons, 'aula', 'aulas'));
+      const aulas = counts.lessons + counts.secondary_lessons;
+      if (aulas) parts.push(pluralPt(aulas, 'aula', 'aulas'));
       if (counts.questions) parts.push(pluralPt(counts.questions, 'questão', 'questões'));
       throw new AppError(409, 'conflict', `O subassunto possui ${parts.join(' e ')}. Reclassifique esse conteúdo antes de excluir.`, counts);
     }

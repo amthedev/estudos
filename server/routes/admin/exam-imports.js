@@ -17,6 +17,10 @@
  *   GET    /api/admin/exam-imports/provas                 provas anteriores com PDF, para escolher
  *   GET    /api/admin/exam-imports/provas/:id/arquivo/prova|gabarito
  *                                                        entrega o PDF pelo próprio domínio
+ *   GET    /api/admin/exam-imports/provas/:id/questoes/impacto?include_orphans=true&import_ids=…
+ *                                                        o que some se as questões da prova forem apagadas
+ *   DELETE /api/admin/exam-imports/provas/:id/questoes  { confirm: true, include_orphans?, import_ids? } →
+ *                                                        apaga as questões e as leituras; a prova volta a "não lida"
  *
  * Por que em lotes: uma prova do ENEM tem 90 questões e o texto passa de 200
  * mil caracteres. Isso não cabe em uma chamada de IA nem em uma requisição
@@ -43,6 +47,7 @@ const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const uploads = require('../../services/uploads');
 const examImport = require('../../services/exam-import');
+const examCleanup = require('../../services/exam-cleanup');
 const { buildImportRow, loadSlugMaps, insertQuestion, RowError } = require('./questions');
 
 const uuid = z.string().uuid();
@@ -169,6 +174,25 @@ const importBody = z
     (body) => Boolean(body.item_ids) !== Boolean(body.com_gabarito),
     'Escolha as questões ou peça as que têm gabarito oficial — não os dois.'
   );
+
+/** Leituras sem prova anterior que o administrador escolheu, uma por uma (ver services/exam-cleanup.js). */
+const importIdsField = z.array(uuid).max(50, 'Escolha no máximo 50 leituras.');
+
+const removeQuestionsBody = z
+  .object({
+    include_orphans: z.boolean().optional(),
+    import_ids: importIdsField.optional(),
+    confirm: z.literal(true, {
+      errorMap: () => ({ message: 'Confirme que quer apagar as questões desta prova.' }),
+    }),
+  })
+  .strict();
+
+// Na query string uma leitura só chega como texto e várias, como lista.
+const impactQuery = z.object({
+  include_orphans: z.enum(['true', 'false']).optional(),
+  import_ids: z.preprocess((value) => (value === undefined || value === '' ? undefined : [].concat(value)), importIdsField.optional()),
+});
 
 // ---------------------------------------------------------------------------
 // Leitura
@@ -435,6 +459,49 @@ router.get(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Remover as questões de uma prova, para ler de novo
+// ---------------------------------------------------------------------------
+/**
+ * O que some se as questões desta prova forem apagadas: quantas questões,
+ * quantos alunos responderam, tentativas, caderno de erros, simulados em
+ * andamento. As questões sem vínculo e as das leituras sem prova anterior
+ * vêm separadas, porque só entram com a caixa marcada; `selected` é a conta
+ * da escolha pedida na query (ver services/exam-cleanup.js).
+ */
+router.get(
+  '/provas/:id/questoes/impacto',
+  validate({ params: idParams, query: impactQuery }),
+  wrap(async (req, res) => {
+    const query = req.valid.query || {};
+    res.json(
+      await examCleanup.impact(req.valid.params.id, {
+        includeOrphans: query.include_orphans === 'true',
+        importIds: query.import_ids || [],
+      })
+    );
+  })
+);
+
+/**
+ * Apaga as questões da prova e as leituras dela. A prova volta a "não lida".
+ *
+ * `confirm: true` é obrigatório: um DELETE solto, sem corpo, não apaga o
+ * histórico de ninguém por engano.
+ */
+router.delete(
+  '/provas/:id/questoes',
+  validate({ params: idParams, body: removeQuestionsBody }),
+  wrap(async (req, res) => {
+    const resultado = await examCleanup.removeQuestions(req.valid.params.id, {
+      includeOrphans: Boolean(req.valid.body.include_orphans),
+      importIds: req.valid.body.import_ids || [],
+      req,
+    });
+    res.json(resultado);
+  })
+);
+
 router.get(
   '/:id',
   validate({ params: idParams }),
@@ -676,6 +743,11 @@ async function importarItens(row, items, adminId) {
           dados.exam_ids = [row.exam_id];
           dados.source_exam_id = row.exam_id;
         }
+        // A questão guarda de onde saiu. O item da leitura também guarda, mas
+        // morre com ela; sem isto, remover as questões de uma prova para ler
+        // de novo dependia de a leitura ainda existir.
+        dados.exam_import_id = row.id;
+        dados.past_exam_id = row.past_exam_id || null;
 
         const id = await insertQuestion(client, dados, adminId || null);
         await client.query(

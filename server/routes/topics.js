@@ -4,8 +4,14 @@
  * Assuntos (biblioteca de conteúdo — visão do aluno).
  *
  *   GET /api/topics/:id   assunto + subject + subtopics[] + lessons[] (completed, favorited, duration_min,
- *                         difficulty, teacher_name, thumbnail_url, subtopic_id) + acurácia do aluno.
+ *                         difficulty, teacher_name, thumbnail_url, subtopic_id, main_topic) + acurácia do aluno.
  *                         As aulas seguem o syllabus da prova do aluno (?all=1 mostra todas).
+ *
+ * A aula aparece em todos os assuntos dela (lesson_topics), não só no principal: a aula
+ * "Razão e Proporção, Regra de Três e Porcentagem" está na página de cada um dos três.
+ * Em cada página, `subtopic_id` é o subassunto da aula DENTRO deste assunto (é por ele
+ * que a tela agrupa) e `main_topic` diz se este é o assunto principal da aula. As aulas
+ * do próprio assunto vêm antes das que só passam por ele.
  */
 const router = require('express').Router();
 const db = require('../db/pool');
@@ -53,16 +59,22 @@ router.get(
         [topicId]
       ),
       db.many(
+        // DISTINCT ON: a mesma aula pode ter este assunto duas vezes (dois subassuntos dele);
+        // na página ela aparece uma vez, no primeiro vínculo
         `SELECT l.id, l.slug, l.title, l.description, l.duration_min, l.difficulty, l.teacher_name,
-                l.thumbnail_url, l.video_provider, l.sort_order, l.subtopic_id, l.subject_id, l.topic_id,
+                l.thumbnail_url, l.video_provider, l.sort_order, lt.subtopic_id, l.subject_id, l.topic_id,
+                (l.topic_id = $2) AS main_topic,
                 lp.status, lp.started_at, lp.completed_at,
                 coalesce(lp.status = 'completed', false) AS completed,
                 EXISTS (SELECT 1 FROM favorites f
                          WHERE f.user_id = $1 AND f.item_type = 'lesson' AND f.item_id = l.id) AS favorited
-           FROM lessons l
+           FROM (SELECT DISTINCT ON (lesson_id) lesson_id, position, subtopic_id
+                   FROM lesson_topics WHERE topic_id = $2
+                  ORDER BY lesson_id, position) lt
+           JOIN lessons l ON l.id = lt.lesson_id
            LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $1
-          WHERE l.topic_id = $2 AND l.active AND ${lessonScope}
-          ORDER BY l.sort_order, l.title`,
+          WHERE l.active AND ${lessonScope}
+          ORDER BY (l.topic_id <> $2), l.sort_order, l.title`,
         params
       ),
       progress.getTopicAccuracy(userId, topicId),

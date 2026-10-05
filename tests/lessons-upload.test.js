@@ -9,6 +9,10 @@
  * existe no armazenamento é recusado, o mesmo vídeo não vira duas aulas, uma
  * linha com problema não derruba as boas, a duração sai do próprio vídeo e a
  * ordem continua de onde o assunto parou.
+ *
+ * O assunto do lote deixou de ser obrigatório: cada aula traz os seus (até
+ * três, na ordem do título) ou o servidor lê do título. Assunto novo é
+ * cadastrado uma vez só, e toda aula nova entra na fila das questões.
  */
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -32,6 +36,7 @@ describe('Aulas em massa', () => {
   let student;
   let subject;
   let topic;
+  let razao;
   let exam;
   const files = [];
 
@@ -57,6 +62,10 @@ describe('Aulas em massa', () => {
     subject = await db.one(`INSERT INTO subjects (slug, name, sort_order) VALUES ('mat-up', 'Matemática', 1) RETURNING id`);
     topic = await db.one(
       `INSERT INTO topics (subject_id, slug, name, sort_order) VALUES ($1, 'porcentagem', 'Porcentagem', 1) RETURNING id`,
+      [subject.id]
+    );
+    razao = await db.one(
+      `INSERT INTO topics (subject_id, slug, name, sort_order) VALUES ($1, 'razao-proporcao', 'Razão e proporção', 2) RETURNING id`,
       [subject.id]
     );
     admin = await ctx.loginAdmin();
@@ -203,6 +212,126 @@ describe('Aulas em massa', () => {
     });
     assert.equal(res.status, 201, 'caminho interno de imagem não pode ser recusado pela validação');
     assert.equal(res.body.thumbnail_url, thumb.url);
+  });
+
+  /** Assuntos gravados da aula, na ordem. */
+  async function assuntosDa(lessonId) {
+    return db.many(
+      `SELECT lt.position, lt.topic_id, lt.source, t.slug
+         FROM lesson_topics lt JOIN topics t ON t.id = lt.topic_id
+        WHERE lt.lesson_id = $1 ORDER BY lt.position`,
+      [lessonId]
+    );
+  }
+
+  it('lote sem assunto: cada aula com os seus, na ordem, sem duplicar assunto novo', async () => {
+    const [a, b, c, d] = [await putVideo(11), await putVideo(12), await putVideo(13), await putVideo(14)];
+    const res = await admin.agent.post('/api/admin/lessons/import', {
+      subject_id: subject.id,
+      exam_ids: [exam.id],
+      items: [
+        {
+          video_url: a,
+          title: 'Aula 01 — Razão e juros',
+          topics: [{ topic_id: razao.id, label: 'Razão' }, { new_topic_name: 'Juros simples', source: 'ia' }],
+        },
+        { video_url: b, title: 'Aula 02 — Razão e Proporção e Porcentagem' },
+        { video_url: c, title: 'Aula 03 — Porcentagem e Juros simples' },
+        { video_url: d, title: 'Aula 04' },
+      ],
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.imported, 3);
+    assert.equal(res.body.failed, 1);
+    assert.equal(res.body.errors[0].line, 4);
+    assert.match(res.body.errors[0].message, /identificar o assunto/i);
+
+    const [la, lb, lc] = res.body.created;
+    const juros = await db.many(`SELECT id, slug FROM topics WHERE subject_id = $1 AND slug LIKE 'juros-simples%'`, [subject.id]);
+    assert.deepEqual(juros.map((row) => row.slug), ['juros-simples'], 'o assunto novo é cadastrado uma vez só');
+
+    assert.deepEqual((await assuntosDa(la.id)).map((r) => [r.slug, r.source]), [['razao-proporcao', 'manual'], ['juros-simples', 'ia']]);
+    assert.deepEqual((await assuntosDa(lb.id)).map((r) => [r.slug, r.source]), [['razao-proporcao', 'ia'], ['porcentagem', 'ia']]);
+    assert.deepEqual((await assuntosDa(lc.id)).map((r) => r.slug), ['porcentagem', 'juros-simples']);
+    assert.deepEqual(la.topics.map((x) => x.topic_name), ['Razão e proporção', 'Juros simples']);
+
+    const aulas = await db.many(
+      'SELECT id, topic_id, questions_status FROM lessons WHERE id = ANY($1::uuid[])',
+      [[la.id, lb.id, lc.id]]
+    );
+    const porId = new Map(aulas.map((row) => [row.id, row]));
+    assert.equal(porId.get(la.id).topic_id, razao.id, 'o principal é o primeiro assunto');
+    assert.equal(porId.get(lc.id).topic_id, topic.id);
+    assert.ok(aulas.every((row) => row.questions_status === 'pending'), 'toda aula nova entra na fila das questões');
+
+    const cobertura = await db.one('SELECT 1 FROM exam_topics WHERE exam_id = $1 AND topic_id = $2', [exam.id, juros[0].id]);
+    assert.ok(cobertura, 'o assunto novo entra no conteúdo da prova do lote');
+  });
+
+  it('o assunto do lote vale para quem chega sem assuntos, sem gastar IA', async () => {
+    const [a, b] = [await putVideo(21), await putVideo(22)];
+    const antes = (await db.one('SELECT count(*)::int AS n FROM ai_usage')).n;
+    const res = await admin.agent.post('/api/admin/lessons/import', {
+      ...base(),
+      items: [
+        { video_url: a, title: 'Exercícios resolvidos', topics: [{ topic_id: razao.id }] },
+        { video_url: b, title: 'Exercícios resolvidos 2' },
+      ],
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal((await db.one('SELECT count(*)::int AS n FROM ai_usage')).n, antes);
+    assert.deepEqual((await assuntosDa(res.body.created[0].id)).map((r) => r.slug), ['razao-proporcao']);
+    assert.deepEqual((await assuntosDa(res.body.created[1].id)).map((r) => r.slug), ['porcentagem']);
+  });
+
+  it('assunto de outra matéria derruba só a linha dele', async () => {
+    const outra = await db.one(`INSERT INTO subjects (slug, name, sort_order) VALUES ('fis-up', 'Física', 2) RETURNING id`);
+    const cinematica = await db.one(
+      `INSERT INTO topics (subject_id, slug, name) VALUES ($1, 'cinematica', 'Cinemática') RETURNING id`,
+      [outra.id]
+    );
+    const [a, b] = [await putVideo(31), await putVideo(32)];
+    const res = await admin.agent.post('/api/admin/lessons/import', {
+      subject_id: subject.id,
+      items: [
+        { video_url: a, title: 'Aula misturada', topics: [{ topic_id: cinematica.id }] },
+        { video_url: b, title: 'Aula certa', topics: [{ topic_id: topic.id }] },
+      ],
+    });
+    assert.equal(res.body.imported, 1);
+    assert.equal(res.body.errors[0].line, 1);
+    assert.match(res.body.errors[0].message, /matéria/i);
+  });
+
+  it('o fluxo da tela: a proposta de analyze-titles volta como chips e a resposta diz o que foi cadastrado agora', async () => {
+    // A tela de envio em massa lê os títulos assim que os arquivos são
+    // escolhidos e devolve os chips no /import (com label e source), sem
+    // assunto de lote. Depois casa cada aula gravada pelo arquivo e mostra os
+    // assuntos que nasceram nesse envio.
+    const titulos = ['Aula 09 — Razão e Proporção e Porcentagem', 'Aula 10 — Porcentagem e Logaritmos'];
+    const proposta = await admin.agent.post('/api/admin/lessons/analyze-titles', { subject_id: subject.id, titles: titulos });
+    assert.equal(proposta.status, 200);
+    assert.deepEqual(proposta.body.items[1].topics.map((t) => t.new_topic_name), [null, 'Logaritmos']);
+    const chips = proposta.body.items.map((item) =>
+      item.topics.map((t) => (t.topic_id
+        ? { topic_id: t.topic_id, subtopic_id: t.subtopic_id || null, label: t.label || null, source: 'ia' }
+        : { new_topic_name: t.new_topic_name, label: t.label || null, source: 'ia' }))
+    );
+
+    const [a, b] = [await putVideo(41), await putVideo(42)];
+    const res = await admin.agent.post('/api/admin/lessons/import', {
+      subject_id: subject.id,
+      items: [
+        { video_url: a, title: titulos[0], topics: chips[0] },
+        { video_url: b, title: titulos[1], topics: chips[1] },
+      ],
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const [la, lb] = res.body.created;
+    assert.equal(la.video_url, a, 'a tela casa a aula gravada pelo arquivo');
+    assert.deepEqual(la.topics.map((t) => [t.topic_name, t.created]), [['Razão e proporção', false], ['Porcentagem', false]]);
+    assert.deepEqual(lb.topics.map((t) => [t.topic_name, t.created]), [['Porcentagem', false], ['Logaritmos', true]]);
+    assert.deepEqual((await assuntosDa(lb.id)).map((r) => [r.slug, r.source]), [['porcentagem', 'ia'], ['logaritmos', 'ia']]);
   });
 
   it('o arquivo do vídeo fica onde a aula aponta', async () => {

@@ -1,9 +1,11 @@
 // =====================================================================
 // Foco Elite — /app/aulas/:id/praticar
-// "Pratique agora": o aluno escolhe a dificuldade e recebe uma questão de
-// cada assunto da aula, com correção na hora. Quando o banco não tem
-// questão daquele assunto na dificuldade pedida, a IA elabora — por isso
-// há uma tela de espera entre a escolha e as questões.
+// "Pratique agora": o aluno escolhe a dificuldade e recebe três questões
+// divididas entre os assuntos da aula (três assuntos, uma de cada; dois,
+// duas do primeiro e uma do segundo; um, as três dele), com correção na
+// hora. A divisão vem do servidor em lesson.topics[].practice_questions.
+// Quando o banco não tem questão daquele assunto na dificuldade pedida, a
+// IA elabora — por isso há uma tela de espera entre a escolha e as questões.
 //
 // APIs: POST /api/lessons/:id/practice { difficulty } para montar o
 // conjunto, POST /api/questions/:id/answer com context 'practice' e
@@ -87,6 +89,36 @@ function stopWaitingMessages() {
   waitingTimer = null;
 }
 
+const POR_EXTENSO = ['nenhuma', 'uma', 'duas', 'três'];
+
+/** Os assuntos da aula com a parte de cada um; resposta antiga vira o assunto único. */
+function practiceTopics(lesson) {
+  if (lesson && Array.isArray(lesson.topics) && lesson.topics.length) {
+    return lesson.topics.filter((topic) => Number(topic.practice_questions) > 0);
+  }
+  return lesson && lesson.topic_name ? [{ topic_name: lesson.topic_name, practice_questions: 3 }] : [];
+}
+
+function joinNames(names) {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+}
+
+/**
+ * O que a prática entrega, do jeito que a divisão acontece de fato: "uma de
+ * cada assunto" só é verdade quando a aula tem três.
+ */
+function splitText(lesson) {
+  const topics = practiceTopics(lesson);
+  if (!topics.length) return 'Você recebe três questões sobre os assuntos da aula.';
+  if (topics.length === 1) return `Você recebe três questões de ${topics[0].topic_name}, o assunto da aula.`;
+  if (topics.every((topic) => Number(topic.practice_questions) === 1)) {
+    return `Você recebe três questões, uma de cada assunto da aula: ${joinNames(topics.map((t) => t.topic_name))}.`;
+  }
+  const partes = topics.map((topic) => `${POR_EXTENSO[topic.practice_questions] || topic.practice_questions} de ${topic.topic_name}`);
+  return `Você recebe três questões dos assuntos da aula: ${joinNames(partes)}.`;
+}
+
 export default async function renderPage(ctx) {
   const { el, params } = ctx;
   const lessonId = params.id;
@@ -108,11 +140,13 @@ export default async function renderPage(ctx) {
 
   function headerView() {
     const lesson = state.lesson;
-    const topic = lesson ? lesson.topic_name : '';
+    // Com vários assuntos, o título não escolhe um deles: o nome da aula diz.
+    const topics = practiceTopics(lesson);
+    const topic = topics.length === 1 ? topics[0].topic_name : '';
     return pageHeader({
       title: topic ? `Pratique agora — ${topic}` : 'Pratique agora',
       subtitle: lesson
-        ? `Uma questão de cada assunto da aula “${lesson.title}”, com o resultado a cada resposta.`
+        ? `Três questões sobre a aula “${lesson.title}”, com o resultado a cada resposta.`
         : 'Questões dos assuntos desta aula, com correção na hora.',
       breadcrumb: lesson
         ? [
@@ -131,7 +165,7 @@ export default async function renderPage(ctx) {
         <div class="card-body">
           <h2 class="prc-setup-title">Qual o nível das questões?</h2>
           <p class="prc-setup-text">
-            Você recebe três questões, uma de cada assunto da aula. Escolha o quanto quer ser cobrado.
+            ${splitText(state.lesson)} Escolha o quanto quer ser cobrado.
           </p>
           <div class="prc-levels" role="radiogroup" aria-label="Dificuldade das questões">
             ${DIFFICULTIES.map(
@@ -272,7 +306,7 @@ export default async function renderPage(ctx) {
           ${headerView()}
           ${emptyState({
             icon: 'file-text',
-            title: 'Nenhuma questão disponível para este assunto',
+            title: 'Nenhuma questão disponível para esta aula',
             text: 'Não foi possível montar a prática agora. Tente de novo em instantes.',
             action: { label: 'Escolher outro nível', dataAction: 'redo', icon: 'refresh-cw', variant: 'secondary' },
           })}`
@@ -342,7 +376,10 @@ export default async function renderPage(ctx) {
     try {
       state.lesson = await api.get(`/api/lessons/${encodeURIComponent(lessonId)}`);
       state.loading = false;
-      if (state.lesson && state.lesson.topic_name) ctx.setTitle(`Pratique agora — ${state.lesson.topic_name}`);
+      if (state.lesson) {
+        const topics = practiceTopics(state.lesson);
+        ctx.setTitle(topics.length === 1 ? `Pratique agora — ${topics[0].topic_name}` : `Pratique agora — ${state.lesson.title}`);
+      }
     } catch (err) {
       state.loading = false;
       state.error = (err && err.message) || 'Não foi possível carregar esta aula.';

@@ -310,16 +310,25 @@ async function replaceQuestionExams(client, questionId, examIds, { topicId, subj
   await ensureExamCoverage(client, ids, { topicId, subjectId });
 }
 
-/** Insere a questão com alternativas e provas. Devolve o id. */
+/**
+ * Insere a questão com alternativas e provas. Devolve o id.
+ *
+ * `exam_import_id` e `past_exam_id` só chegam aqui pela leitura de prova em
+ * PDF (routes/admin/exam-imports.js), nunca da planilha: buildImportRow não os
+ * lê do arquivo, então uma planilha não consegue se passar por leitura e cair
+ * na remoção em massa de uma prova.
+ */
 async function insertQuestion(client, data, createdBy) {
   const row = await client.one(
     `INSERT INTO questions (subject_id, topic_id, subtopic_id, statement, image_url, resolution, explanation,
-                            difficulty, source_exam_id, year, board, source, active, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+                            difficulty, source_exam_id, year, board, source, active, created_by,
+                            exam_import_id, past_exam_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
     [
       data.subject_id, data.topic_id, data.subtopic_id ?? null, data.statement, data.image_url ?? null,
       data.resolution ?? null, data.explanation ?? null, data.difficulty ?? 2, data.source_exam_id ?? null,
       data.year ?? null, data.board ?? null, data.source ?? null, data.active ?? true, createdBy ?? null,
+      data.exam_import_id ?? null, data.past_exam_id ?? null,
     ]
   );
   await replaceOptions(client, row.id, data.options);

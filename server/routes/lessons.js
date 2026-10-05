@@ -5,14 +5,17 @@
  *
  *   GET  /api/lessons                 ?subject_id&topic_id&status=done|pending|in_progress&q&page&limit&all=1 → paginado
  *   GET  /api/lessons/continue        últimas 6 aulas em andamento
- *   GET  /api/lessons/:id             aula + exams[] + progress + note + favorited + next_lesson + prev_lesson
+ *   GET  /api/lessons/:id             aula + topics[] (assuntos na ordem, com quantas questões da prática
+ *                                     cabem a cada um) + exams[] + progress + note + favorited
+ *                                     + next_lesson + prev_lesson
  *   POST /api/lessons/:id/start       marca como em andamento (não desfaz conclusão)
  *   POST /api/lessons/:id/complete    conclui: study_log, revisões (services/reviews), item do cronograma
  *                                     → { progress, reviews_created, ... }
- *   POST /api/lessons/:id/practice    { difficulty } → 3 questões dos assuntos da aula, uma de cada,
- *                                     na dificuldade escolhida. Usa o banco primeiro e pede à IA o
- *                                     que faltar (services/question-ai) — sem gabarito. Chamar a IA
- *                                     custa moedas; sem saldo, entrega só o banco com `notice`
+ *   POST /api/lessons/:id/practice    { difficulty } → 3 questões divididas entre os assuntos da aula
+ *                                     (3 assuntos: uma de cada; 2: duas do primeiro e uma do segundo;
+ *                                     1: as três dele), na dificuldade escolhida. Usa o banco primeiro e
+ *                                     pede à IA o que faltar (services/question-ai) — sem gabarito.
+ *                                     Chamar a IA custa moedas; sem saldo, entrega só o banco com `notice`
  *   PUT  /api/lessons/:id/note        { content } upsert da anotação da aula
  *
  * A listagem respeita o syllabus da prova do aluno (ver services/progress.js).
@@ -86,12 +89,29 @@ const LESSON_LIST_FROM = `
 
 const LESSON_ORDER = 'ORDER BY s.sort_order, s.name, t.sort_order, t.name, l.sort_order, l.title';
 
-/** Carrega a aula ativa ou lança 404. */
+/**
+ * Carrega a aula ativa ou lança 404.
+ *
+ * `topics` são os assuntos da aula na ordem do título (lesson_topics), cada um
+ * com `practice_questions`: quantas das três questões da prática saem dele. A
+ * tela usa isso para prometer o que a prática entrega de fato. Os campos
+ * topic_id/topic_name continuam sendo o assunto principal (o primeiro).
+ */
 async function loadLesson(id) {
   const lesson = await db.one(
     `SELECT l.*, s.name AS subject_name, s.slug AS subject_slug, s.color AS subject_color, s.icon AS subject_icon,
             t.name AS topic_name, t.slug AS topic_slug, t.description AS topic_description,
-            st.name AS subtopic_name
+            st.name AS subtopic_name,
+            coalesce((
+              SELECT json_agg(json_build_object(
+                       'position', lt.position, 'topic_id', lt.topic_id, 'topic_name', tt.name,
+                       'topic_slug', tt.slug, 'subtopic_id', lt.subtopic_id, 'subtopic_name', sst.name
+                     ) ORDER BY lt.position)
+                FROM lesson_topics lt
+                JOIN topics tt ON tt.id = lt.topic_id AND tt.active
+                LEFT JOIN subtopics sst ON sst.id = lt.subtopic_id
+               WHERE lt.lesson_id = l.id
+            ), '[]'::json) AS topics
        FROM lessons l
        JOIN subjects s ON s.id = l.subject_id
        JOIN topics t ON t.id = l.topic_id
@@ -101,6 +121,23 @@ async function loadLesson(id) {
   );
   if (!lesson) throw new AppError(404, 'not_found', 'Aula não encontrada.');
   delete lesson.search_vector;
+  // Interno da fila de geração: não é assunto do aluno.
+  delete lesson.questions_status;
+  delete lesson.questions_error;
+  delete lesson.questions_updated_at;
+
+  const topics = Array.isArray(lesson.topics) && lesson.topics.length
+    ? lesson.topics
+    : [{
+        position: 1,
+        topic_id: lesson.topic_id,
+        topic_name: lesson.topic_name,
+        topic_slug: lesson.topic_slug,
+        subtopic_id: lesson.subtopic_id || null,
+        subtopic_name: lesson.subtopic_name || null,
+      }];
+  const vagas = questionAi.distribute(topics.length);
+  lesson.topics = topics.map((topic, index) => ({ ...topic, practice_questions: vagas[index] || 0 }));
   return lesson;
 }
 
@@ -154,13 +191,15 @@ router.get(
       params.push(query.subject_id);
       where.push(`l.subject_id = $${params.length}`);
     }
+    // filtrar por assunto acha a aula também onde ele é secundário (lesson_topics),
+    // igual à página do assunto
     if (query.topic_id) {
       params.push(query.topic_id);
-      where.push(`l.topic_id = $${params.length}`);
+      where.push(progress.lessonCoversTopicSql(`$${params.length}`));
     }
     if (query.subtopic_id) {
       params.push(query.subtopic_id);
-      where.push(`l.subtopic_id = $${params.length}`);
+      where.push(`EXISTS (SELECT 1 FROM lesson_topics lts WHERE lts.lesson_id = l.id AND lts.subtopic_id = $${params.length})`);
     }
     if (query.status === 'done') where.push(`lp.status = 'completed'`);
     else if (query.status === 'in_progress') where.push(`lp.status = 'in_progress'`);
@@ -169,10 +208,12 @@ router.get(
       params.push(query.q);
       const idx = params.length;
       params.push(`%${query.q}%`);
+      // o nome de qualquer assunto da aula vale na busca, não só o do principal
       where.push(
         `(l.search_vector @@ plainto_tsquery('portuguese', fe_unaccent($${idx}))
           OR fe_unaccent(l.title) ILIKE fe_unaccent($${idx + 1})
-          OR fe_unaccent(t.name) ILIKE fe_unaccent($${idx + 1}))`
+          OR EXISTS (SELECT 1 FROM lesson_topics ltq JOIN topics tq ON tq.id = ltq.topic_id
+                      WHERE ltq.lesson_id = l.id AND fe_unaccent(tq.name) ILIKE fe_unaccent($${idx + 1})))`
       );
     }
 
@@ -239,7 +280,10 @@ router.get(
          SELECT prev_id, next_id FROM ordered WHERE id = $2`,
         [lesson.subject_id, lesson.id]
       ),
-      db.one('SELECT count(*) AS total FROM questions WHERE topic_id = $1 AND active', [lesson.topic_id]),
+      // as questões de todos os assuntos da aula, não só do principal
+      db.one('SELECT count(*) AS total FROM questions WHERE topic_id = ANY($1::uuid[]) AND active', [
+        lesson.topics.map((topic) => topic.topic_id),
+      ]),
     ]);
 
     const siblingIds = [neighbors && neighbors.prev_id, neighbors && neighbors.next_id].filter(Boolean);
@@ -355,13 +399,20 @@ router.post(
     const lesson = await loadLesson(req.valid.params.id);
     const difficulty = questionAi.difficultyOf(req.valid.body.difficulty);
 
-    // Uma questão por assunto da aula. O banco vem primeiro: questão de prova
-    // vale mais que questão elaborada na hora, e não gasta chamada de IA.
+    // Três vagas divididas entre os assuntos da aula, cada uma com o assunto
+    // dela. O banco vem primeiro: questão de prova vale mais que questão
+    // elaborada na hora, e não gasta chamada de IA.
     const targets = await questionAi.lessonTargets(lesson);
-    const candidates = await questionAi.bankCandidates({ topicId: lesson.topic_id, difficulty, userId });
+    const candidates = await questionAi.bankCandidates({
+      topicIds: targets.map((alvo) => alvo.topic_id),
+      difficulty,
+      userId,
+    });
     const assigned = questionAi.assignCandidates(targets, candidates);
+    const doBanco = assigned.filter((item) => item.question_id).length;
 
-    const faltando = assigned.filter((item) => !item.question_id).map((item) => item.target);
+    const vazias = assigned.filter((item) => !item.question_id);
+    const faltando = vazias.map((item) => item.target);
     let geradas = [];
     let aviso = null;
     let avisoCodigo = null;
@@ -410,7 +461,8 @@ router.post(
         };
         res.on('close', onClose);
         try {
-          geradas = await questionAi.generate({
+          // Cada alvo leva o assunto dele: a questão nasce no assunto certo.
+          geradas = await questionAi.generateItems({
             subject: { id: lesson.subject_id, name: lesson.subject_name },
             topic: { id: lesson.topic_id, name: lesson.topic_name, description: lesson.topic_description },
             lesson,
@@ -435,10 +487,15 @@ router.post(
       }
     }
 
-    // As geradas tapam os buracos na ordem em que apareceram, para cada assunto
-    // continuar com a questão dele.
-    const fila = geradas.slice();
-    const ids = assigned.map((item) => item.question_id || fila.shift()).filter(Boolean);
+    // Cada questão elaborada vai para a vaga do alvo a que ela responde, não
+    // para o próximo buraco da fila: se a IA devolver duas de Porcentagem e
+    // nenhuma de Regra de Três, a vaga de Regra de Três fica vazia em vez de
+    // receber uma questão de outro assunto.
+    for (const gerada of geradas) {
+      const vaga = vazias[gerada.index];
+      if (vaga && !vaga.question_id) vaga.question_id = gerada.id;
+    }
+    const ids = assigned.map((item) => item.question_id).filter(Boolean);
     const questions = await getQuestionsByIds(ids);
 
     if (!questions.length) {
@@ -453,18 +510,24 @@ router.post(
       );
     }
 
-    const doBanco = assigned.filter((item) => item.question_id).length;
     res.json({
       questions: questions.map((question) => ({
         ...question,
         lesson_id: lesson.id,
-        subject_name: lesson.subject_name,
-        topic_name: lesson.topic_name,
+        subject_name: question.subject_name || lesson.subject_name,
+        // o assunto da própria questão: numa aula de três assuntos, cada uma tem o seu
+        topic_name: question.topic_name || lesson.topic_name,
       })),
       difficulty,
       from_bank: doBanco,
-      generated: questions.length - doBanco,
+      generated: Math.max(0, questions.length - doBanco),
+      // o recorte de cada vaga, na ordem (subassunto quando há, senão o assunto)
       subjects: targets.map((alvo) => alvo.name),
+      topics: lesson.topics.map((topic) => ({
+        topic_id: topic.topic_id,
+        topic_name: topic.topic_name,
+        questions: topic.practice_questions,
+      })),
       notice: aviso,
       // Diz à tela por que o aviso apareceu: 'insufficient_coins' pede o
       // caminho para os planos; 'ai_limit_reached', só esperar até amanhã.

@@ -5,6 +5,7 @@
 // título, banca, PDF, gabarito, link externo e observações).
 //
 // API: GET|POST|PUT|DELETE /api/admin/past-exams[/:id]
+//      remover as questões de uma prova: ../remove-exam-questions.js
 // =====================================================================
 import { api } from '../../core/api.js';
 import {
@@ -12,9 +13,10 @@ import {
   pageHeader, skeleton, errorState, badge,
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
-import { truncate } from '../../core/format.js';
+import { truncate, fmtNumber } from '../../core/format.js';
 import { mountTable } from '../../components/data-table.js';
 import { buildForm } from '../../components/form.js';
+import { openRemoveExamQuestions } from '../remove-exam-questions.js';
 
 let state = null;
 
@@ -127,6 +129,22 @@ async function removeRow(row, table) {
   }
 }
 
+/** Questões lidas desta prova que estão no banco (pela coluna de vínculo). */
+function bankCell(row) {
+  const total = Number(row.questions_count) || 0;
+  if (!total) return html`<span class="dt-muted" title="Nenhuma questão desta prova no banco">—</span>`;
+  return html`<span title="Questões lidas desta prova que estão no banco">${fmtNumber(total)}</span>`;
+}
+
+/**
+ * Apagar as questões da prova para ler de novo. A janela mostra antes o que
+ * some junto (respostas, caderno de erros, simulados) e pede confirmação.
+ */
+async function removeQuestions(row, table) {
+  const resultado = await openRemoveExamQuestions({ id: row.id, title: row.title });
+  if (resultado) table.reload();
+}
+
 async function toggleActive(row, table) {
   try {
     await api.put(`/api/admin/past-exams/${row.id}`, { active: !row.active });
@@ -185,6 +203,7 @@ async function renderPastExamsPage(ctx) {
       { key: 'title', label: 'Título', sortable: true, render: titleCell },
       { key: 'board', label: 'Banca', nowrap: true },
       { key: 'pdf_url', label: 'Arquivos', render: linksCell },
+      { key: 'questions_count', label: 'No banco', align: 'right', nowrap: true, render: bankCell },
       { key: 'active', label: 'Situação', nowrap: true, render: (row) => (row.active ? badge('Visível', 'green') : badge('Oculta', 'gray')) },
     ],
     fetch: (page, query) => api.get('/api/admin/past-exams', { query }),
@@ -214,6 +233,14 @@ async function renderPastExamsPage(ctx) {
           // na plataforma e não precisa ser enviado de novo.
           state.ctx.navigate(`/admin/ler-prova?prova=${encodeURIComponent(row.id)}`);
         },
+      },
+      {
+        // Sempre à mão, mesmo com "No banco" vazio: a janela também acha as
+        // questões de leituras já excluídas, que a contagem da lista não vê.
+        label: 'Remover questões desta prova',
+        icon: 'rotate-ccw',
+        danger: true,
+        onClick: (row, table) => removeQuestions(row, table),
       },
       { label: 'Mostrar ou ocultar', icon: 'toggle-right', onClick: (row, table) => toggleActive(row, table) },
       { label: 'Excluir', icon: 'trash-2', danger: true, onClick: (row, table) => removeRow(row, table) },

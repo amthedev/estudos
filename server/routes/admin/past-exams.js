@@ -63,10 +63,15 @@ const SORTABLE = {
   exam_name: 'e.name',
 };
 
+// questions_count e imports_count dizem ao painel se há o que remover antes de
+// alguém abrir a conta completa de impacto (services/exam-cleanup.js). A conta
+// aqui é só pela coluna de vínculo, que tem índice — a lista não pode pesar.
 const SELECT_PAST_EXAM = `
   SELECT pe.id, pe.exam_id, pe.year, pe.day, pe.title, pe.board, pe.pdf_url, pe.answer_key_url,
          pe.external_url, pe.notes, pe.sort_order, pe.active, pe.created_at, pe.updated_at,
-         e.name AS exam_name, e.short_name AS exam_short_name, e.track AS exam_track, e.slug AS exam_slug
+         e.name AS exam_name, e.short_name AS exam_short_name, e.track AS exam_track, e.slug AS exam_slug,
+         (SELECT count(*) FROM questions q WHERE q.past_exam_id = pe.id)::int AS questions_count,
+         (SELECT count(*) FROM exam_imports i WHERE i.past_exam_id = pe.id)::int AS imports_count
     FROM past_exams pe
     JOIN exams e ON e.id = pe.exam_id`;
 

@@ -28,6 +28,7 @@ const { runSeed } = require('../server/db/seed/run');
 const { getSetting, setSetting } = require('../server/services/settings');
 const { releaseInterruptedCorrections } = require('../server/services/essay');
 const { releaseInterruptedBuilds } = require('../server/services/simulados');
+const lessonQuestions = require('../server/services/lesson-questions');
 const { faqEBonusOutubro2026 } = require('../server/db/seed/ajustes');
 
 function log(mensagem) {
@@ -109,6 +110,12 @@ async function main() {
   // existir, e a moeda do aluno não pode ficar presa esperando por ela.
   const montagens = await releaseInterruptedBuilds();
   if (montagens) log(`${montagens} montagem(ns) de simulado interrompida(s), com a moeda devolvida.`);
+
+  // Questões de aula que estavam sendo elaboradas quando o processo caiu: a
+  // aula ficaria "gerando" para sempre. Volta para a fila e o servidor que
+  // sobe agora termina o trabalho (services/lesson-questions).
+  const aulas = await lessonQuestions.releaseInterrupted();
+  if (aulas) log(`${aulas} aula(s) com questões em elaboração voltaram para a fila após reinício.`);
 
   log('pronto.');
 }

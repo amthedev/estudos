@@ -3,11 +3,22 @@
 //
 // Formulário em duas colunas: à esquerda os dados e o campo de vídeo, que
 // mostra a prévia com components/video-player.js assim que a URL é colada
-// enviado pelo painel; à direita a classificação encadeada
-// (matéria → assunto → subassunto), dificuldade, ordem, provas em que cai e
-// situação. O resumo é escrito em markdown com prévia.
+// enviado pelo painel; à direita a classificação (matéria e assuntos),
+// dificuldade, ordem, provas em que cai e situação. O resumo é escrito em
+// markdown com prévia.
 //
-// "Salvar e criar questões" leva para /admin/questoes/nova já com o assunto.
+// Assuntos: a aula cobre de 1 a 3 assuntos da matéria, em chips na ordem do
+// título — o primeiro é o principal, e a prática divide as três questões
+// entre eles nessa ordem. "Identificar pelo título" pede a proposta ao
+// servidor (POST /api/admin/lessons/analyze-titles); numa aula nova a leitura
+// também acontece sozinha quando o título é preenchido, enquanto ninguém
+// mexeu nos chips. Assunto que ainda não existe aparece como "novo" e é
+// cadastrado na matéria ao salvar.
+//
+// "Salvar e criar questões" leva para /admin/questoes/nova já com o assunto
+// principal. As três questões da prática são preparadas em segundo plano; o
+// bloco "Questões da aula" mostra o estado e, quando a aula não está na fila,
+// "Preparar de novo" a devolve (POST /api/admin/lessons/:id/requeue-questions).
 // =====================================================================
 import { api, ApiError } from '../../core/api.js';
 import {
@@ -25,6 +36,21 @@ const DIFFICULTIES = [
   { value: 2, label: 'Intermediário' },
   { value: 3, label: 'Avançado' },
 ];
+
+/** Assuntos por aula: a prática divide três questões entre eles. */
+const MAX_ASSUNTOS = 3;
+
+/** As questões da aula, preparadas em segundo plano depois do cadastro. */
+const QUESTIONS_STATUS = {
+  none: ['Não preparadas', 'gray'],
+  pending: ['Na fila', 'blue'],
+  generating: ['Preparando', 'orange'],
+  ready: ['Prontas', 'green'],
+  failed: ['Falharam', 'red'],
+};
+
+/** Estados de onde "Preparar de novo" tira a aula (os outros já estão na fila). */
+const REQUEUEABLE = new Set(['none', 'ready', 'failed']);
 
 let state = null;
 
@@ -57,8 +83,7 @@ function collect() {
     duration_min: durationRaw ? Number(durationRaw) : 30,
     summary: qs('[name="summary"]', state.ctx.el)?.value || null,
     subject_id: val('subject_id'),
-    topic_id: val('topic_id'),
-    subtopic_id: val('subtopic_id') || null,
+    topics: state.chips.map(chipPayload),
     difficulty: Number(val('difficulty')) || 2,
     sort_order: orderRaw ? Number(orderRaw) : undefined,
     active: checked('active'),
@@ -74,7 +99,9 @@ function showErrors(err) {
   const details = err instanceof ApiError ? err.details : null;
   if (!Array.isArray(details)) return;
   for (const detail of details) {
-    const path = Array.isArray(detail.path) ? detail.path[detail.path.length - 1] : String(detail.path || '').split('.').pop();
+    const parts = Array.isArray(detail.path) ? detail.path.map(String) : String(detail.path || '').split('.');
+    // "topics.1.topic_id" é erro de um dos chips: aparece embaixo da lista
+    const path = parts[0] === 'topics' ? 'topics' : parts[parts.length - 1];
     const target = qs(`[data-error-for="${path}"]`, state.ctx.el);
     if (target) target.textContent = detail.message;
     const field = qs(`[name="${path}"]`, state.ctx.el);
@@ -83,7 +110,7 @@ function showErrors(err) {
 }
 
 // ---------------------------------------------------------------------
-// Selects encadeados
+// Seletor de assunto (para adicionar um chip)
 // ---------------------------------------------------------------------
 function optionsHtml(items, selected, placeholder) {
   return html`
@@ -91,8 +118,8 @@ function optionsHtml(items, selected, placeholder) {
     ${items.map((item) => html`<option value="${item.id}" ${item.id === selected ? raw('selected') : ''}>${item.name}${item.active === false ? ' (inativo)' : ''}</option>`)}`;
 }
 
-async function loadTopics(subjectId, { keep = null, keepSubtopic = null } = {}) {
-  const select = qs('[name="topic_id"]', state.ctx.el);
+async function loadTopics(subjectId) {
+  const select = qs('[name="topic_pick"]', state.ctx.el);
   if (!select) return;
   if (!subjectId) {
     state.topics = [];
@@ -101,27 +128,30 @@ async function loadTopics(subjectId, { keep = null, keepSubtopic = null } = {}) 
     await loadSubtopics(null);
     return;
   }
+  const token = state.token;
   select.disabled = true;
   render(select, html`<option value="">Carregando…</option>`);
+  let topics = [];
   try {
-    state.topics = await api.get('/api/admin/content/topics', { query: { subject_id: subjectId } });
+    topics = await api.get('/api/admin/content/topics', { query: { subject_id: subjectId } });
   } catch {
-    state.topics = [];
     toast('Não foi possível carregar os assuntos desta matéria.', { type: 'error' });
   }
-  const selected = keep && state.topics.some((t) => t.id === keep) ? keep : null;
-  render(select, optionsHtml(state.topics, selected, 'Selecione o assunto'));
+  // a matéria pode ter mudado enquanto a lista chegava
+  if (!state || state.token !== token || val('subject_id') !== subjectId) return;
+  state.topics = Array.isArray(topics) ? topics : topics.items || [];
+  render(select, optionsHtml(state.topics, null, 'Escolha um assunto'));
   select.disabled = false;
-  select.value = selected || '';
-  await loadSubtopics(selected, { keep: keepSubtopic });
+  select.value = '';
+  await loadSubtopics(null);
 }
 
-async function loadSubtopics(topicId, { keep = null } = {}) {
-  const select = qs('[name="subtopic_id"]', state.ctx.el);
+async function loadSubtopics(topicId) {
+  const select = qs('[name="subtopic_pick"]', state.ctx.el);
   if (!select) return;
   if (!topicId) {
     state.subtopics = [];
-    render(select, optionsHtml([], null, 'Selecione o assunto primeiro'));
+    render(select, optionsHtml([], null, 'Escolha o assunto primeiro'));
     select.disabled = true;
     return;
   }
@@ -132,10 +162,231 @@ async function loadSubtopics(topicId, { keep = null } = {}) {
   } catch {
     state.subtopics = [];
   }
-  const selected = keep && state.subtopics.some((st) => st.id === keep) ? keep : null;
-  render(select, optionsHtml(state.subtopics, selected, state.subtopics.length ? 'Sem subassunto' : 'Nenhum subassunto cadastrado'));
+  if (!state || val('topic_pick') !== topicId) return;
+  render(select, optionsHtml(state.subtopics, null, state.subtopics.length ? 'Sem subassunto' : 'Nenhum subassunto cadastrado'));
   select.disabled = false;
-  select.value = selected || '';
+  select.value = '';
+}
+
+// ---------------------------------------------------------------------
+// Assuntos da aula (chips)
+// ---------------------------------------------------------------------
+function chipName(chip) {
+  if (!chip.topic_id) return chip.new_topic_name || 'Assunto novo';
+  return chip.subtopic_name ? `${chip.topic_name} › ${chip.subtopic_name}` : chip.topic_name || 'Assunto';
+}
+
+/** Os assuntos gravados da aula (ou o principal, em resposta sem a lista). */
+function chipsFromLesson(lesson) {
+  const list = Array.isArray(lesson.topics) && lesson.topics.length
+    ? lesson.topics
+    : lesson.topic_id
+      ? [{ topic_id: lesson.topic_id, topic_name: lesson.topic_name, subtopic_id: lesson.subtopic_id, subtopic_name: lesson.subtopic_name }]
+      : [];
+  return list.slice(0, MAX_ASSUNTOS).map((topic) => ({
+    topic_id: topic.topic_id,
+    subtopic_id: topic.subtopic_id || null,
+    new_topic_name: null,
+    label: topic.label || null,
+    topic_name: topic.topic_name,
+    subtopic_name: topic.subtopic_name || null,
+    // 'legado' (aula de antes dos vários assuntos) não é origem que se envia
+    source: topic.source === 'ia' ? 'ia' : 'manual',
+  }));
+}
+
+/** Um item da proposta de analyze-titles vira um chip. */
+function chipFromProposal(topic) {
+  return {
+    topic_id: topic.topic_id || null,
+    subtopic_id: topic.subtopic_id || null,
+    new_topic_name: topic.topic_id ? null : topic.new_topic_name || null,
+    label: topic.label || null,
+    topic_name: topic.topic_name || null,
+    subtopic_name: topic.subtopic_name || null,
+    source: 'ia',
+  };
+}
+
+/** O que o servidor recebe de cada chip. */
+function chipPayload(chip) {
+  const base = { label: chip.label || null, source: chip.source === 'ia' ? 'ia' : 'manual' };
+  if (chip.topic_id) return { ...base, topic_id: chip.topic_id, subtopic_id: chip.subtopic_id || null };
+  return { ...base, new_topic_name: chip.new_topic_name };
+}
+
+const chipKey = (chip) => (chip.topic_id ? `${chip.topic_id}/${chip.subtopic_id || ''}` : `novo:${String(chip.new_topic_name || '').toLowerCase()}`);
+
+function questionsStatusView(lesson) {
+  if (!lesson || !lesson.questions_status) return '';
+  const [label, tone] = QUESTIONS_STATUS[lesson.questions_status] || QUESTIONS_STATUS.none;
+  const status = lesson.questions_status;
+  // Na fila com motivo: a aula está esperando para tentar de novo depois de uma falha.
+  const motivo = (status === 'failed' || status === 'pending') && lesson.questions_error ? lesson.questions_error : '';
+  return html`
+    <span class="af-qstatus-label">Questões da aula</span>
+    ${badge(label, tone)}
+    ${REQUEUEABLE.has(status)
+      ? html`<button type="button" class="btn btn-ghost btn-sm af-qstatus-retry" data-act="requeue-questions"
+                title="Põe a aula na fila de novo. Só o que falta é pedido à IA.">
+          ${icon('refresh-cw')}<span>Preparar de novo</span>
+        </button>`
+      : ''}
+    ${motivo ? html`<span class="af-qstatus-error${status === 'pending' ? ' is-waiting' : ''}">${motivo}</span>` : ''}`;
+}
+
+function paintQuestionsStatus() {
+  const box = qs('[data-qstatus]', state.ctx.el);
+  if (box) render(box, questionsStatusView(state.lesson));
+}
+
+async function requeueQuestions(button) {
+  if (!state.id) return;
+  setLoading(button, true);
+  try {
+    const lesson = await api.post(`/api/admin/lessons/${state.id}/requeue-questions`, {});
+    if (!state) return;
+    state.lesson = { ...state.lesson, ...lesson };
+    paintQuestionsStatus();
+    toast('As questões da aula voltaram para a fila. Só o que falta é pedido à IA.', { type: 'success' });
+  } catch (err) {
+    if (state) setLoading(button, false);
+    toast((err && err.message) || 'Não foi possível pôr a aula na fila.', { type: 'error' });
+  }
+}
+
+function chipView(chip, index, total) {
+  const name = chipName(chip);
+  const isNew = !chip.topic_id;
+  const tip = isNew
+    ? 'Assunto novo: é cadastrado na matéria quando a aula for salva.'
+    : chip.label && chip.label !== name ? `Lido no título como “${chip.label}”` : '';
+  return html`
+    <span class="chip af-topic${isNew ? ' is-new' : ''}" title="${tip}">
+      ${total > 1 ? html`<span class="af-topic-order" title="${index === 0 ? 'Assunto principal' : `${index + 1}º assunto`}">${index + 1}º</span>` : ''}
+      <span class="af-topic-name">${name}</span>
+      ${isNew ? html`<span class="af-topic-new">novo</span>` : ''}
+      ${index > 0
+        ? html`<button type="button" class="chip-remove" data-chip-up="${index}" aria-label="Passar ${name} para antes" title="Passar para antes">${icon('arrow-left', { size: 12 })}</button>`
+        : ''}
+      <button type="button" class="chip-remove" data-chip-remove="${index}" aria-label="Tirar ${name} da aula" title="Tirar da aula">${icon('x', { size: 12 })}</button>
+    </span>`;
+}
+
+function paintTopics() {
+  const box = qs('[data-topics]', state.ctx.el);
+  if (!box) return;
+  const chips = state.chips;
+  const full = chips.length >= MAX_ASSUNTOS;
+  render(
+    box,
+    html`
+      ${state.identifying
+        ? html`<p class="af-topics-loading"><span class="spinner af-spinner" aria-hidden="true"></span>Lendo o título…</p>`
+        : chips.length
+          ? html`<div class="chip-group af-topics">${chips.map((chip, index) => chipView(chip, index, chips.length))}</div>`
+          : html`<p class="hint">Nenhum assunto ainda. Use "Identificar pelo título" ou escolha abaixo.</p>`}
+      ${state.topicsNote && !state.identifying ? html`<p class="hint af-topics-note">${state.topicsNote}</p>` : ''}
+      ${chips.length > 1
+        ? html`<p class="hint">O primeiro é o principal. A prática divide três questões entre eles: ${chips.length === 3 ? 'uma de cada' : 'duas do primeiro e uma do segundo'}.</p>`
+        : ''}`
+  );
+  const picker = qs('[data-topic-picker]', state.ctx.el);
+  if (picker) picker.hidden = full;
+  const fullHint = qs('[data-topics-full]', state.ctx.el);
+  if (fullHint) fullHint.hidden = !full;
+  const button = qs('[data-act="identify"]', state.ctx.el);
+  if (button) button.disabled = state.identifying;
+}
+
+/**
+ * Pede ao servidor os assuntos do título e põe a proposta nos chips.
+ * auto: leitura sozinha (título preenchido, matéria trocada) — só substitui
+ * chips que também vieram de uma leitura, nunca os escolhidos à mão.
+ */
+async function identify({ auto = false } = {}) {
+  const subjectId = val('subject_id');
+  const title = val('title');
+  if (!subjectId || title.length < 3) {
+    if (!auto) toast('Escolha a matéria e escreva o título antes de identificar os assuntos.', { type: 'warning' });
+    return;
+  }
+  const key = `${subjectId}\n${title}`;
+  if (auto && (key === state.identifiedKey || (state.chips.length && !state.chipsAuto))) return;
+
+  const seq = ++state.identifySeq;
+  state.identifying = true;
+  state.topicsNote = '';
+  paintTopics();
+  try {
+    const res = await api.post('/api/admin/lessons/analyze-titles', { subject_id: subjectId, titles: [title] });
+    if (!state || seq !== state.identifySeq) return;
+    state.identifiedKey = key;
+    const found = res && Array.isArray(res.items) ? res.items[0] : null;
+    const chips = (found && Array.isArray(found.topics) ? found.topics : []).slice(0, MAX_ASSUNTOS).map(chipFromProposal);
+    if (found && found.via === 'parcial') state.topicsNote = 'Parte do título ficou sem assunto: confira e complete abaixo se precisar.';
+    if (chips.length) {
+      state.chips = chips;
+      state.chipsAuto = true;
+      if (!auto) {
+        const novos = chips.filter((chip) => !chip.topic_id).length;
+        toast(
+          `${chips.length === 1 ? 'Assunto identificado' : `${chips.length} assuntos identificados`} pelo título${novos ? ` (${novos === 1 ? '1 novo' : `${novos} novos`})` : ''}.`,
+          { type: 'success' }
+        );
+      }
+    } else {
+      state.topicsNote = found && found.error
+        ? `Não deu para ler o título agora (${String(found.error).replace(/\.$/, '')}). Escolha o assunto abaixo.`
+        : 'Nenhum assunto reconhecido no título. Escolha o assunto abaixo.';
+      if (!auto) toast('Nenhum assunto reconhecido no título.', { type: 'warning' });
+    }
+    const target = qs('[data-error-for="topics"]', state.ctx.el);
+    if (target && state.chips.length) target.textContent = '';
+  } catch (err) {
+    if (!state || seq !== state.identifySeq) return;
+    state.topicsNote = 'Não deu para ler o título agora. Tente de novo ou escolha o assunto abaixo.';
+    if (!auto) toast((err && err.message) || 'Não foi possível identificar os assuntos.', { type: 'error' });
+  } finally {
+    if (state && seq === state.identifySeq) {
+      state.identifying = false;
+      paintTopics();
+    }
+  }
+}
+
+function addPickedTopic() {
+  const topicId = val('topic_pick');
+  if (!topicId) {
+    toast('Escolha o assunto que vai entrar na aula.', { type: 'warning' });
+    qs('[name="topic_pick"]', state.ctx.el)?.focus();
+    return;
+  }
+  if (state.chips.length >= MAX_ASSUNTOS) return;
+  const topic = state.topics.find((item) => item.id === topicId);
+  const subtopicId = val('subtopic_pick') || null;
+  const subtopic = subtopicId ? state.subtopics.find((item) => item.id === subtopicId) : null;
+  const chip = {
+    topic_id: topicId,
+    subtopic_id: subtopic ? subtopic.id : null,
+    new_topic_name: null,
+    label: null,
+    topic_name: topic ? topic.name : '',
+    subtopic_name: subtopic ? subtopic.name : null,
+    source: 'manual',
+  };
+  if (state.chips.some((item) => chipKey(item) === chipKey(chip))) {
+    toast('Esse assunto já está na aula.', { type: 'warning' });
+    return;
+  }
+  state.chips.push(chip);
+  state.chipsAuto = false;
+  const target = qs('[data-error-for="topics"]', state.ctx.el);
+  if (target) target.textContent = '';
+  const select = qs('[name="topic_pick"]', state.ctx.el);
+  if (select) select.value = '';
+  loadSubtopics(null);
+  paintTopics();
 }
 
 // ---------------------------------------------------------------------
@@ -232,11 +483,22 @@ async function save({ then = 'list' } = {}) {
     qs('[name="title"]', state.ctx.el)?.focus();
     return;
   }
-  if (!data.subject_id || !data.topic_id) {
-    const target = qs('[data-error-for="topic_id"]', state.ctx.el);
-    if (target) target.textContent = 'Escolha a matéria e o assunto da aula.';
+  if (!data.subject_id) {
+    const target = qs('[data-error-for="subject_id"]', state.ctx.el);
+    if (target) target.textContent = 'Escolha a matéria da aula.';
     qs('[name="subject_id"]', state.ctx.el)?.focus();
-    toast('Classifique a aula em uma matéria e um assunto.', { type: 'warning' });
+    toast('Classifique a aula em uma matéria.', { type: 'warning' });
+    return;
+  }
+  if (state.identifying) {
+    toast('Espere terminar a leitura do título.', { type: 'warning' });
+    return;
+  }
+  if (!data.topics.length) {
+    const target = qs('[data-error-for="topics"]', state.ctx.el);
+    if (target) target.textContent = 'Escolha pelo menos um assunto ou use "Identificar pelo título".';
+    qs('[name="topic_pick"]', state.ctx.el)?.focus();
+    toast('A aula precisa de pelo menos um assunto.', { type: 'warning' });
     return;
   }
   if (data.sort_order === undefined) delete data.sort_order;
@@ -249,8 +511,9 @@ async function save({ then = 'list' } = {}) {
       : await api.post('/api/admin/lessons', data);
     toast(state.id ? 'Aula salva.' : 'Aula criada.', { type: 'success' });
     if (then === 'new') {
-      // mantém matéria, assunto, subassunto, professor e provas: numa sequência
-      // de aulas do mesmo assunto só mudam o título, o vídeo e a ordem
+      // mantém matéria, assunto principal, subassunto, professor e provas:
+      // numa sequência de aulas do mesmo assunto só mudam o título, o vídeo e
+      // a ordem (e o título novo, se trouxer outros assuntos, troca o chip)
       const keep = {
         subject_id: saved.subject_id,
         topic_id: saved.topic_id,
@@ -396,19 +659,27 @@ function view() {
                 <p class="error-text" data-error-for="subject_id"></p>
               </div>
               <div class="field af-w-full">
-                <label class="label" for="af-topic">Assunto</label>
-                <select class="select" id="af-topic" name="topic_id" disabled>
+                <span class="label">Assuntos da aula <span class="hint-inline">(até ${MAX_ASSUNTOS})</span></span>
+                <div data-topics></div>
+                <p class="error-text" data-error-for="topics"></p>
+                <button type="button" class="btn btn-secondary btn-sm af-identify" data-act="identify">
+                  ${icon('wand-sparkles')}<span>Identificar pelo título</span>
+                </button>
+              </div>
+              <div class="af-topic-picker af-w-full" data-topic-picker>
+                <label class="label" for="af-topic">Adicionar assunto</label>
+                <select class="select" id="af-topic" name="topic_pick" disabled>
                   <option value="">Selecione a matéria primeiro</option>
                 </select>
-                <p class="error-text" data-error-for="topic_id"></p>
-              </div>
-              <div class="field af-w-full">
-                <label class="label" for="af-subtopic">Subassunto <span class="hint-inline">(opcional)</span></label>
-                <select class="select" id="af-subtopic" name="subtopic_id" disabled>
-                  <option value="">Selecione o assunto primeiro</option>
+                <select class="select" id="af-subtopic" name="subtopic_pick" aria-label="Subassunto (opcional)" disabled>
+                  <option value="">Escolha o assunto primeiro</option>
                 </select>
-                <p class="error-text" data-error-for="subtopic_id"></p>
+                <button type="button" class="btn btn-secondary btn-sm" data-act="add-topic">${icon('plus')}<span>Adicionar à aula</span></button>
               </div>
+              <p class="hint af-w-full" data-topics-full hidden>A aula já tem ${MAX_ASSUNTOS} assuntos. Tire um para pôr outro.</p>
+              ${state.lesson && state.lesson.questions_status
+                ? html`<div class="af-qstatus af-w-full" data-qstatus>${questionsStatusView(state.lesson)}</div>`
+                : ''}
               <div class="field">
                 <label class="label" for="af-difficulty">Dificuldade</label>
                 <select class="select" id="af-difficulty" name="difficulty">
@@ -416,7 +687,7 @@ function view() {
                 </select>
               </div>
               <div class="field">
-                <label class="label" for="af-order">Ordem no assunto</label>
+                <label class="label" for="af-order">Ordem no assunto principal</label>
                 <input class="input" id="af-order" name="sort_order" type="number" min="0" max="100000" step="1" value="${lesson.sort_order ?? ''}" placeholder="Automático">
               </div>
               <label class="switch-field af-w-full">
@@ -473,6 +744,15 @@ function bind(ctx) {
       } else if (act === 'delete') {
         event.preventDefault();
         removeLesson();
+      } else if (act === 'identify') {
+        event.preventDefault();
+        identify();
+      } else if (act === 'add-topic') {
+        event.preventDefault();
+        addPickedTopic();
+      } else if (act === 'requeue-questions') {
+        event.preventDefault();
+        requeueQuestions(button);
       }
     })
   );
@@ -486,12 +766,42 @@ function bind(ctx) {
 
   state.off.push(
     on(ctx.el, 'change', '[name="subject_id"]', (event, select) => {
+      // os assuntos são da matéria: trocou a matéria, os chips antigos não valem
+      if (state.chips.length) {
+        state.chips = [];
+        toast('Os assuntos foram tirados porque eram da outra matéria.', { type: 'info' });
+      }
+      state.chipsAuto = true;
+      state.identifiedKey = '';
+      state.topicsNote = '';
+      paintTopics();
       loadTopics(select.value);
+      identify({ auto: true });
     })
   );
   state.off.push(
-    on(ctx.el, 'change', '[name="topic_id"]', (event, select) => {
+    on(ctx.el, 'change', '[name="topic_pick"]', (event, select) => {
       loadSubtopics(select.value);
+    })
+  );
+  // título preenchido numa aula sem assunto escolhido à mão: lê sozinho
+  state.off.push(on(ctx.el, 'change', '[name="title"]', () => identify({ auto: true })));
+  state.off.push(
+    on(ctx.el, 'click', '[data-chip-remove]', (event, button) => {
+      event.preventDefault();
+      state.chips.splice(Number(button.dataset.chipRemove), 1);
+      state.chipsAuto = false;
+      paintTopics();
+    })
+  );
+  state.off.push(
+    on(ctx.el, 'click', '[data-chip-up]', (event, button) => {
+      event.preventDefault();
+      const index = Number(button.dataset.chipUp);
+      if (index < 1 || index >= state.chips.length) return;
+      [state.chips[index - 1], state.chips[index]] = [state.chips[index], state.chips[index - 1]];
+      state.chipsAuto = false;
+      paintTopics();
     })
   );
 
@@ -513,7 +823,12 @@ async function renderLessonForm(ctx) {
   render(ctx.el, skeleton('form', 6));
 
   const token = Symbol('admin-lesson-form');
-  state = { ctx, token, id, lesson: null, subjects: [], topics: [], subtopics: [], exams: [], video: null, videoTimer: null, off: [] };
+  state = {
+    ctx, token, id, lesson: null, subjects: [], topics: [], subtopics: [], exams: [], video: null, videoTimer: null, off: [],
+    // chips: assuntos da aula na ordem; chipsAuto: vieram de uma leitura do
+    // título e ninguém mexeu — uma leitura nova pode trocá-los
+    chips: [], chipsAuto: true, identifying: false, identifySeq: 0, identifiedKey: '', topicsNote: '',
+  };
 
   try {
     const [subjects, exams, lesson] = await Promise.all([
@@ -538,18 +853,52 @@ async function renderLessonForm(ctx) {
     return;
   }
 
+  if (state.lesson) {
+    state.chips = chipsFromLesson(state.lesson);
+    // aula gravada: os assuntos dela só mudam por escolha da equipe
+    state.chipsAuto = false;
+  }
+
   render(ctx.el, view());
   bind(ctx);
+  paintTopics();
 
   const query = ctx.query || {};
   const subjectId = state.lesson ? state.lesson.subject_id : query.subject_id || '';
-  const topicId = state.lesson ? state.lesson.topic_id : query.topic_id || '';
-  const subtopicId = state.lesson ? state.lesson.subtopic_id : query.subtopic_id || '';
   const subjectSelect = qs('[name="subject_id"]', ctx.el);
   if (subjectSelect && subjectId) subjectSelect.value = subjectId;
   if (subjectId) {
-    await loadTopics(subjectId, { keep: topicId, keepSubtopic: subtopicId });
+    await loadTopics(subjectId);
     if (!state || state.token !== token) return;
+  }
+
+  // "Salvar e criar outra" traz o assunto principal da aula anterior; ele fica
+  // como chip até o título novo dizer outra coisa
+  if (!state.lesson && query.topic_id) {
+    const topic = state.topics.find((item) => item.id === query.topic_id);
+    if (topic) {
+      let subtopic = null;
+      if (query.subtopic_id) {
+        try {
+          const subs = await api.get('/api/admin/content/subtopics', { query: { topic_id: topic.id } });
+          subtopic = (Array.isArray(subs) ? subs : []).find((item) => item.id === query.subtopic_id) || null;
+        } catch {
+          subtopic = null;
+        }
+        if (!state || state.token !== token) return;
+      }
+      state.chips = [{
+        topic_id: topic.id,
+        subtopic_id: subtopic ? subtopic.id : null,
+        new_topic_name: null,
+        label: null,
+        topic_name: topic.name,
+        subtopic_name: subtopic ? subtopic.name : null,
+        source: 'manual',
+      }];
+      state.chipsAuto = true;
+      paintTopics();
+    }
   }
 
   // "Salvar e criar outra" repassa o que costuma se repetir entre aulas do mesmo

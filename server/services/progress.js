@@ -10,9 +10,14 @@
  *
  * Escopo (syllabus) da prova — decide quais aulas contam no progresso:
  *   1. se a prova tem aulas marcadas em lesson_exams → só essas aulas contam;
- *   2. senão, se a prova tem assuntos em exam_topics → contam as aulas desses assuntos;
+ *   2. senão, se a prova tem assuntos em exam_topics → contam as aulas que cobrem algum
+ *      desses assuntos (principal ou secundário, ver lesson_topics);
  *   3. senão (ou sem prova) → todas as aulas ativas.
  * Assuntos listados: os de exam_topics quando existirem; senão todos os ativos.
+ *
+ * Uma aula pode ter até três assuntos (lesson_topics). Por ASSUNTO ela conta em cada um
+ * deles; por MATÉRIA ela conta uma vez só (l.subject_id) — somar os assuntos de uma
+ * matéria contaria a mesma aula duas ou três vezes.
  *
  * Todas as métricas por aluno (aulas concluídas, acurácia) filtram por user_id.
  */
@@ -71,9 +76,21 @@ function lessonScopeSql(scope, params, alias = 'l') {
   }
   if (scope.hasTopics) {
     params.push(scope.examId);
-    return `EXISTS (SELECT 1 FROM exam_topics et WHERE et.topic_id = ${alias}.topic_id AND et.exam_id = $${params.length})`;
+    // qualquer assunto da aula serve: a aula de Razão, Regra de Três e Porcentagem
+    // é da prova que cobra Porcentagem mesmo que o principal dela não seja cobrado
+    return `EXISTS (SELECT 1 FROM lesson_topics lts
+                      JOIN exam_topics et ON et.topic_id = lts.topic_id AND et.exam_id = $${params.length}
+                     WHERE lts.lesson_id = ${alias}.id)`;
   }
   return 'TRUE';
+}
+
+/**
+ * Condição SQL "a aula cobre este assunto", como principal ou como secundário
+ * (lesson_topics). `topicExpr` é uma expressão SQL (coluna ou parâmetro) do assunto.
+ */
+function lessonCoversTopicSql(topicExpr, alias = 'l') {
+  return `EXISTS (SELECT 1 FROM lesson_topics ltc WHERE ltc.lesson_id = ${alias}.id AND ltc.topic_id = ${topicExpr})`;
 }
 
 /** Cláusula SQL que limita os assuntos ao syllabus da prova. */
@@ -143,6 +160,10 @@ async function getTopicProgress(userId, subjectId, examId, { scope } = {}) {
   const lessonScope = lessonScopeSql(effective, params);
   const topicScope = topicScopeSql(effective, params);
 
+  // a aula conta em todos os assuntos dela, não só no principal (EXISTS: uma vez por assunto,
+  // mesmo quando a aula tem dois subassuntos do mesmo assunto)
+  const lessonOfTopic = lessonCoversTopicSql('t.id');
+
   let weightSql = 'NULL::numeric AS weight';
   if (effective.examId && effective.hasTopics) {
     params.push(effective.examId);
@@ -152,10 +173,11 @@ async function getTopicProgress(userId, subjectId, examId, { scope } = {}) {
   return db.many(
     `SELECT t.id, t.slug, t.name, t.description, t.sort_order, t.subject_id, ${weightSql},
             (SELECT count(*) FROM subtopics st WHERE st.topic_id = t.id AND st.active) AS subtopics_count,
-            (SELECT count(*) FROM lessons l WHERE l.topic_id = t.id AND l.active AND ${lessonScope}) AS lessons_total,
+            (SELECT count(*) FROM lessons l
+              WHERE ${lessonOfTopic} AND l.active AND ${lessonScope}) AS lessons_total,
             (SELECT count(*) FROM lessons l
               JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $1 AND lp.status = 'completed'
-              WHERE l.topic_id = t.id AND l.active AND ${lessonScope}) AS lessons_done,
+              WHERE ${lessonOfTopic} AND l.active AND ${lessonScope}) AS lessons_done,
             (SELECT count(*) FROM questions q WHERE q.topic_id = t.id AND q.active) AS questions_total,
             (SELECT count(*) FROM question_attempts qa WHERE qa.user_id = $1 AND qa.topic_id = t.id) AS questions_answered,
             (SELECT round(100.0 * sum(qa.is_correct::int) / count(*))
@@ -184,6 +206,7 @@ module.exports = {
   subjectInExam,
   resolveScope,
   lessonScopeSql,
+  lessonCoversTopicSql,
   topicScopeSql,
   getSubjectProgress,
   getTopicProgress,

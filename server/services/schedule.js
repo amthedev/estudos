@@ -285,19 +285,34 @@ async function loadPlan(userId, profile) {
     ? Boolean(await db.one('SELECT 1 FROM exam_topics WHERE exam_id = $1 LIMIT 1', [examId]))
     : false;
 
+  // Uma aula pode ter até três assuntos (lesson_topics), mas entra no cronograma uma vez só,
+  // pelo assunto principal (pending_lessons, logo abaixo). Por isso há duas contagens:
+  //   - lessons_total: aulas que COBREM o assunto (principal ou secundário) e que entram no
+  //     plano. Decide se o assunto precisa de um bloco "Estudar: <assunto>": Regra de Três,
+  //     secundário de uma aula de Razão e Proporção, já está coberto por ela. A aula só conta
+  //     se o principal dela está no plano; senão ela nunca é agendada e o assunto ficaria sem
+  //     bloco nenhum.
+  //   - main_lessons_total/done: aulas em que o assunto é o principal. A soma por matéria
+  //     (buildSubjectStates) usa estas para não contar a mesma aula duas ou três vezes.
   const topics = await db.many(
-    `SELECT t.id, t.subject_id, t.name, t.sort_order,
-            coalesce(et.weight, 1) AS weight,
-            (SELECT count(*) FROM lessons l WHERE l.topic_id = t.id AND l.active) AS lessons_total,
+    `WITH plano AS (
+       SELECT t.id, t.subject_id, t.name, t.sort_order, coalesce(et.weight, 1) AS weight
+         FROM topics t
+         LEFT JOIN exam_topics et ON et.topic_id = t.id AND et.exam_id = $2
+        WHERE t.active AND t.subject_id = ANY($3::uuid[])
+          AND ($4::boolean = false OR et.exam_id IS NOT NULL)
+     )
+     SELECT p.id, p.subject_id, p.name, p.sort_order, p.weight,
+            (SELECT count(DISTINCT lt.lesson_id) FROM lesson_topics lt
+               JOIN lessons l ON l.id = lt.lesson_id AND l.active
+              WHERE lt.topic_id = p.id AND l.topic_id IN (SELECT id FROM plano)) AS lessons_total,
+            (SELECT count(*) FROM lessons l WHERE l.topic_id = p.id AND l.active) AS main_lessons_total,
             (SELECT count(*) FROM lessons l
                JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $1 AND lp.status = 'completed'
-              WHERE l.topic_id = t.id AND l.active) AS lessons_done,
-            (SELECT count(*) FROM questions q WHERE q.topic_id = t.id AND q.active) AS questions_total
-       FROM topics t
-       LEFT JOIN exam_topics et ON et.topic_id = t.id AND et.exam_id = $2
-      WHERE t.active AND t.subject_id = ANY($3::uuid[])
-        AND ($4::boolean = false OR et.exam_id IS NOT NULL)
-      ORDER BY t.subject_id, coalesce(et.weight, 1) DESC, t.sort_order, t.name, t.id`,
+              WHERE l.topic_id = p.id AND l.active) AS main_lessons_done,
+            (SELECT count(*) FROM questions q WHERE q.topic_id = p.id AND q.active) AS questions_total
+       FROM plano p
+      ORDER BY p.subject_id, p.weight DESC, p.sort_order, p.name, p.id`,
     [userId, examId, subjectIds, useSyllabus]
   );
 
@@ -363,7 +378,8 @@ async function loadPlan(userId, profile) {
       name: topic.name,
       weight: Number(topic.weight) || 1,
       lessons_total: Number(topic.lessons_total) || 0,
-      lessons_done: Number(topic.lessons_done) || 0,
+      main_lessons_total: Number(topic.main_lessons_total) || 0,
+      main_lessons_done: Number(topic.main_lessons_done) || 0,
       questions_total: Number(topic.questions_total) || 0,
       pending_lessons: (lessonsByTopic.get(topic.id) || []).slice(),
       studied: studiedTopicIds.has(topic.id),
@@ -386,8 +402,9 @@ function buildSubjectStates(plan, profile, examDate, today) {
 
   for (const subject of plan.subjects) {
     const topics = plan.topicsBySubject.get(subject.id) || [];
-    const lessonsTotal = topics.reduce((sum, topic) => sum + topic.lessons_total, 0);
-    const lessonsDone = topics.reduce((sum, topic) => sum + topic.lessons_done, 0);
+    // pelo principal: cada aula conta uma vez na matéria
+    const lessonsTotal = topics.reduce((sum, topic) => sum + topic.main_lessons_total, 0);
+    const lessonsDone = topics.reduce((sum, topic) => sum + topic.main_lessons_done, 0);
     const progress = lessonsTotal > 0 ? clamp(lessonsDone / lessonsTotal, 0, 1) : 0;
 
     const accuracy = plan.accuracyBySubject.get(subject.id);

@@ -10,6 +10,11 @@
 }
 
 .xim-current-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
   margin-bottom: var(--s-4);
 }
 .xim-current-title {
@@ -261,4 +266,94 @@
   margin: 0.35rem 0 0;
   font-size: 0.8125rem;
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------
+   Remover as questões de uma prova (.xrm-)
+   A janela que vem antes de apagar. O número de questões e o de alunos
+   afetados são o que decide, então ganham o peso; o resto é lista miúda.
+   --------------------------------------------------------------------- */
+.xrm .alert {
+  margin-bottom: var(--s-4);
+}
+.xrm-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: 0;
+  color: var(--text-2);
+}
+.xrm-lead {
+  margin: 0 0 var(--s-2);
+  color: var(--text-2);
+}
+.xrm-lead strong {
+  color: var(--text);
+}
+.xrm-lead-main {
+  font-size: var(--fs-md);
+}
+.xrm-list {
+  margin: var(--s-3) 0 0;
+  padding-left: var(--s-5);
+  display: grid;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.xrm-orphans {
+  display: flex;
+  margin-top: var(--s-4);
+  padding: var(--s-3);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--card-2);
+}
+/* Leituras sem prova anterior: uma caixa por leitura, dentro de um quadro só. */
+.xrm-soltas {
+  display: grid;
+  gap: var(--s-2);
+  min-width: 0;
+  margin: var(--s-4) 0 0;
+  padding: var(--s-3);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--card-2);
+}
+.xrm-soltas-title {
+  padding: 0 var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.xrm-soltas > .check-desc {
+  margin: 0;
+}
+.xrm-solta {
+  display: flex;
+  min-width: 0;
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--border);
+}
+.xrm-solta strong {
+  overflow-wrap: anywhere;
+}
+.xrm-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: var(--s-2);
+  color: var(--warning);
+}
+.xrm-warn .icon {
+  flex: none;
+  margin-top: 1px;
+}
+.xrm-note {
+  margin: var(--s-4) 0 var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+.xrm-confirm {
+  margin-bottom: 0;
 }

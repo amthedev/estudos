@@ -4,13 +4,18 @@
  * Questões elaboradas por IA.
  *
  *   const questionAi = require('./question-ai');
- *   const set  = await questionAi.afterLesson(lessonId, { userId, difficulty: 2 });
- *   const novas = await questionAi.fillPool({ topicId, difficulty, count, userId });
+ *   const alvos = await questionAi.lessonTargets(lesson);          // 3 alvos pelos assuntos da aula
+ *   const banco = await questionAi.bankCandidates({ topicIds, difficulty, userId });
+ *   const casadas = questionAi.assignCandidates(alvos, banco);      // [{ target, question_id|null }]
+ *   const novas = await questionAi.generateItems({ subject, lesson, difficulty, targets, userId });
+ *                                                                   // [{ id, index, target }]
+ *   const pool = await questionAi.fillPool({ topicId, difficulty, count, userId });
  *
- * Duas situações pedem questão que ainda não existe: logo depois da aula, quando
- * o aluno quer praticar o que acabou de ver e o banco não tem nada daquele
- * assunto na dificuldade escolhida; e no simulado, quando o aluno pede 80
- * questões e o banco tem 12.
+ * Três situações pedem questão que ainda não existe: logo depois da aula,
+ * quando o aluno quer praticar o que acabou de ver e o banco não tem nada
+ * daquele assunto na dificuldade escolhida; no cadastro da aula, quando a fila
+ * de services/lesson-questions deixa as questões prontas antes do primeiro
+ * aluno; e no simulado, quando o aluno pede 80 questões e o banco tem 12.
  *
  * A questão gerada é GRAVADA em `questions`, como qualquer outra. Não é
  * capricho: tentativa, caderno de erros, revisão e simulado guardam
@@ -89,7 +94,11 @@ const GERACOES_POR_DIA = 12;
  * chega perto dele.
  */
 const TENTATIVAS_POR_DIA = 30;
-/** Quantas questões a prática pós-aula entrega (uma por assunto da aula). */
+/**
+ * Quantas questões a prática pós-aula entrega. São sempre três, divididas entre
+ * os assuntos da aula (ver distribute): o cliente decidiu que a prática não
+ * encolhe quando a aula tem um assunto só.
+ */
 const QUESTOES_POR_AULA = 3;
 
 const LETRAS = ['A', 'B', 'C', 'D', 'E'];
@@ -129,33 +138,102 @@ function trimText(value, max) {
 // ---------------------------------------------------------------------------
 
 /**
- * Os assuntos que a aula cobre.
+ * Quantas das `count` questões cabem a cada um dos `n` assuntos, na ordem.
  *
- * O cliente pediu "uma questão de cada assunto da aula". No modelo, uma aula
- * pertence a um assunto (`topic`) e, quando o administrador detalhou, a um
- * subassunto. Os assuntos da aula são então os SUBASSUNTOS do assunto dela —
- * dado que já existe no conteúdo programático, com o subassunto da própria
- * aula na frente. Quando o assunto não foi detalhado em subassuntos, o alvo é
- * o assunto inteiro, e a IA recebe a aula como recorte.
+ * A regra é do cliente: três assuntos, uma de cada; dois, duas do primeiro e
+ * uma do segundo; um, as três dele. O primeiro assunto do título é o que a
+ * aula mais trabalha, e é ele que leva a sobra.
  *
- * @returns {Promise<Array<{ subtopic_id: string|null, name: string }>>}
+ *   distribute(3) → [1, 1, 1]   distribute(2) → [2, 1]   distribute(1) → [3]
+ */
+function distribute(n, count = QUESTOES_POR_AULA) {
+  const total = Math.max(0, Math.floor(Number(n) || 0));
+  if (!total) return [];
+  const base = Math.floor(count / total);
+  const sobra = count % total;
+  return Array.from({ length: total }, (_, index) => base + (index < sobra ? 1 : 0));
+}
+
+/**
+ * Os assuntos da aula, na ordem do título (lesson_topics). Assunto desativado
+ * fica de fora: o aluno não acharia a página dele. Aula sem nenhuma linha (não
+ * deveria existir — o gatilho da migration 223 grava a primeira) cai no
+ * assunto principal, para a prática nunca ficar sem alvo.
+ */
+async function lessonTopicsOf(lesson) {
+  const rows = await db.many(
+    `SELECT lt.position, lt.topic_id, t.name AS topic_name, t.description AS topic_description,
+            lt.subtopic_id, st.name AS subtopic_name
+       FROM lesson_topics lt
+       JOIN topics t ON t.id = lt.topic_id AND t.active
+       LEFT JOIN subtopics st ON st.id = lt.subtopic_id
+      WHERE lt.lesson_id = $1
+      ORDER BY lt.position`,
+    [lesson.id]
+  );
+  if (rows.length) return rows;
+  return [
+    {
+      position: 1,
+      topic_id: lesson.topic_id,
+      topic_name: lesson.topic_name,
+      topic_description: lesson.topic_description || null,
+      subtopic_id: lesson.subtopic_id || null,
+      subtopic_name: lesson.subtopic_name || null,
+    },
+  ];
+}
+
+/**
+ * Os alvos da prática da aula: uma vaga por questão, com o assunto de cada uma.
+ *
+ * As três vagas são divididas entre os assuntos da aula (distribute). Um
+ * assunto com uma vaga é cobrado inteiro — ou só no subassunto, quando a aula
+ * foi ligada a ele. Um assunto com duas ou três vagas espalha as questões pelos
+ * subassuntos dele, com o da aula na frente, para não sair três vezes a mesma
+ * coisa; sem subassunto cadastrado, as vagas repetem o assunto inteiro.
+ *
+ * @returns {Promise<Array<{ slot: number, topic_id: string, topic_name: string,
+ *   topic_description: string|null, subtopic_id: string|null, name: string }>>}
  */
 async function lessonTargets(lesson, count = QUESTOES_POR_AULA) {
-  const subtopics = await db.many(
-    `SELECT id, name FROM subtopics
-      WHERE topic_id = $1 AND active
-      ORDER BY (id = $2) DESC, sort_order, name`,
-    [lesson.topic_id, lesson.subtopic_id]
-  );
+  const topics = await lessonTopicsOf(lesson);
+  const vagas = distribute(topics.length, count);
+  const comVariasVagas = topics.filter((_, index) => vagas[index] > 1).map((topic) => topic.topic_id);
+  const subtopics = comVariasVagas.length
+    ? await db.many(
+        `SELECT id, topic_id, name FROM subtopics
+          WHERE topic_id = ANY($1::uuid[]) AND active
+          ORDER BY sort_order, name`,
+        [comVariasVagas]
+      )
+    : [];
 
-  if (!subtopics.length) {
-    return Array.from({ length: count }, () => ({ subtopic_id: null, name: lesson.topic_name }));
-  }
-  const alvos = subtopics.slice(0, count).map((row) => ({ subtopic_id: row.id, name: row.name }));
-  // Assunto com menos subassuntos que o pedido: repete os que existem, para o
-  // aluno receber as três questões mesmo assim.
-  while (alvos.length < count) alvos.push(alvos[alvos.length % subtopics.length]);
-  return alvos;
+  const alvos = [];
+  topics.forEach((topic, index) => {
+    const base = {
+      topic_id: topic.topic_id,
+      topic_name: topic.topic_name,
+      topic_description: topic.topic_description || null,
+    };
+    const proprio = topic.subtopic_id ? { subtopic_id: topic.subtopic_id, name: topic.subtopic_name || topic.topic_name } : null;
+    const k = vagas[index];
+    if (k <= 0) return;
+    if (k === 1) {
+      alvos.push({ ...base, ...(proprio || { subtopic_id: null, name: topic.topic_name }) });
+      return;
+    }
+    const recortes = [
+      ...(proprio ? [proprio] : []),
+      ...subtopics
+        .filter((row) => row.topic_id === topic.topic_id && row.id !== topic.subtopic_id)
+        .map((row) => ({ subtopic_id: row.id, name: row.name })),
+    ];
+    for (let i = 0; i < k; i += 1) {
+      alvos.push({ ...base, ...(recortes.length ? recortes[i % recortes.length] : { subtopic_id: null, name: topic.topic_name }) });
+    }
+  });
+  return alvos.map((alvo, slot) => ({ slot, ...alvo }));
 }
 
 // ---------------------------------------------------------------------------
@@ -163,44 +241,72 @@ async function lessonTargets(lesson, count = QUESTOES_POR_AULA) {
 // ---------------------------------------------------------------------------
 
 /**
- * Candidatas do banco para um assunto e uma dificuldade, sem o que o aluno
+ * Candidatas do banco para os assuntos e a dificuldade, sem o que o aluno
  * respondeu há pouco. Questão de prova vem antes de questão da IA: quando as
  * duas servem, a de prova é melhor.
+ *
+ * O teto vale POR ASSUNTO: com um teto só para todos, o assunto com mil
+ * questões no banco tomava as vagas do que tem dez.
+ *
+ * @param {{ topicIds?: string[], topicId?: string, difficulty: number, userId: string|null, limit?: number }} options
  */
-async function bankCandidates({ topicId, difficulty, userId, limit = 30 }) {
+async function bankCandidates({ topicIds, topicId, difficulty, userId, limit = 30 }) {
+  const ids = Array.from(new Set([...(Array.isArray(topicIds) ? topicIds : []), ...(topicId ? [topicId] : [])].filter(Boolean)));
+  if (!ids.length) return [];
   return db.many(
-    `SELECT q.id, q.subtopic_id, q.generated_by_ai
-       FROM questions q
-      WHERE q.active
-        AND q.topic_id = $1
-        AND q.difficulty = $2
-        AND NOT EXISTS (
-          SELECT 1 FROM question_attempts a
-           WHERE a.user_id = $3 AND a.question_id = q.id
-             AND a.answered_at > now() - ($4::int * interval '1 day'))
-      ORDER BY q.generated_by_ai, random()
-      LIMIT $5`,
-    [topicId, difficulty, userId, DIAS_SEM_REPETIR, limit]
+    `SELECT c.id, c.topic_id, c.subtopic_id, c.generated_by_ai
+       FROM (
+         SELECT q.id, q.topic_id, q.subtopic_id, q.generated_by_ai,
+                row_number() OVER (PARTITION BY q.topic_id ORDER BY q.generated_by_ai, random()) AS ordem
+           FROM questions q
+          WHERE q.active
+            AND q.topic_id = ANY($1::uuid[])
+            AND q.difficulty = $2
+            AND NOT EXISTS (
+              SELECT 1 FROM question_attempts a
+               WHERE a.user_id = $3 AND a.question_id = q.id
+                 AND a.answered_at > now() - ($4::int * interval '1 day'))
+       ) c
+      WHERE c.ordem <= $5
+      ORDER BY c.topic_id, c.ordem`,
+    [ids, difficulty, userId, DIAS_SEM_REPETIR, limit]
   );
 }
 
-/** Distribui as candidatas entre os alvos: cada alvo fica com uma questão do seu subassunto. */
+/**
+ * Distribui as candidatas entre os alvos, cada alvo com uma questão do SEU
+ * assunto — nunca de outro: a questão de Porcentagem não ocupa a vaga de Regra
+ * de Três, senão a prática promete três assuntos e entrega dois.
+ *
+ * Duas passadas: primeiro os alvos que pedem um subassunto pegam a questão
+ * exata; depois os que sobraram pegam qualquer uma do assunto. Numa passada só,
+ * o alvo sem par exato podia levar justamente a questão exata do alvo seguinte.
+ *
+ * @returns {Array<{ target: object, question_id: string|null }>} na ordem dos alvos
+ */
 function assignCandidates(targets, candidates) {
-  const livres = [...candidates];
   const usados = new Set();
   const take = (predicate) => {
-    const index = livres.findIndex((row) => !usados.has(row.id) && predicate(row));
-    if (index < 0) return null;
-    const row = livres[index];
+    const row = candidates.find((candidate) => !usados.has(candidate.id) && predicate(candidate));
+    if (!row) return null;
     usados.add(row.id);
     return row;
   };
+  // alvo sem assunto (o formato antigo, de um assunto só) aceita qualquer candidata
+  const doAssunto = (alvo, row) => !alvo.topic_id || row.topic_id === alvo.topic_id;
 
-  return targets.map((alvo) => {
-    // exatamente o subassunto do alvo; se não houver, qualquer questão do assunto
-    const exata = alvo.subtopic_id ? take((row) => row.subtopic_id === alvo.subtopic_id) : null;
-    return { target: alvo, question_id: (exata || take(() => true) || {}).id || null };
-  });
+  const out = targets.map((alvo) => ({ target: alvo, question_id: null }));
+  for (const item of out) {
+    if (!item.target.subtopic_id) continue;
+    const row = take((candidate) => doAssunto(item.target, candidate) && candidate.subtopic_id === item.target.subtopic_id);
+    if (row) item.question_id = row.id;
+  }
+  for (const item of out) {
+    if (item.question_id) continue;
+    const row = take((candidate) => doAssunto(item.target, candidate));
+    if (row) item.question_id = row.id;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,9 +341,31 @@ async function assertDailyQuota(userId) {
   }
 }
 
+/**
+ * Os assuntos que entram no prompt: os dos alvos (aula com vários assuntos),
+ * na ordem em que aparecem, ou o assunto único de quem chamou.
+ */
+function promptTopics({ topic, targets }) {
+  const vistos = new Map();
+  for (const alvo of targets) {
+    if (alvo && alvo.topic_id && !vistos.has(alvo.topic_id)) {
+      vistos.set(alvo.topic_id, { id: alvo.topic_id, name: alvo.topic_name, description: alvo.topic_description });
+    }
+  }
+  if (vistos.size) return [...vistos.values()];
+  return topic ? [topic] : [];
+}
+
+/** Como o item aparece na lista do prompt: o assunto e, quando há, o recorte dele. */
+function targetLabel(alvo) {
+  if (alvo.topic_name && alvo.name && alvo.name !== alvo.topic_name) return `${alvo.topic_name} — ${alvo.name}`;
+  return alvo.name || alvo.topic_name || '';
+}
+
 /** Monta o prompt de elaboração de questões a partir do conteúdo da aula. */
 function buildQuestionsPrompt({ subject, topic, lesson, exam, difficulty, targets }) {
   const nivel = DIFICULDADES[difficulty];
+  const assuntos = promptTopics({ topic, targets });
   const system = [
     'Você é um elaborador de questões objetivas para o ENEM, para a Academia do Barro Branco e para vestibulares brasileiros.',
     'Escreva sempre em português do Brasil, com o rigor de banca: enunciado autossuficiente, uma única alternativa correta',
@@ -249,8 +377,17 @@ function buildQuestionsPrompt({ subject, topic, lesson, exam, difficulty, target
 
   const lines = [];
   lines.push(`Matéria: ${subject.name}`);
-  lines.push(`Assunto: ${topic.name}`);
-  if (topic.description) lines.push(`Ementa do assunto: ${trimText(topic.description, 400)}`);
+  if (assuntos.length === 1) {
+    lines.push(`Assunto: ${assuntos[0].name}`);
+    if (assuntos[0].description) lines.push(`Ementa do assunto: ${trimText(assuntos[0].description, 400)}`);
+  } else if (assuntos.length > 1) {
+    // Com marcador e sem número: a lista numerada do prompt é a dos itens a
+    // elaborar, e o "target" de cada questão aponta para ela.
+    lines.push('Assuntos da aula:');
+    for (const assunto of assuntos) {
+      lines.push(`- ${assunto.name}${assunto.description ? `: ${trimText(assunto.description, 300)}` : ''}`);
+    }
+  }
   if (exam) {
     lines.push(`Prova do aluno: ${exam.name}${exam.board ? ` (banca ${exam.board})` : ''}`);
     lines.push(`Estilo: enunciado no formato cobrado por ${exam.short_name || exam.name}.`);
@@ -268,7 +405,7 @@ function buildQuestionsPrompt({ subject, topic, lesson, exam, difficulty, target
   lines.push(`Dificuldade: ${nivel.label} — ${nivel.guia}`);
   lines.push('');
   lines.push(`Elabore ${targets.length} ${targets.length === 1 ? 'questão' : 'questões'}, uma para cada item desta lista:`);
-  targets.forEach((alvo, index) => lines.push(`${index + 1}. ${alvo.name}`));
+  targets.forEach((alvo, index) => lines.push(`${index + 1}. ${targetLabel(alvo)}`));
   lines.push('');
   lines.push('Devolva um JSON exatamente com esta estrutura:');
   lines.push('{');
@@ -288,6 +425,9 @@ function buildQuestionsPrompt({ subject, topic, lesson, exam, difficulty, target
   lines.push('');
   lines.push('Regras obrigatórias:');
   lines.push(`- "target" é o número do item da lista acima a que a questão corresponde (de 1 a ${targets.length}).`);
+  if (assuntos.length > 1) {
+    lines.push('- Cada questão cobra somente o assunto do seu item; não misture os assuntos de itens diferentes.');
+  }
   lines.push('- Cinco alternativas, letras A, B, C, D e E, e exatamente uma com "is_correct": true.');
   lines.push('- A questão tem que ser respondível apenas com o enunciado: nada de "segundo a aula" ou "como vimos".');
   lines.push('- Não numere a questão nem escreva "Questão 1" dentro do enunciado.');
@@ -323,11 +463,16 @@ function normalizeGenerated(raw, { targets, difficulty }) {
   if (new Set(options.map((option) => option.letter)).size !== options.length) return null;
   if (options.filter((option) => option.is_correct).length !== 1) return null;
 
-  const index = Number.parseInt(raw && raw.target, 10);
-  const target = targets[Number.isInteger(index) && index >= 1 && index <= targets.length ? index - 1 : 0];
+  // Item que não diz a que alvo pertence fica sem alvo (null): quem chamou
+  // decide onde ele cabe. Antes ia para o primeiro, e numa aula de três
+  // assuntos a questão de Porcentagem podia ser gravada como Regra de Três.
+  const numero = Number.parseInt(raw && raw.target, 10);
+  let index = Number.isInteger(numero) && numero >= 1 && numero <= targets.length ? numero - 1 : null;
+  if (index === null && targets.length === 1) index = 0;
 
   return {
-    target,
+    index,
+    target: index === null ? null : targets[index],
     statement,
     options: options.map((option, sort) => ({ ...option, sort_order: sort })),
     resolution: trimText(raw && raw.resolution, 4000) || null,
@@ -336,8 +481,17 @@ function normalizeGenerated(raw, { targets, difficulty }) {
   };
 }
 
-/** Grava a questão elaborada e devolve o id. */
+/**
+ * Grava a questão elaborada e devolve o id.
+ *
+ * O assunto é o do ALVO da questão quando o alvo traz um (aula com vários
+ * assuntos); `topicId` é só o assunto de quem chamou com um assunto único.
+ * Tentativa, caderno de erros e revisão contam pelo topic_id da questão:
+ * gravar a questão de Regra de Três no assunto principal da aula jogaria o
+ * desempenho do aluno no assunto errado.
+ */
 async function persistGenerated(client, item, { subjectId, topicId, lessonId, source }) {
+  const alvo = item.target || null;
   const row = await client.one(
     `INSERT INTO questions (subject_id, topic_id, subtopic_id, statement, resolution, explanation,
                             difficulty, source, generated_by_ai, lesson_id, active)
@@ -345,8 +499,8 @@ async function persistGenerated(client, item, { subjectId, topicId, lessonId, so
      RETURNING id`,
     [
       subjectId,
-      topicId,
-      item.target ? item.target.subtopic_id : null,
+      (alvo && alvo.topic_id) || topicId,
+      alvo ? alvo.subtopic_id || null : null,
       item.statement,
       item.resolution,
       item.explanation,
@@ -366,12 +520,48 @@ async function persistGenerated(client, item, { subjectId, topicId, lessonId, so
 }
 
 /**
- * Pede à IA as questões que faltam e grava.
- * @returns {Promise<string[]>} ids das questões criadas, na ordem dos alvos
+ * Põe cada questão devolvida no seu alvo.
+ *
+ * Questão com alvo válido fica nele (duas para o mesmo alvo ficam as duas:
+ * vão para o banco do assunto certo). Questão sem alvo só ganha um quando
+ * não há escolha: ela é a única sem alvo e sobrou uma vaga só. Em qualquer
+ * outro caso é descartada. Duas sem alvo para duas vagas, casadas pela ordem
+ * em que a IA respondeu, podiam trocar os assuntos — a de Porcentagem gravada
+ * como Regra de Três, com a tentativa e o caderno de erros do aluno contando
+ * no assunto errado. A vaga que fica vazia é pedida de novo por quem chamou.
  */
-async function generate({
+function placeGenerated(prontas, pedidos) {
+  const comAlvo = prontas.filter((item) => item.index !== null);
+  const semAlvo = prontas.filter((item) => item.index === null);
+  const cobertos = new Set(comAlvo.map((item) => item.index));
+  const vazias = pedidos.map((_, index) => index).filter((index) => !cobertos.has(index));
+  const out = [...comAlvo];
+  if (semAlvo.length === 1 && vazias.length === 1) {
+    out.push({ ...semAlvo[0], index: vazias[0], target: pedidos[vazias[0]] });
+  }
+  // A IA responde na ordem que quiser; quem chamou lê na ordem dos alvos.
+  return out.sort((a, b) => a.index - b.index);
+}
+
+/**
+ * Pede à IA as questões dos alvos e grava.
+ *
+ * Cada questão volta com o índice do alvo a que responde, para quem chamou
+ * casar pelo alvo e não pela posição: se a IA devolver duas questões do
+ * primeiro assunto e nenhuma do segundo, a vaga do segundo continua vazia em
+ * vez de receber uma questão de outro assunto.
+ *
+ * @param {object} options
+ * @param {{ id: string, name: string }} options.subject
+ * @param {{ id: string, name: string, description?: string }} [options.topic]
+ *   assunto único de quem chama sem alvos por assunto (simulado, banco)
+ * @param {Array<{ name: string, topic_id?: string, topic_name?: string, subtopic_id?: string|null }>} options.targets
+ * @param {string|null} options.userId  null = trabalho da plataforma (sem cota diária)
+ * @returns {Promise<Array<{ id: string, index: number, target: object }>>} na ordem dos alvos
+ */
+async function generateItems({
   subject,
-  topic,
+  topic = null,
   lesson,
   exam,
   difficulty,
@@ -407,27 +597,26 @@ async function generate({
   });
 
   const brutas = Array.isArray(result.data && result.data.questions) ? result.data.questions : [];
-  const prontas = brutas
-    .map((raw) => normalizeGenerated(raw, { targets: pedidos, difficulty }))
-    .filter(Boolean)
-    // A IA responde na ordem que quiser. Quem chamou monta o conjunto contando
-    // que o primeiro id corresponda ao primeiro assunto pedido.
-    .sort((a, b) => pedidos.indexOf(a.target) - pedidos.indexOf(b.target));
+  const prontas = placeGenerated(
+    brutas.map((raw) => normalizeGenerated(raw, { targets: pedidos, difficulty })).filter(Boolean),
+    pedidos
+  );
 
   if (!prontas.length) {
     throw new AppError(503, 'ai_unavailable', 'A IA não conseguiu elaborar as questões agora. Tente novamente em instantes.');
   }
 
+  const sobre = (topic && topic.name) || (pedidos[0] && (pedidos[0].topic_name || pedidos[0].name)) || subject.name;
   const source = lesson
     ? `Questão elaborada por IA a partir da aula "${trimText(lesson.title, 120)}"`
-    : `Questão elaborada por IA sobre ${trimText(topic.name, 120)}`;
+    : `Questão elaborada por IA sobre ${trimText(sobre, 120)}`;
 
   return db.tx(async (client) => {
-    const ids = [];
+    const criadas = [];
     for (const item of prontas) {
       const id = await persistGenerated(client, item, {
         subjectId: subject.id,
-        topicId: topic.id,
+        topicId: topic ? topic.id : null,
         lessonId: lesson ? lesson.id : null,
         source,
       });
@@ -440,10 +629,19 @@ async function generate({
           [id, examId]
         );
       }
-      ids.push(id);
+      criadas.push({ id, index: item.index, target: item.target });
     }
-    return ids;
+    return criadas;
   });
+}
+
+/**
+ * Como generateItems, devolvendo só os ids, na ordem dos alvos. É o formato de
+ * quem não precisa saber o alvo de cada questão (simulado, banco do aluno).
+ * @returns {Promise<string[]>}
+ */
+async function generate(options) {
+  return (await generateItems(options)).map((item) => item.id);
 }
 
 /** Assuntos elegíveis para o recorte do simulado, dos mais cobrados para os menos. */
@@ -577,12 +775,16 @@ module.exports = {
   PRAZO_INTERATIVO_MS,
   difficultyOf,
   assertDailyQuota,
+  distribute,
+  lessonTopicsOf,
   lessonTargets,
   bankCandidates,
   assignCandidates,
   buildQuestionsPrompt,
   normalizeGenerated,
+  placeGenerated,
   generate,
+  generateItems,
   fillableTopics,
   fillPool,
 };

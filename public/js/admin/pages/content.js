@@ -649,6 +649,34 @@ async function remove(type, id) {
       toast((err && err.message) || 'Não foi possível excluir.', { type: 'error' });
       return;
     }
+    // Assunto que só aparece como secundário (e as questões que a plataforma preparou para
+    // essas aulas nele, sem uso): as aulas não somem, só perdem este assunto. O servidor
+    // manda a contagem e espera a confirmação explícita.
+    if (type === 'topic' && err.details && err.details.secondary_only) {
+      const emAulas = Number(err.details.secondary_lessons) > 0;
+      modal({
+        title: emAulas ? 'Este assunto está em outras aulas' : 'Este assunto só tem questões preparadas para aulas',
+        size: 'sm',
+        danger: true,
+        body: html`<p class="text-2">${err.message}</p>`,
+        actions: [
+          { label: 'Cancelar', variant: 'ghost' },
+          {
+            label: 'Excluir mesmo assim',
+            variant: 'danger',
+            onClick: async () => {
+              await api.del(`/api/admin/content/${ENDPOINT[type]}/${id}`, { confirm: true });
+              toast(emAulas ? 'Assunto excluído. As aulas continuam com os outros assuntos.' : 'Assunto excluído.', {
+                type: 'success',
+              });
+              if (state.selectedTopic === id) state.selectedTopic = null;
+              await reload({ keepState: true });
+            },
+          },
+        ],
+      });
+      return;
+    }
     const canDisable = type !== 'area';
     modal({
       title: `Não é possível excluir esta ${label}`,

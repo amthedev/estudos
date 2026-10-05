@@ -15,6 +15,7 @@
  *     initialFilters: { status: 'active' },
  *     params: { extra: 1 },                       // parâmetros fixos enviados a cada fetch
  *     rowKey: 'id',                               // usado como data-id nas linhas
+ *     onPaint(items) {},                          // depois de cada desenho (ex.: sincronizar caixas de seleção)
  *   });
  *   table.reload(); table.setSearch(q); table.setFilter(key, value); table.setParams({...}); table.destroy();
  *
@@ -302,6 +303,7 @@ export function mountTable(el, opts = {}) {
     } else {
       countEl.textContent = '';
     }
+    if (typeof opts.onPaint === 'function') opts.onPaint(state.items.slice());
   }
 
   // ---------------------------------------------------------------- dados

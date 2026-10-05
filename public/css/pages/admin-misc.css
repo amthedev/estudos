@@ -96,6 +96,137 @@
   gap: 4px;
 }
 
+/* Assuntos da aula (até três): um por linha, o principal em destaque quando
+   há mais de um. */
+.al-topics {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 34ch;
+}
+
+.al-topics.is-multi {
+  gap: 3px;
+}
+
+/* Com mais de um assunto, cada um ganha um marcador: nome comprido quebra em
+   várias linhas e sem ele não dá para ver onde um termina e o outro começa. */
+.al-topics.is-multi .al-topic {
+  display: flex;
+  gap: 6px;
+}
+
+.al-topics.is-multi .al-topic::before {
+  content: '•';
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+
+.al-topic.is-main {
+  color: var(--text);
+}
+
+.al-col-pick {
+  width: 40px;
+}
+
+.al-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px 0;
+  cursor: pointer;
+}
+
+.al-pick input {
+  cursor: pointer;
+}
+
+.al-questions {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+/* A aula que está esperando depois de uma falha: o motivo fica no title. */
+.al-questions-retry {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* Barra das aulas marcadas, acima da tabela. */
+.al-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-4);
+  margin-bottom: var(--s-4);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+}
+
+.al-bulk[hidden] {
+  display: none;
+}
+
+.al-bulk-count {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.al-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* Resultado da reidentificação. */
+.al-reid-summary {
+  margin: 0 0 var(--s-1);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.al-reid-list {
+  list-style: none;
+  margin: var(--s-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.al-reid-list li {
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.al-reid-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.al-reid-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.al-reid-head a {
+  color: var(--text);
+  font-weight: 500;
+}
+
 /* ------------------------------------------------------------- questões */
 .qa-statement {
   display: flex;
