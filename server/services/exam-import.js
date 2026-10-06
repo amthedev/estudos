@@ -32,6 +32,7 @@ const db = require('../db/pool');
 const ai = require('./ai');
 const { getSetting } = require('./settings');
 const { AppError } = require('../middleware/errors');
+const answerKeys = require('./exam-reader/answer-key');
 
 /**
  * Tamanho alvo de um lote de texto. Cerca de cinco questões de prova.
@@ -422,6 +423,8 @@ function clipped(value, max = 2200) {
   return `${content.slice(0, side)} […] ${content.slice(-side)}`;
 }
 
+const OPCAO_DE_IDIOMA = { ingles: 'opção de inglês', espanhol: 'opção de espanhol' };
+
 /** Prompt compacto: o modelo classifica; não precisa devolver o PDF inteiro. */
 function buildClassificationPrompt({ questions, exam, year, board, catalog, answerKey }) {
   const system = [
@@ -456,7 +459,10 @@ function buildClassificationPrompt({ questions, exam, year, board, catalog, answ
   lines.push('');
 
   questions.forEach((question, index) => {
-    lines.push(`ITEM ${index + 1} | questão ${question.number || 'sem número'}`);
+    // A opção de idioma ajuda a escolher entre inglês e espanhol, que no ENEM
+    // dividem o mesmo número de questão.
+    const opcao = OPCAO_DE_IDIOMA[question.variant] ? ` (${OPCAO_DE_IDIOMA[question.variant]})` : '';
+    lines.push(`ITEM ${index + 1} | questão ${question.number || 'sem número'}${opcao}`);
     lines.push(`Enunciado: ${clipped(question.statement)}`);
     for (const letter of LETRAS) lines.push(`${letter}: ${clipped(question[letter], 650)}`);
     lines.push('');
@@ -640,11 +646,11 @@ function normalizeExtracted(raw, { answerKey, exam, year, board }) {
 }
 
 /**
- * Transcreve um lote da prova.
- * @returns {Promise<Array<object>>} linhas no formato da importação de questões
+ * A chamada de IA da leitura de prova: o modelo configurado e um prazo por
+ * tentativa. Compartilhada pela varredura em lotes (extract) e pela leitura no
+ * servidor (classify).
  */
-async function extract({ batch, exam, year, board, answerKey, userId }) {
-  const catalog = await taxonomy(exam ? exam.id : null);
+async function aiCaller({ userId }) {
   // Transcrição aceita um modelo mais simples e rápido que o do tutor. Fica
   // configurável porque é aqui que o tempo de cada lote se decide.
   const model = (await getSetting('openrouter_extract_model')) || (await getSetting('openrouter_model')) || undefined;
@@ -678,59 +684,105 @@ async function extract({ batch, exam, year, board, answerKey, userId }) {
       runWithSignal: comPrazo,
     });
 
-  try {
-    const parsed = parseBatchQuestions(batch.text).slice(0, MAX_QUESTOES_POR_LOTE);
-    if (parsed.length) {
-      const compactCatalog = relevantCatalog(catalog, parsed, { exam, year });
-      const { messages } = buildClassificationPrompt({
-        questions: parsed,
+  return { callJson, estourou: () => estourou };
+}
+
+/**
+ * Classifica questões já transcritas (no máximo MAX_QUESTOES_POR_LOTE): uma
+ * chamada para o lote e uma repescagem só com o que ficou sem assunto.
+ * @returns {Promise<Array<object>>} as questões com subject_slug, topic_slug, difficulty e correct
+ */
+async function classifyWith(questions, { catalog, exam, year, board, answerKey, callJson }) {
+  const compactCatalog = relevantCatalog(catalog, questions, { exam, year });
+  const { messages } = buildClassificationPrompt({
+    questions,
+    exam,
+    year,
+    board,
+    catalog: compactCatalog,
+    answerKey,
+  });
+  const result = await callJson({
+    messages,
+    maxTokens: CLASSIFY_MAX_TOKENS,
+    retryMaxTokens: CLASSIFY_RETRY_MAX_TOKENS,
+  });
+  const itens = mergeClassifications(questions, result.data, compactCatalog);
+
+  // Uma segunda passada só com o que ficou sem assunto. O modelo costuma
+  // pular itens no fim da lista, ou responder um par que não existe no
+  // catálogo; perguntar de novo, com menos itens de cada vez, recupera a
+  // maioria — e é mais barato que deixar a questão esperando conferência
+  // manual, que é o destino de quem sai daqui sem classificação.
+  const pendentes = [];
+  itens.forEach((item, index) => {
+    if (!item.topic_slug) pendentes.push(index);
+  });
+  if (pendentes.length && pendentes.length < questions.length) {
+    try {
+      const segundos = pendentes.map((index) => questions[index]);
+      const { messages: outraVez } = buildClassificationPrompt({
+        questions: segundos,
         exam,
         year,
         board,
         catalog: compactCatalog,
         answerKey,
       });
-      const result = await callJson({
-        messages,
+      const repescagem = await callJson({
+        messages: outraVez,
         maxTokens: CLASSIFY_MAX_TOKENS,
         retryMaxTokens: CLASSIFY_RETRY_MAX_TOKENS,
       });
-      const itens = mergeClassifications(parsed, result.data, compactCatalog);
-
-      // Uma segunda passada só com o que ficou sem assunto. O modelo costuma
-      // pular itens no fim da lista, ou responder um par que não existe no
-      // catálogo; perguntar de novo, com menos itens de cada vez, recupera a
-      // maioria — e é mais barato que deixar a questão esperando conferência
-      // manual, que é o destino de quem sai daqui sem classificação.
-      const pendentes = [];
-      itens.forEach((item, index) => {
-        if (!item.topic_slug) pendentes.push(index);
+      mergeClassifications(segundos, repescagem.data, compactCatalog).forEach((corrigido, ordem) => {
+        if (corrigido.topic_slug) itens[pendentes[ordem]] = corrigido;
       });
-      if (pendentes.length && pendentes.length < parsed.length) {
-        try {
-          const segundos = pendentes.map((index) => parsed[index]);
-          const { messages: outraVez } = buildClassificationPrompt({
-            questions: segundos,
-            exam,
-            year,
-            board,
-            catalog: compactCatalog,
-            answerKey,
-          });
-          const repescagem = await callJson({
-            messages: outraVez,
-            maxTokens: CLASSIFY_MAX_TOKENS,
-            retryMaxTokens: CLASSIFY_RETRY_MAX_TOKENS,
-          });
-          mergeClassifications(segundos, repescagem.data, compactCatalog).forEach((corrigido, ordem) => {
-            if (corrigido.topic_slug) itens[pendentes[ordem]] = corrigido;
-          });
-        } catch (err) {
-          // A repescagem é bônus: falhar aqui não pode derrubar o lote inteiro.
-          console.warn(`[exam-import] repescagem de classificação falhou: ${err.message}`);
-        }
-      }
+    } catch (err) {
+      // A repescagem é bônus: falhar aqui não pode derrubar o lote inteiro.
+      console.warn(`[exam-import] repescagem de classificação falhou: ${err.message}`);
+    }
+  }
+  return itens;
+}
 
+/**
+ * Classifica questões que o leitor do servidor já recortou
+ * (services/exam-reading.js). Cada questão: { number, variant?, statement, A..E }.
+ * @returns {Promise<Array<object>>} na mesma ordem, com a classificação
+ */
+async function classify({ questions, exam, year, board, answerKey, userId }) {
+  if (!questions.length) return [];
+  const catalog = await taxonomy(exam ? exam.id : null);
+  const chamada = await aiCaller({ userId });
+  try {
+    return await classifyWith(questions.slice(0, MAX_QUESTOES_POR_LOTE), {
+      catalog,
+      exam,
+      year,
+      board,
+      answerKey,
+      callJson: chamada.callJson,
+    });
+  } catch (err) {
+    if (chamada.estourou()) {
+      throw new AppError(503, 'ai_unavailable', 'A classificação deste trecho demorou demais. Continue de onde parou.');
+    }
+    throw err;
+  }
+}
+
+/**
+ * Transcreve um lote da prova.
+ * @returns {Promise<Array<object>>} linhas no formato da importação de questões
+ */
+async function extract({ batch, exam, year, board, answerKey, userId }) {
+  const catalog = await taxonomy(exam ? exam.id : null);
+  const { callJson, estourou } = await aiCaller({ userId });
+
+  try {
+    const parsed = parseBatchQuestions(batch.text).slice(0, MAX_QUESTOES_POR_LOTE);
+    if (parsed.length) {
+      const itens = await classifyWith(parsed, { catalog, exam, year, board, answerKey, callJson });
       return itens.map((raw) => normalizeExtracted(raw, { answerKey, exam, year, board })).filter(Boolean);
     }
 
@@ -745,12 +797,11 @@ async function extract({ batch, exam, year, board, answerKey, userId }) {
       .map((raw) => normalizeExtracted(raw, { answerKey, exam, year, board }))
       .filter(Boolean);
   } catch (err) {
-    if (estourou) {
+    if (estourou()) {
       throw new AppError(503, 'ai_unavailable', 'A leitura deste trecho demorou demais. Tente continuar de onde parou.');
     }
     throw err;
   }
-
 }
 
 /**
@@ -787,32 +838,15 @@ function isDriveUrl(value) {
 }
 
 /**
- * Lê um gabarito colado pelo administrador.
- * Aceita "1-A 2-B", "1) C", "01 D", um por linha ou tudo na mesma linha.
+ * Lê um gabarito colado pelo administrador (ou extraído do PDF no navegador).
+ * Aceita "1-A 2-B", "1) C", "01 D", um por linha ou tudo na mesma linha, e a
+ * folha do INEP com as duas colunas de idioma ("1 B A" = inglês B, espanhol A,
+ * gravado como { "1": "B", "1:espanhol": "A" }). A regra mora no leitor de
+ * gabarito (exam-reader/answer-key.js), que também lê o PDF no servidor.
  * @returns {{ key: object, count: number }}
  */
 function parseAnswerKey(input) {
-  const key = {};
-  const bruto = String(input || '');
-  // Um par número→letra só vale com um separador EXPLÍCITO entre eles, ou com a
-  // letra colada ao número. Sem essa exigência, prosa comum de folha de
-  // gabarito virava resposta: "questões 46 a 90" dava 46=A, "itens 3 e 4" dava
-  // 3=E, "questões 5 e 17 anuladas" dava 5=E — porque em português "a" e "e"
-  // são letras válidas e o separador era opcional. Esses fantasmas iam para o
-  // banco marcados como gabarito oficial, e a questão chegava ao aluno com a
-  // resposta errada. Formatos reais de gabarito têm separador: "46-A", "46) A",
-  // "46.A", "01 A" com dois espaços no máximo, ou "46A".
-  const padrao = /(\d{1,3})(?:\s*[).:\-–—=]\s*|\s{0,2})([A-E])(?![A-Za-z])/g;
-  let match = padrao.exec(bruto);
-  while (match) {
-    // Descarta o par cujo "separador" foi só espaço quando a letra é 'a'/'e'
-    // minúscula grudada em palavra — mas como agora exigimos [A-E] MAIÚSCULO
-    // após espaço, "46 a 90" (minúsculo) já não casa. Mantém-se robusto.
-    const numero = Number.parseInt(match[1], 10);
-    if (Number.isInteger(numero) && numero > 0 && numero <= 300) key[String(numero)] = match[2].toUpperCase();
-    match = padrao.exec(bruto);
-  }
-  return { key, count: Object.keys(key).length };
+  return answerKeys.parseAnswerKeyText(input);
 }
 
 module.exports = {
@@ -833,6 +867,7 @@ module.exports = {
   mergeClassifications,
   buildExtractPrompt,
   normalizeExtracted,
+  classify,
   extract,
   parseAnswerKey,
   directDownloadUrl,

@@ -37,6 +37,11 @@ module.exports = {
   require_subscription: true,
   openrouter_model: 'qwen/qwen3.8-flash',
   openrouter_essay_model: 'qwen/qwen3.8-flash',
+  // Leitura de prova pela imagem (IA de visão), só nas questões com alerta de
+  // texto ilegível ou de alternativas faltando. Desligada até o custo ser
+  // medido (scripts/medir-leitura-visao.js). Modelo vazio = o da leitura.
+  exam_import_vision_enabled: false,
+  openrouter_vision_model: '',
   ai_student_monthly_token_limit: 3000000,
   tutor_system_prompt: TUTOR_SYSTEM_PROMPT,
   review_intervals: [1, 7, 30],

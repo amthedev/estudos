@@ -31,8 +31,11 @@ const ALLOWED = Object.freeze({
 
 const MAX_BYTES = Math.max(...Object.values(ALLOWED).map((rule) => rule.maxBytes));
 
-/** Pastas por finalidade, para a equipe se achar na listagem. */
-const FOLDERS = Object.freeze(['logos', 'depoimentos', 'editais', 'provas', 'aulas', 'videos', 'geral']);
+/**
+ * Pastas por finalidade, para a equipe se achar na listagem. `questoes` guarda
+ * as figuras recortadas das provas (services/exam-reading.js).
+ */
+const FOLDERS = Object.freeze(['logos', 'depoimentos', 'editais', 'provas', 'questoes', 'aulas', 'videos', 'geral']);
 
 /** Assinaturas de arquivo (os primeiros bytes de cada formato). */
 const SIGNATURES = [

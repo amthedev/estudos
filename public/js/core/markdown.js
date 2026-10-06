@@ -19,9 +19,69 @@ const PURIFY_CONFIG = {
 
 let hooked = false;
 
+/**
+ * Figura recortada de prova leva a largura de exibição no próprio endereço
+ * (`/uploads/questoes/x.png#w=320`, ver server/services/exam-reading.js): o
+ * PNG é renderizado em escala 2, e sem a largura uma fração de uma linha
+ * aparecia com três linhas de altura. O fragmento não vai ao servidor.
+ */
+function figureWidth(node) {
+  // fórmula recortada no meio da frase ("calor específico de 4,2 [fórmula] e
+  // densidade"): fica na linha do texto, não num bloco próprio (o img da
+  // base é display: block — ver .md img.md-formula em components.css)
+  if (/^F[óo]rmula(?![\p{L}])/iu.test(node.getAttribute('alt') || '')) node.classList.add('md-formula');
+  const match = /#w=(\d{1,4})$/.exec(node.getAttribute('src') || '');
+  if (!match) return;
+  const width = Math.min(Number(match[1]), 1600);
+  if (width > 0) node.setAttribute('width', String(width));
+}
+
+let extended = false;
+
+/** Marca em linha do leitor de provas: `abre` + conteúdo + `fecha` → <tag>. */
+function marcaEmLinha(name, abre, regex, tag) {
+  return {
+    name,
+    level: 'inline',
+    start(src) {
+      const i = src.indexOf(abre);
+      return i < 0 ? undefined : i;
+    },
+    tokenizer(src) {
+      const match = regex.exec(src);
+      if (!match) return undefined;
+      return { type: name, raw: match[0], tokens: this.lexer.inlineTokens(match[1]) };
+    },
+    renderer(token) {
+      return `<${tag}>${this.parser.parseInline(token.tokens)}</${tag}>`;
+    },
+  };
+}
+
+/**
+ * Formatação que o leitor de provas transcreve do PDF
+ * (server/services/exam-reader/markup.js) e que o markdown comum não tem:
+ * ++sublinhado++ ("a palavra sublinhada" do enunciado), ^{x} (expoente que
+ * não existe como caractere: 3^{x}) e _{ij} (índice: d_{ij}). O texto do
+ * leitor escapa "++", "^{" e "_" que vierem do próprio PDF.
+ */
+const MARCAS_DO_LEITOR = [
+  marcaEmLinha('sublinhado', '++', /^\+\+(?=\S)([\s\S]*?\S)\+\+(?!\+)/, 'u'),
+  marcaEmLinha('expoente', '^{', /^\^\{([^{}\n]{1,40})\}/, 'sup'),
+  marcaEmLinha('indice', '_{', /^_\{([^{}\n]{1,40})\}/, 'sub'),
+];
+
 function getMarked() {
   const m = typeof window !== 'undefined' ? window.marked : null;
   if (!m) return null;
+  if (!extended && typeof m.use === 'function') {
+    extended = true;
+    try {
+      m.use({ extensions: MARCAS_DO_LEITOR });
+    } catch (err) {
+      console.warn('[markdown] marcas do leitor indisponíveis', err);
+    }
+  }
   return m;
 }
 
@@ -31,6 +91,10 @@ function getPurify() {
   if (!hooked) {
     hooked = true;
     p.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName === 'IMG') {
+        figureWidth(node);
+        return;
+      }
       if (node.tagName !== 'A') return;
       const href = node.getAttribute('href') || '';
       if (!href) return;

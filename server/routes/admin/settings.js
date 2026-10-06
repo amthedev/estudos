@@ -60,6 +60,14 @@ const settingsBody = z
     openrouter_model: z.string().trim().min(3).max(120).optional(),
     openrouter_essay_model: z.string().trim().min(3).max(120).optional(),
     openrouter_extract_model: z.preprocess((v) => (v === '' ? '' : v), z.string().trim().max(120).optional()),
+    // Leitura pela imagem das questões com alerta (custa mais; desligada por padrão).
+    exam_import_vision_enabled: z.boolean().optional(),
+    openrouter_vision_model: z
+      .string()
+      .trim()
+      .max(120)
+      .refine((v) => !v || /^[\w.-]+\/[\w.:-]+$/.test(v), 'Use o identificador do OpenRouter: provedor/modelo.')
+      .optional(),
     ai_student_monthly_token_limit: z.coerce.number().int().min(0, 'Use 0 para não limitar.').max(1_000_000_000).optional(),
     tutor_system_prompt: z.string().trim().min(40, 'O prompt do tutor precisa ser mais detalhado.').max(8000).optional(),
     review_intervals: reviewIntervals.optional(),

@@ -36,6 +36,12 @@ const DEFAULTS = Object.freeze({
   openrouter_essay_model: config.openrouter.essayModel,
   // Modelo da leitura de prova em PDF. Vazio usa o mesmo do tutor.
   openrouter_extract_model: '',
+  // Leitura de prova: as questões com alerta de texto ilegível ou de
+  // alternativas faltando podem ser lidas de novo pela imagem, com uma IA de
+  // visão. Desligado: custa mais por questão, e o custo precisa ser medido
+  // antes (scripts/medir-leitura-visao.js). Modelo vazio usa o da leitura.
+  exam_import_vision_enabled: false,
+  openrouter_vision_model: '',
   ai_student_monthly_token_limit: config.openrouter.studentMonthlyTokenLimit,
   tutor_system_prompt: TUTOR_SYSTEM_PROMPT,
   review_intervals: [1, 7, 30],

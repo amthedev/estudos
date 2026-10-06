@@ -8,8 +8,11 @@
  *                                                 answer_key? } → cria a leitura
  *   POST   /api/admin/exam-imports/:id/text     { chunk, done } → o texto do PDF sobe em pedaços
  *   POST   /api/admin/exam-imports/:id/sweep    varre UM lote e devolve o que encontrou + o progresso
+ *   GET    /api/admin/exam-imports/leitor       { available, message } — a leitura no servidor funciona aqui?
+ *   POST   /api/admin/exam-imports/:id/ler      { source_url? } → lê o PDF NO SERVIDOR, em segundo plano (202)
  *   GET    /api/admin/exam-imports/:id          leitura + itens encontrados
- *   PATCH  /api/admin/exam-imports/:id/items/:itemId  corrige matéria, assunto, gabarito ou dificuldade
+ *   PATCH  /api/admin/exam-imports/:id/items/:itemId  corrige matéria, assunto, gabarito, dificuldade,
+ *                                              enunciado, alternativas (markdown com figuras) ou situação
  *   POST   /api/admin/exam-imports/:id/import   { item_ids } → manda as escolhidas para o banco
  *                                              { com_gabarito: true } → manda todas as que a
  *                                              banca já respondeu no gabarito oficial
@@ -27,9 +30,16 @@
  * HTTP. Cada varredura é uma requisição curta, e onde ela parou fica gravado —
  * fechar a aba custa "continuar de onde parou", não recomeçar.
  *
- * O PDF é lido no navegador de quem está no painel (public/js/components/pdf-text.js).
- * O arquivo nunca é enviado à IA: em base64 ele seria contado como consumo de
- * tokens e derrubaria o teto mensal que o Tutor e a redação compartilham.
+ * Dois caminhos de leitura:
+ *   - no servidor (POST /:id/ler, services/exam-reading.js): o PDF é lido com
+ *     posição, as figuras são recortadas e cada questão sai com alertas; é o
+ *     caminho padrão do painel;
+ *   - no navegador (POST /:id/text + /:id/sweep): o texto do PDF sobe em
+ *     pedaços e é varrido em lotes. Fica como plano B para quando o leitor do
+ *     servidor não carrega (GET /leitor diz).
+ * Em nenhum dos dois o arquivo vai para a IA: em base64 ele seria contado como
+ * consumo de tokens e derrubaria o teto mensal que o Tutor e a redação
+ * compartilham. A IA só classifica.
  *
  * A gravação da questão reaproveita a importação por planilha — mesma validação
  * de alternativa, mesma resolução de slug, mesmas mensagens de erro.
@@ -40,7 +50,7 @@ const { validate, z } = require('../../middleware/validate');
 const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const { aiLimiter } = require('../../middleware/rateLimit');
-const { nullableFileRef } = require('../../utils/validators');
+const { nullableFileRef, fileRef } = require('../../utils/validators');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
@@ -48,7 +58,14 @@ const { pipeline } = require('node:stream/promises');
 const uploads = require('../../services/uploads');
 const examImport = require('../../services/exam-import');
 const examCleanup = require('../../services/exam-cleanup');
-const { buildImportRow, loadSlugMaps, insertQuestion, RowError } = require('./questions');
+const examReading = require('../../services/exam-reading');
+const answerKeys = require('../../services/exam-reader/answer-key');
+const { isGarbled } = require('../../services/exam-reader/decode');
+const {
+  itensConfirmadosPeloGabarito,
+  importarItens,
+  importarConfirmadasAutomaticamente,
+} = require('../../services/exam-import-bank');
 
 const uuid = z.string().uuid();
 const idParams = z.object({ id: uuid });
@@ -59,55 +76,8 @@ const emptyToNull = (value) => (typeof value === 'string' && value.trim() === ''
 const optionalUuid = z.preprocess(emptyToUndefined, uuid.optional());
 
 const LIST_LIMIT = 100;
-/** Prazo para o servidor do arquivo começar a responder. */
-const DOWNLOAD_TIMEOUT_MS = 60_000;
-/** O Blob recusa rajada com 429 — ler 25 provas seguidas esbarra nisso. */
-const DOWNLOAD_TENTATIVAS = 3;
-
-const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Baixa o PDF da prova, com prazo e retentativa.
- *
- * Sem isto, uma recusa temporária do armazenamento virava 502 na cara de quem
- * estava lendo as provas em lote — e, como o lote só contava a falha, a prova
- * simplesmente não era lida e ninguém sabia por quê.
- */
-async function baixarPdf(destino) {
-  let ultimoStatus = 0;
-  for (let tentativa = 1; tentativa <= DOWNLOAD_TENTATIVAS; tentativa += 1) {
-    const controller = new AbortController();
-    const relogio = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
-    let resposta = null;
-    try {
-      resposta = await fetch(destino, { redirect: 'follow', signal: controller.signal });
-    } catch (err) {
-      if (tentativa === DOWNLOAD_TENTATIVAS) {
-        throw new AppError(
-          504,
-          'timeout',
-          'O servidor onde o PDF está guardado demorou demais para responder. Tente de novo em instantes.'
-        );
-      }
-      await esperar(1500 * tentativa);
-      continue;
-    } finally {
-      clearTimeout(relogio);
-    }
-    if (resposta.ok && resposta.body) return resposta;
-    ultimoStatus = resposta.status;
-    const valeTentarDeNovo = resposta.status === 429 || resposta.status >= 500;
-    if (!valeTentarDeNovo || tentativa === DOWNLOAD_TENTATIVAS) break;
-    await esperar(1500 * tentativa);
-  }
-  throw new AppError(
-    502,
-    'bad_gateway',
-    ultimoStatus === 429
-      ? 'O armazenamento recusou tantos downloads seguidos. Espere um minuto e leia esta prova de novo.'
-      : `Não foi possível baixar o PDF desta prova (HTTP ${ultimoStatus}).`
-  );
-}
+/** O download com prazo e retentativa mora no leitor do servidor (o mesmo para os dois). */
+const { baixarPdf } = examReading;
 /** Cada pedaço do texto cabe folgado no corpo aceito pelo servidor (2 MB). */
 const MAX_CHUNK_CHARS = 400_000;
 
@@ -141,6 +111,34 @@ const answerKeyBody = z
   })
   .strict();
 
+/**
+ * Endereços das imagens de um markdown (`![alt](url)`). A figura recortada leva
+ * a largura de exibição no fragmento (`#w=320`), que não faz parte do arquivo.
+ */
+function imagensDoMarkdown(md) {
+  return [...String(md || '').matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)].map((m) => m[1]);
+}
+
+/**
+ * Figura dentro do enunciado ou da alternativa: arquivo enviado pelo painel
+ * (/uploads/…) ou URL do Blob. z.string().url() recusaria justamente o
+ * caminho interno que o armazenamento local devolve.
+ */
+const endereco = fileRef(2000);
+function figurasValidas(md) {
+  return imagensDoMarkdown(md).every((url) => endereco.safeParse(url.split('#')[0]).success);
+}
+const MSG_FIGURA = 'Uma figura do texto tem endereço inválido. Envie a imagem pelo botão de figura.';
+
+/** Enunciado e alternativas em markdown, com as figuras no lugar. */
+const statementField = z
+  .string()
+  .trim()
+  .min(10, 'O enunciado ficou curto demais.')
+  .max(30_000)
+  .refine(figurasValidas, MSG_FIGURA);
+const alternativeField = z.string().trim().max(6000).refine(figurasValidas, MSG_FIGURA);
+
 const itemBody = z
   .object({
     subject_slug: z.string().trim().max(120).optional(),
@@ -148,11 +146,25 @@ const itemBody = z
     subtopic_slug: z.preprocess(emptyToNull, z.string().trim().max(120).nullable().optional()),
     correct: z.string().trim().toUpperCase().regex(/^[A-E]$/, 'Use uma letra de A a E.').optional(),
     difficulty: z.coerce.number().int().min(1).max(3).optional(),
-    statement: z.string().trim().min(10).max(8000).optional(),
+    statement: statementField.optional(),
+    A: alternativeField.optional(),
+    B: alternativeField.optional(),
+    C: alternativeField.optional(),
+    D: alternativeField.optional(),
+    E: alternativeField.optional(),
+    image_url: nullableFileRef(2000, 'Informe o endereço da imagem ou envie o arquivo.'),
     status: z.enum(['pendente', 'recusada']).optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, 'Nada para alterar.');
+
+const lerBody = z
+  .object({
+    // PDF que o painel acabou de enviar para o armazenamento. Sem ele, vale o
+    // que a leitura já tem (source_url) ou o PDF da prova anterior.
+    source_url: nullableFileRef(2000, 'Informe o endereço do PDF ou envie o arquivo.'),
+  })
+  .strict();
 
 /**
  * O que mandar para o banco: uma escolha explícita, ou todas as conferidas
@@ -217,12 +229,19 @@ function serialize(row, { counts = null } = {}) {
   // has_text pode vir pronto da lista (que não carrega o texto inteiro de
   // propósito) ou ser derivado do texto quando ele acompanha a linha.
   const temTexto = row.has_text !== undefined ? Boolean(row.has_text) : Boolean(document_text);
+  // A leitura no servidor conta questões, não caracteres.
+  const total = Number(row.progress_total) || 0;
+  let percent = chars > 0 ? Math.min(100, Math.round((Number(row.chars_read) / chars) * 100)) : 0;
+  if (row.engine === 'leitor') {
+    percent = row.status === 'concluida' ? 100 : total > 0 ? Math.min(100, Math.round((Number(row.progress_done) / total) * 100)) : 0;
+  }
   return {
     ...rest,
     answer_key_count: row.answer_key ? Object.keys(row.answer_key).length : 0,
     answer_key: undefined,
-    percent: chars > 0 ? Math.min(100, Math.round((Number(row.chars_read) / chars) * 100)) : 0,
+    percent,
     has_text: temTexto,
+    running: row.engine === 'leitor' ? examReading.isRunning(row.id) : undefined,
     counts,
   };
 }
@@ -235,11 +254,13 @@ async function itemCounts(importId) {
             count(*) FILTER (WHERE status = 'recusada')::int AS recusadas,
             count(*) FILTER (WHERE status = 'falhou')::int AS falharam,
             count(*) FILTER (WHERE status = 'pendente'
-                             AND coalesce((payload->>'answer_from_key')::boolean, false))::int AS com_gabarito
+                             AND coalesce((payload->>'answer_from_key')::boolean, false))::int AS com_gabarito,
+            count(*) FILTER (WHERE status = 'pendente'
+                             AND payload->'alerts' IS NOT NULL AND payload->'alerts' <> '[]'::jsonb)::int AS com_alerta
        FROM exam_import_items WHERE import_id = $1`,
     [importId]
   );
-  return row || { total: 0, pendentes: 0, importadas: 0, recusadas: 0, falharam: 0, com_gabarito: 0 };
+  return row || { total: 0, pendentes: 0, importadas: 0, recusadas: 0, falharam: 0, com_gabarito: 0, com_alerta: 0 };
 }
 
 router.get(
@@ -248,6 +269,7 @@ router.get(
     const rows = await db.many(
       `SELECT i.id, i.title, i.source_url, i.exam_id, i.year, i.board, i.status,
               i.chars_total, i.chars_read, i.found_count, i.imported_count, i.last_number,
+              i.engine, i.stage, i.progress_done, i.progress_total,
               i.error_message, i.created_at, i.updated_at,
               (i.document_text IS NOT NULL AND i.document_text <> '') AS has_text,
               c.pendentes AS pending_count,
@@ -283,11 +305,13 @@ router.post(
   validate({ body: createBody }),
   wrap(async (req, res) => {
     const body = req.valid.body;
-    const { key, count } = examImport.parseAnswerKey(body.answer_key);
+    const { key, count, sharedLanguages } = examImport.parseAnswerKey(body.answer_key);
 
+    // (answer_key_shared: a folha colada não fala em espanhol — a leitura
+    // decide, depois de ver a prova, se a letra vale para as duas línguas)
     const created = await db.one(
-      `INSERT INTO exam_imports (title, source_url, exam_id, past_exam_id, year, board, answer_key, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+      `INSERT INTO exam_imports (title, source_url, exam_id, past_exam_id, year, board, answer_key, answer_key_shared, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
        RETURNING *`,
       [
         body.title,
@@ -297,6 +321,7 @@ router.post(
         body.year ?? null,
         body.board ?? null,
         count ? JSON.stringify(key) : null,
+        Boolean(count && sharedLanguages),
         req.admin ? req.admin.id : null,
       ]
     );
@@ -343,6 +368,19 @@ router.get(
   })
 );
 
+/**
+ * A leitura no servidor funciona aqui? O painel pergunta antes de escolher o
+ * caminho: sem o leitor (pdf.js/canvas que não carregou na hospedagem), cai na
+ * leitura pelo navegador, que continua existindo para isso.
+ */
+router.get(
+  '/leitor',
+  wrap(async (req, res) => {
+    const { ok, message } = await examReading.available();
+    res.json({ available: ok, message });
+  })
+);
+
 router.get(
   '/provas',
   wrap(async (req, res) => {
@@ -358,23 +396,27 @@ router.get(
               ultima.imported_count AS ultima_leitura_importadas,
               (ultima.document_text IS NOT NULL AND ultima.document_text <> '') AS ultima_leitura_tem_texto,
               CASE
+                WHEN ultima.engine = 'leitor' AND ultima.status = 'concluida' THEN 100
+                WHEN ultima.engine = 'leitor' AND coalesce(ultima.progress_total, 0) > 0
+                  THEN least(100, round((ultima.progress_done::numeric / ultima.progress_total) * 100)::int)
                 WHEN coalesce(ultima.chars_total, 0) > 0
                   THEN least(100, round((ultima.chars_read::numeric / ultima.chars_total) * 100)::int)
                 ELSE 0
-              END AS ultima_leitura_percent
+              END AS ultima_leitura_percent,
+              ultima.engine AS ultima_leitura_engine
          FROM past_exams p
          LEFT JOIN exams e ON e.id = p.exam_id
          LEFT JOIN LATERAL (
            SELECT count(*)::int AS leituras,
                   count(*) FILTER (WHERE i.status = 'concluida'
-                                     AND i.chars_total > 0
-                                     AND i.chars_read >= i.chars_total)::int AS concluidas
+                                     AND (i.engine = 'leitor'
+                                          OR (i.chars_total > 0 AND i.chars_read >= i.chars_total)))::int AS concluidas
              FROM exam_imports i
             WHERE i.past_exam_id = p.id
          ) historico ON true
          LEFT JOIN LATERAL (
            SELECT i.id, i.status, i.document_text, i.chars_total, i.chars_read,
-                  i.found_count, i.imported_count
+                  i.found_count, i.imported_count, i.engine, i.progress_done, i.progress_total
              FROM exam_imports i
             WHERE i.past_exam_id = p.id
             ORDER BY i.updated_at DESC, i.created_at DESC
@@ -506,12 +548,16 @@ router.get(
   '/:id',
   validate({ params: idParams }),
   wrap(async (req, res) => {
-    const row = await loadImport(req.valid.params.id);
+    let row = await loadImport(req.valid.params.id);
+    // A tela acompanha a leitura no servidor por aqui. Se quem lia morreu sem
+    // o boot passar (npm start sem o bootstrap), a linha diria "lendo" para
+    // sempre: destrava e explica, e "Continuar" retoma de onde parou.
+    if (await examReading.releaseIfStalled(row)) row = await loadImport(row.id);
     const [items, counts] = await Promise.all([
       db.many(
-        `SELECT id, number, payload, status, question_id, error_message
+        `SELECT id, number, variant, payload, status, question_id, error_message
            FROM exam_import_items WHERE import_id = $1
-          ORDER BY number NULLS LAST, created_at`,
+          ORDER BY number NULLS LAST, CASE coalesce(variant, '') WHEN 'espanhol' THEN 1 ELSE 0 END, created_at`,
         [row.id]
       ),
       itemCounts(row.id),
@@ -533,11 +579,25 @@ router.put(
   validate({ params: idParams, body: answerKeyBody }),
   wrap(async (req, res) => {
     const row = await loadImport(req.valid.params.id);
-    const { key, count } = examImport.parseAnswerKey(req.valid.body.answer_key);
-    if (!count) throw new AppError(400, 'validation_error', 'Não foi possível identificar respostas nesse gabarito.');
+    const lido = examImport.parseAnswerKey(req.valid.body.answer_key);
+    if (!lido.count) throw new AppError(400, 'validation_error', 'Não foi possível identificar respostas nesse gabarito.');
+    // Uma letra por número (a folha não fala em espanhol), numa prova lida no
+    // servidor que não é do ENEM: a letra vale para a opção de espanhol também
+    // (VUNESP). No ENEM, nunca — a folha do INEP sempre traz as duas colunas.
+    let { key } = lido;
+    const tipoDaProva = row.read_report && typeof row.read_report === 'object' ? row.read_report.kind : null;
+    if (lido.sharedLanguages && tipoDaProva && tipoDaProva !== 'enem') {
+      const espanhol = await db.many(
+        `SELECT DISTINCT number FROM exam_import_items
+          WHERE import_id = $1 AND number IS NOT NULL AND coalesce(variant, payload->>'variant') = 'espanhol'`,
+        [row.id]
+      );
+      key = answerKeys.shareLanguages(key, espanhol.map((r) => r.number));
+    }
+    const count = Object.keys(key).length;
 
     const pendentes = await db.many(
-      `SELECT id, number, payload
+      `SELECT id, number, variant, payload
          FROM exam_import_items
         WHERE import_id = $1 AND status = 'pendente' AND number IS NOT NULL`,
       [row.id]
@@ -545,14 +605,20 @@ router.put(
     let reconciliadas = 0;
 
     await db.tx(async (client) => {
-      await client.query(`UPDATE exam_imports SET answer_key = $2::jsonb, error_message = NULL WHERE id = $1`, [
-        row.id,
-        JSON.stringify(key),
-      ]);
+      await client.query(
+        `UPDATE exam_imports SET answer_key = $2::jsonb, answer_key_shared = $3, error_message = NULL WHERE id = $1`,
+        [row.id, JSON.stringify(key), Boolean(lido.sharedLanguages)]
+      );
       for (const item of pendentes) {
-        const letra = key[String(item.number)];
-        if (!letra || !item.payload || !item.payload[letra]) continue;
-        const payload = { ...item.payload, correct: letra, answer_from_key: true };
+        // A questão de espanhol tem a própria letra ("1:espanhol"); nunca herda a de inglês.
+        const letra = answerKeys.answerFor(key, item.number, item.variant || (item.payload && item.payload.variant));
+        if (!letra || !item.payload) continue;
+        // Da leitura no servidor, a letra oficial vale mesmo com a alternativa
+        // vazia: o alerta de alternativa faltando segura a questão até alguém
+        // completar, e aí ela já está com a resposta certa.
+        if (!item.payload[letra] && item.payload.reader !== 'leitor') continue;
+        const alerts = Array.isArray(item.payload.alerts) ? item.payload.alerts.filter((a) => a !== 'sem_gabarito') : undefined;
+        const payload = { ...item.payload, correct: letra, answer_from_key: true, needs_answer: false, ...(alerts ? { alerts } : {}) };
         await client.query(`UPDATE exam_import_items SET payload = $2::jsonb, error_message = NULL WHERE id = $1`, [
           item.id,
           JSON.stringify(payload),
@@ -603,6 +669,8 @@ router.post(
               chars_read    = CASE WHEN $4 THEN 0 ELSE chars_read END,
               status        = CASE WHEN $3 THEN 'pronta' ELSE 'lendo' END,
               source_url    = coalesce($5, source_url),
+              engine        = 'texto',
+              stage         = NULL,
               error_message = NULL
         WHERE id = $1
         RETURNING *`,
@@ -640,173 +708,9 @@ router.post(
  */
 const emAndamento = new Map();
 
-/** Questões pendentes cuja alternativa correta veio do gabarito oficial. */
-async function itensConfirmadosPeloGabarito(importId) {
-  return db.many(
-    `SELECT id, number, payload FROM exam_import_items
-      WHERE import_id = $1 AND status = 'pendente'
-        AND coalesce((payload->>'answer_from_key')::boolean, false)
-        -- Sem matéria e assunto a gravação falha e o item cairia em "Não
-        -- entraram", como se a questão tivesse se perdido. Ela fica esperando
-        -- conferência, que é onde o administrador escolhe o assunto pelo nome.
-        AND coalesce(payload->>'subject_slug', '') <> ''
-        AND coalesce(payload->>'topic_slug', '') <> ''
-      ORDER BY number NULLS LAST`,
-    [importId]
-  );
-}
-
-/**
- * Questões que uma leitura ANTERIOR da mesma prova já mandou para o banco.
- *
- * Reler uma prova é normal: a primeira leitura falha no meio, ou sai com menos
- * questões do que a prova tem, e o administrador cria outra. Sem esta conferência
- * cada releitura gravava tudo de novo — a prova que já tinha rendido 36 questões
- * voltava com as mesmas 36 duplicadas no banco do aluno.
- *
- * A chave é o número da questão dentro da prova. Duas leituras são da mesma
- * prova quando apontam para o mesmo registro de "provas anteriores" ou, na falta
- * dele, quando têm a mesma prova, o mesmo ano e o mesmo título.
- *
- * @returns {Promise<Map<number, string>>} número da questão → id da questão já gravada
- */
-async function numerosJaNoBanco(row) {
-  const rows = await db.many(
-    `SELECT it.number, it.question_id
-       FROM exam_import_items it
-       JOIN exam_imports i ON i.id = it.import_id
-      WHERE it.status = 'importada'
-        AND it.number IS NOT NULL
-        AND it.question_id IS NOT NULL
-        AND i.id <> $1
-        AND CASE
-              WHEN $2::uuid IS NOT NULL THEN i.past_exam_id = $2
-              ELSE i.past_exam_id IS NULL
-                   AND i.exam_id IS NOT DISTINCT FROM $3::uuid
-                   AND i.year IS NOT DISTINCT FROM $4::int
-                   AND i.title = $5
-            END
-        -- Questão apagada de propósito no painel pode voltar numa releitura.
-        AND EXISTS (SELECT 1 FROM questions q WHERE q.id = it.question_id)`,
-    [row.id, row.past_exam_id || null, row.exam_id || null, row.year ?? null, row.title]
-  );
-  const mapa = new Map();
-  for (const linha of rows) if (!mapa.has(linha.number)) mapa.set(linha.number, linha.question_id);
-  return mapa;
-}
-
-/**
- * Grava itens já selecionados no banco de questões.
- *
- * É compartilhado pela importação automática do gabarito e pelo botão de
- * revisão. Assim os dois caminhos aplicam exatamente a mesma validação e
- * atualizam os mesmos contadores.
- */
-async function importarItens(row, items, adminId) {
-  const maps = await loadSlugMaps();
-  const errors = [];
-  const criadas = [];
-  const reaproveitadas = [];
-  const jaNoBanco = await numerosJaNoBanco(row);
-
-  for (const item of items) {
-    // Já veio de outra leitura desta mesma prova: o item aponta para a questão
-    // que existe, em vez de gravar uma cópia. Ele conta como "no banco" porque
-    // é exatamente o que ele é.
-    const existente = item.number !== null ? jaNoBanco.get(item.number) : undefined;
-    if (existente) {
-      await db.query(
-        `UPDATE exam_import_items SET status = 'importada', question_id = $2, error_message = NULL
-          WHERE id = $1 AND status = 'pendente'`,
-        [item.id, existente]
-      );
-      reaproveitadas.push(existente);
-      continue;
-    }
-
-    try {
-      const questionId = await db.tx(async (client) => {
-        // A seleção aconteceu antes da transação. Trava e relê a linha para
-        // impedir que dois cliques simultâneos gravem duas questões a partir
-        // do mesmo item, e para respeitar uma correção feita nesse intervalo.
-        const atual = await client.one(
-          `SELECT payload, status FROM exam_import_items WHERE id = $1 FOR UPDATE`,
-          [item.id]
-        );
-        if (!atual || atual.status !== 'pendente') return null;
-
-        const bruto = { ...(atual.payload || {}) };
-        if (row.exam_id) bruto.exams = [row.exam_id];
-        const dados = buildImportRow(bruto, maps);
-
-        if (row.exam_id) {
-          dados.exam_ids = [row.exam_id];
-          dados.source_exam_id = row.exam_id;
-        }
-        // A questão guarda de onde saiu. O item da leitura também guarda, mas
-        // morre com ela; sem isto, remover as questões de uma prova para ler
-        // de novo dependia de a leitura ainda existir.
-        dados.exam_import_id = row.id;
-        dados.past_exam_id = row.past_exam_id || null;
-
-        const id = await insertQuestion(client, dados, adminId || null);
-        await client.query(
-          `UPDATE exam_import_items SET status = 'importada', question_id = $2, error_message = NULL WHERE id = $1`,
-          [item.id, id]
-        );
-        return id;
-      });
-      if (questionId) criadas.push(questionId);
-    } catch (err) {
-      const mensagem =
-        err instanceof RowError
-          ? err.message
-          : 'Não foi possível gravar esta questão. Revise os dados e tente de novo.';
-      errors.push({ number: item.number, message: mensagem });
-      // Se outro pedido conseguiu importar enquanto este falhava, não desfaça
-      // o estado vencedor. A condição mantém a atualização idempotente.
-      await db.query(
-        `UPDATE exam_import_items SET status = 'falhou', error_message = $2
-          WHERE id = $1 AND status = 'pendente'`,
-        [item.id, mensagem]
-      );
-      if (!(err instanceof RowError)) {
-        console.error(`[exam-imports] falha ao gravar a questão ${item.number}:`, err.message);
-      }
-    }
-  }
-
-  const atualizado = await db.one(
-    `UPDATE exam_imports SET imported_count = imported_count + $2 WHERE id = $1 RETURNING *`,
-    [row.id, criadas.length]
-  );
-  return { atualizado, criadas, errors, reaproveitadas };
-}
-
-/** Importa, sem outro clique, tudo que a banca já respondeu oficialmente. */
-async function importarConfirmadasAutomaticamente(row, adminId) {
-  const confirmadas = await itensConfirmadosPeloGabarito(row.id);
-  if (!confirmadas.length) return { imported: 0, failed: 0 };
-
-  const resultado = await importarItens(row, confirmadas, adminId);
-  await audit(
-    adminId ? { admin: { id: adminId } } : null,
-    'exam_import.auto_import',
-    'exam_import',
-    row.id,
-    {
-      requested: confirmadas.length,
-      imported: resultado.criadas.length,
-      reused: resultado.reaproveitadas.length,
-      failed: resultado.errors.length,
-    }
-  );
-  return {
-    imported: resultado.criadas.length,
-    reused: resultado.reaproveitadas.length,
-    failed: resultado.errors.length,
-  };
-}
+// A gravação no banco (itensConfirmadosPeloGabarito, importarItens,
+// importarConfirmadasAutomaticamente) mora em services/exam-import-bank.js:
+// a leitura no servidor usa exatamente a mesma.
 
 /** Varre UM lote e grava o resultado. Roda solta, fora da requisição. */
 async function varrerUmLote(row, adminId) {
@@ -950,8 +854,105 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
+// Leitura no servidor
+// ---------------------------------------------------------------------------
+/**
+ * Lê o PDF no servidor, em segundo plano (services/exam-reading.js).
+ *
+ * Responde na hora (202) e a tela acompanha pelo GET /:id: uma prova de 30
+ * páginas é lida em segundos, mas a classificação pela IA e o envio das
+ * figuras passam do que a borda da hospedagem deixa uma requisição durar.
+ *
+ * Chamar de novo numa leitura que parou no meio continua de onde parou: o PDF
+ * é relido (sem IA) e as questões que já viraram item são puladas.
+ */
+router.post(
+  '/:id/ler',
+  aiLimiter,
+  validate({ params: idParams, body: lerBody }),
+  wrap(async (req, res) => {
+    let row = await loadImport(req.valid.params.id);
+    const adminId = req.admin ? req.admin.id : null;
+
+    const leitor = await examReading.available();
+    if (!leitor.ok) throw new AppError(503, 'leitor_indisponivel', leitor.message);
+
+    if (await examReading.releaseIfStalled(row)) row = await loadImport(row.id);
+    if (examReading.isRunning(row.id)) {
+      // Clique duplo: a leitura já está andando neste processo.
+      return res.status(202).json({ ...serialize(row, { counts: await itemCounts(row.id) }), done: false, running: true });
+    }
+    if (row.status === 'extraindo') {
+      throw new AppError(409, 'conflict', 'Esta prova já está sendo lida. Espere terminar.');
+    }
+    if (row.engine === 'texto' && (Number(row.chars_read) > 0 || row.status === 'concluida')) {
+      throw new AppError(
+        409,
+        'conflict',
+        'Esta leitura começou pelo texto do navegador. Continue a varredura, ou crie outra leitura para ler no servidor.'
+      );
+    }
+    if (row.engine === 'leitor' && row.status === 'concluida') {
+      return res.json({ ...serialize(row, { counts: await itemCounts(row.id) }), done: true, running: false });
+    }
+
+    const novoArquivo = req.valid.body.source_url || null;
+    if (novoArquivo) {
+      await db.query('UPDATE exam_imports SET source_url = $2 WHERE id = $1', [row.id, novoArquivo]);
+    } else if (!row.source_url) {
+      const prova = row.past_exam_id
+        ? await db.one('SELECT pdf_url FROM past_exams WHERE id = $1', [row.past_exam_id])
+        : null;
+      if (!prova || !prova.pdf_url) {
+        throw new AppError(409, 'conflict', 'Envie o PDF da prova ou escolha uma prova cadastrada que tenha o arquivo.');
+      }
+    }
+
+    const { started, marked } = examReading.start(row.id, { adminId });
+    await marked;
+    if (started) {
+      await audit(req, 'exam_import.read', 'exam_import', row.id, {
+        source: novoArquivo || row.source_url || 'prova anterior',
+        resume: Number(row.progress_done) > 0,
+      });
+    }
+    const atual = await loadImport(row.id);
+    res.status(202).json({ ...serialize(atual, { counts: await itemCounts(row.id) }), done: false, running: true });
+  })
+);
+
+// ---------------------------------------------------------------------------
 // Conferência e gravação
 // ---------------------------------------------------------------------------
+const TEXTO_DA_QUESTAO = ['statement', 'A', 'B', 'C', 'D', 'E'];
+/** Alertas que a pessoa resolve só de olhar e corrigir o texto. */
+const ALERTAS_DE_CONFERENCIA = ['figura_incerta', 'texto_incerto', 'regiao_quebrada', 'enunciado_curto', 'numero_fora_de_sequencia'];
+
+/**
+ * O que continua valendo de alerta depois de uma correção no painel.
+ *
+ * Quem editou o enunciado ou uma alternativa olhou a questão: os alertas de
+ * "confira isto" saem. Os que dá para medir são medidos de novo no texto
+ * corrigido (alternativa vazia, texto ilegível), e 'sem_gabarito' só sai com
+ * a letra escolhida. A conferência é o que manda a questão ao banco — o
+ * alerta só decide o que pode ir sozinho.
+ */
+function alertasDepoisDaEdicao(antes, depois, campos) {
+  let alerts = [...antes.alerts];
+  const mexeuNoTexto = TEXTO_DA_QUESTAO.some((campo) => campos[campo] !== undefined);
+  if (mexeuNoTexto) {
+    alerts = alerts.filter((a) => !ALERTAS_DE_CONFERENCIA.includes(a));
+    const completas = examImport.LETRAS.every((letra) => String(depois[letra] || '').trim());
+    alerts = alerts.filter((a) => a !== 'alternativas_incompletas');
+    if (!completas) alerts.push('alternativas_incompletas');
+    const texto = TEXTO_DA_QUESTAO.map((campo) => String(depois[campo] || '').replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')).join(' ');
+    alerts = alerts.filter((a) => a !== 'texto_ilegivel');
+    if (isGarbled(texto)) alerts.push('texto_ilegivel');
+  }
+  if (campos.correct) alerts = alerts.filter((a) => a !== 'sem_gabarito');
+  return alerts;
+}
+
 router.patch(
   '/:id/items/:itemId',
   validate({ params: itemParams, body: itemBody }),
@@ -967,7 +968,11 @@ router.patch(
     // Corrigir o gabarito à mão vale tanto quanto o gabarito oficial: quem
     // corrigiu foi uma pessoa olhando a prova.
     const payload = { ...item.payload, ...campos };
-    if (campos.correct) payload.answer_from_key = true;
+    if (campos.correct) {
+      payload.answer_from_key = true;
+      payload.needs_answer = false;
+    }
+    if (Array.isArray(item.payload.alerts)) payload.alerts = alertasDepoisDaEdicao(item.payload, payload, campos);
     // Trocar a matéria zera o assunto: assunto pertence a uma matéria, e o que
     // valia na anterior quase nunca vale na nova.
     if (campos.subject_slug && campos.subject_slug !== item.payload.subject_slug && !campos.topic_slug) {
@@ -984,7 +989,7 @@ router.patch(
       `UPDATE exam_import_items
           SET payload = $2::jsonb, status = coalesce($3, status), error_message = NULL
         WHERE id = $1
-        RETURNING id, number, payload, status, question_id, error_message`,
+        RETURNING id, number, variant, payload, status, question_id, error_message`,
       [itemId, JSON.stringify(payload), proximoStatus]
     );
     res.json(atualizado);

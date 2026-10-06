@@ -16,7 +16,7 @@ const config = require('../../config');
 
 const UPLOADS_DIR = path.join(config.rootDir, 'uploads');
 
-const FOLDERS = ['logos', 'depoimentos', 'editais', 'provas', 'aulas', 'videos', 'geral'];
+const FOLDERS = ['logos', 'depoimentos', 'editais', 'provas', 'questoes', 'aulas', 'videos', 'geral'];
 
 function normalizeFolder(folder) {
   const name = String(folder || 'geral').trim().toLowerCase();

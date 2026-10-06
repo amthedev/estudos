@@ -238,13 +238,54 @@ async function assertAvailable(userId = null, feature = null) {
 // ---------------------------------------------------------------------------
 // Registro de uso
 // ---------------------------------------------------------------------------
+/**
+ * Tokens que uma imagem conta quando o provedor não informa o consumo. O
+ * tamanho real depende do modelo (o mesmo recorte vale de 300 a 2.000 tokens
+ * conforme o provedor); o que não pode é contar o base64 como texto — um
+ * recorte de questão em PNG tem 300 KB e viraria 100 mil tokens na cota.
+ */
+const TOKENS_POR_IMAGEM = 1000;
+
 function estimateTokens(text) {
   const length = typeof text === 'string' ? text.length : JSON.stringify(text || '').length;
   return Math.max(1, Math.ceil(length / 4));
 }
 
+/** Parte de imagem de uma mensagem multimodal ({ type: 'image_url', image_url: { url } }). */
+function isImagePart(part) {
+  return Boolean(part && typeof part === 'object' && (part.type === 'image_url' || part.type === 'input_image' || part.image_url));
+}
+
+/** O texto de uma mensagem: a string, ou só as partes de texto do conteúdo multimodal. */
+function contentText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((part) => !isImagePart(part))
+      .map((part) => (typeof part === 'string' ? part : part && typeof part.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('\n');
+  }
+  return content ? JSON.stringify(content) : '';
+}
+
+/** Quantas imagens vão nas mensagens. */
+function imageCount(messages) {
+  let n = 0;
+  for (const m of messages || []) {
+    if (m && Array.isArray(m.content)) n += m.content.filter(isImagePart).length;
+  }
+  return n;
+}
+
+/** Texto das mensagens, sem as imagens (o base64 não é texto que o modelo lê). */
 function messagesText(messages) {
-  return (messages || []).map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content || ''))).join('\n');
+  return (messages || []).map((m) => contentText(m && m.content)).join('\n');
+}
+
+/** Tokens de entrada estimados: o texto, mais um valor fixo por imagem. */
+function estimatePromptTokens(messages) {
+  return estimateTokens(messagesText(messages)) + imageCount(messages) * TOKENS_POR_IMAGEM;
 }
 
 /**
@@ -265,7 +306,7 @@ function numeroInformado(valor) {
 function normalizeUsage(usage, messages, content) {
   const prompt = numeroInformado(usage && usage.prompt_tokens);
   const completion = numeroInformado(usage && usage.completion_tokens);
-  const promptTokens = prompt === null ? estimateTokens(messagesText(messages)) : prompt;
+  const promptTokens = prompt === null ? estimatePromptTokens(messages) : prompt;
   const completionTokens = completion === null ? (content ? estimateTokens(content) : 0) : completion;
   const total = Number(usage && usage.total_tokens);
   return {
@@ -333,7 +374,8 @@ function mapError(err) {
 /**
  * Chat completion (com ou sem streaming).
  * @param {object} options
- * @param {Array<{role:string, content:string}>} options.messages
+ * @param {Array<{role:string, content:string|Array<object>}>} options.messages
+ *        conteúdo multimodal: [{ type: 'text', text }, { type: 'image_url', image_url: { url } }]
  * @param {string} [options.model]         padrão: setting openrouter_model
  * @param {boolean} [options.stream]       true → chama onDelta(text) a cada trecho
  * @param {number} [options.temperature]
@@ -366,7 +408,11 @@ async function chat({
   const started = Date.now();
 
   const params = { model: resolvedModel, messages, temperature, max_tokens: maxTokens };
-  if (resolvedModel === 'qwen/qwen3.8-flash') {
+  // Ler a imagem de uma questão (services/exam-vision.js) é transcrição, como
+  // ler a prova em texto: o raciocínio só comeria o max_tokens. Vale para
+  // qualquer modelo de visão da família qwen, não só para o do tutor.
+  const visao = imageCount(messages) > 0;
+  if (resolvedModel === 'qwen/qwen3.8-flash' || (visao && /^qwen\//i.test(resolvedModel))) {
     // Elaborar questão pede raciocínio: distrator plausível e resolução passo a
     // passo não saem com esforço mínimo. TRANSCREVER prova não — é cópia. O
     // modelo vem com raciocínio ligado por padrão; pedir esforço "minimal"
@@ -379,7 +425,7 @@ async function chat({
     // descartada. Sem raciocínio, as mesmas três saem completas e válidas em
     // menos de 3 mil. Uma questão entregue vale mais que uma questão perfeita
     // que nunca chega.
-    const pensaMais = feature === 'essay';
+    const pensaMais = feature === 'essay' && !visao;
     params.reasoning = pensaMais ? { effort: 'low', exclude: true } : { enabled: false, exclude: true };
   }
   if (responseFormat) params.response_format = responseFormat;
@@ -605,7 +651,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function lastMessage(messages, role) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].role === role) return typeof messages[i].content === 'string' ? messages[i].content : '';
+    if (messages[i].role === role) return contentText(messages[i].content);
   }
   return '';
 }
@@ -757,6 +803,33 @@ function mockExamQuestions(prompt) {
 }
 
 /**
+ * Transcrição de simulação de uma questão lida pela imagem
+ * (services/exam-vision.js): enunciado em português plausível, com o marcador
+ * de figura quantas vezes o prompt disser que há figura no enunciado, e as
+ * cinco alternativas — a que o prompt diz ser figura volta só com o marcador.
+ */
+function mockVisionTranscription(prompt) {
+  const numero = Number.parseInt((prompt.match(/quest[ãa]o\s+(\d{1,3})/i) || [])[1], 10) || 1;
+  const figuras = Number.parseInt((prompt.match(/^Figuras no enunciado:\s*(\d+)/im) || [])[1], 10) || 0;
+  const comFigura = new Set(((prompt.match(/^Alternativas que são figura:\s*([A-E ,]+)$/im) || [])[1] || '').match(/[A-E]/g) || []);
+  const paragrafos = [
+    `Texto da questão ${numero} lido na imagem: um estudante observou a situação descrita na prova e anotou os dados apresentados no enunciado.`,
+    ...Array.from({ length: figuras }, () => '[[FIGURA]]'),
+    'Com base nas informações apresentadas, qual alternativa responde corretamente à pergunta?',
+  ];
+  const textos = {
+    A: 'a primeira hipótese, que considera apenas os dados do texto.',
+    B: 'a segunda hipótese, que relaciona os dados com a figura.',
+    C: 'a terceira hipótese, que compara as duas situações descritas.',
+    D: 'a quarta hipótese, que generaliza o resultado observado.',
+    E: 'a quinta hipótese, que contraria o que foi apresentado.',
+  };
+  const alternatives = {};
+  for (const letra of Object.keys(textos)) alternatives[letra] = comFigura.has(letra) ? '[[FIGURA]]' : textos[letra];
+  return { statement: paragrafos.join('\n\n'), alternatives };
+}
+
+/**
  * Assuntos lidos dos títulos de aulas (services/lesson-topics.js). Cada trecho
  * do título casa pelo nome com o catálogo que veio no prompt; o que não casa
  * volta como assunto novo — o bastante para exercitar a validação contra o
@@ -868,7 +941,7 @@ function mockChatText(messages) {
 }
 
 function makeUsage(messages, content) {
-  const promptTokens = estimateTokens(messagesText(messages));
+  const promptTokens = estimatePromptTokens(messages);
   const completionTokens = estimateTokens(content);
   return { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens };
 }
@@ -901,7 +974,8 @@ function createMockClient() {
           const prompt = messagesText(messages);
           let content;
           if (wantsJson) {
-            if (/"new_topic"/.test(prompt)) content = JSON.stringify(mockLessonTopics(prompt));
+            if (imageCount(messages) > 0 && /"alternatives"/.test(prompt)) content = JSON.stringify(mockVisionTranscription(prompt));
+            else if (/"new_topic"/.test(prompt)) content = JSON.stringify(mockLessonTopics(prompt));
             else if (/"grammar_errors"/.test(prompt)) content = JSON.stringify(mockCorrection(prompt));
             else if (/"support_texts"/.test(prompt)) content = JSON.stringify(mockTheme(prompt));
             else if (/"classifications"/.test(prompt)) content = JSON.stringify(mockExamClassifications(prompt));
@@ -944,6 +1018,10 @@ module.exports = {
   userMonthTutorUsage,
   quotaStatus,
   parseJsonResponse,
+  messagesText,
+  estimatePromptTokens,
+  imageCount,
+  TOKENS_POR_IMAGEM,
   setClientForTests,
   UNAVAILABLE_MESSAGE,
   LIMIT_MESSAGE,

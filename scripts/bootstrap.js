@@ -85,11 +85,13 @@ async function main() {
 
   // Leitura de prova interrompida por um reinício fica marcada como "extraindo"
   // para sempre, e a tela não explica nada. Quem sobe agora sabe que ninguém
-  // está varrendo: devolve para "pronta" e diz o que houve, para o
-  // administrador poder continuar de onde parou.
+  // está lendo — nem a varredura em lotes nem a leitura no servidor
+  // (services/exam-reading.js): devolve para "pronta" e diz o que houve, para
+  // o administrador poder continuar de onde parou.
   const retomadas = await db.many(
     `UPDATE exam_imports
         SET status = 'pronta',
+            stage = NULL,
             error_message = 'A leitura foi interrompida quando a aplicação reiniciou. Continue de onde parou.'
       WHERE status = 'extraindo'
       RETURNING id`

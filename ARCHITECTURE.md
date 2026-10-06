@@ -161,7 +161,9 @@ memória com invalidação ao gravar. Chaves iniciais (seed):
 `brand_name` ('Foco de Elite'), `logo_url`, `support_email`, `require_subscription`, `openrouter_model`, `openrouter_essay_model`,
 `openrouter_monthly_token_limit`, `tutor_system_prompt`, `review_intervals` ([1,7,30]),
 `schedule_defaults` ({questions_block_min: 20, review_block_min: 15, essay_weekly: true, simulado_every_days: 14}),
-`private_lessons_enabled` (true).
+`private_lessons_enabled` (true), `exam_import_vision_enabled` (false — leitura pela imagem, com IA de visão,
+só das questões de prova com alerta de texto ilegível ou alternativa faltando; medir o custo antes com
+`node scripts/medir-leitura-visao.js`), `openrouter_vision_model` ('' = o modelo da leitura de prova).
 Segredos (chaves OpenRouter/Asaas/SMTP) ficam **apenas** em variáveis de ambiente. O admin vê só status e
 os 4 últimos caracteres.
 
@@ -331,6 +333,9 @@ Sequência de dias (`streak`): dias consecutivos com pelo menos um `study_log` (
 * `core/format.js`: `fmtDate`, `fmtDateLong`, `fmtRelative`, `fmtMinutes(125) → '2h 05min'`, `fmtPct`, `fmtNumber`, `fmtMoney(cents)`, `weekdayName`, `difficultyLabel`.
 * `core/charts.js`: Chart.js já configurado com tema escuro; `lineChart(canvas, {labels, datasets})`, `barChart`, `doughnutChart`, `radarChart`; devolve instância; destrói a anterior no mesmo canvas.
 * `core/markdown.js`: `md(text)` → HTML sanitizado (marked + DOMPurify). Usado em resumos, resoluções e respostas do tutor.
+  Entende também as marcas que o leitor de provas transcreve do PDF: `++sublinhado++`, `^{expoente}` e `_{índice}`
+  (ver `server/services/exam-reader/markup.js`). Imagem com texto alternativo "Fórmula" (fórmula recortada no meio
+  da frase) ganha a classe `md-formula` e fica na linha do texto (`.md img.md-formula` em components.css).
 
 ### 6.3 Componentes
 * `components/question-runner.js` — `mountQuestionRunner(el, { questions, mode, answer(questionId, optionId) → Promise<result>, onFinish(summary), showTimer, immediateFeedback, startIndex })`

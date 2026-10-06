@@ -269,6 +269,222 @@
 }
 
 /* ---------------------------------------------------------------------
+   Leitura no servidor e conferência com a questão inteira
+   A questão aparece como o aluno vai ver (markdown com as figuras), com
+   os alertas do leitor em cima. Editar troca a vista pelo formulário.
+   --------------------------------------------------------------------- */
+.xim-alt-path {
+  margin: var(--s-4) 0 0;
+}
+.xim-report {
+  margin: 0 0 var(--s-4);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.xim-key-later {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--border);
+}
+.xim-key-later .btn {
+  justify-self: start;
+}
+
+.xim-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 var(--s-5) var(--s-3);
+}
+.xim-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.xim-filter:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+}
+.xim-filter.is-active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--text);
+  font-weight: 600;
+}
+.xim-filter-n {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.xim-alerts {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 var(--s-3);
+  padding: var(--s-3);
+  list-style: none;
+  background: var(--warning-soft);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.xim-alerts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.xim-alerts .icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+/* O enunciado inteiro, com figuras e tabelas (era um trecho em texto puro). */
+.xim-item-statement.md p {
+  margin: 0 0 var(--s-2);
+}
+.xim-item-statement.md img,
+.xim-item-options .md img {
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 4px;
+}
+.xim-item-options li.is-empty {
+  color: var(--danger);
+}
+.xim-item-options .md img {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 2px 0;
+}
+/* fórmula no meio da frase: na linha, sem a moldura de figura */
+.xim-item-statement.md img.md-formula,
+.xim-item-options .md img.md-formula {
+  border: 0;
+  padding: 0;
+  margin: 0 .1em;
+}
+.xim-item-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-left: auto;
+}
+
+.xim-edit {
+  display: grid;
+  gap: var(--s-3);
+}
+.xim-edit-statement {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.xim-edit-alts {
+  display: grid;
+  gap: var(--s-2);
+}
+.xim-edit-alt {
+  display: grid;
+  grid-template-columns: 1.4em 1fr;
+  align-items: start;
+  gap: 8px;
+}
+.xim-edit-alt strong {
+  padding-top: 8px;
+  color: var(--text-3);
+}
+.xim-edit-alt .textarea {
+  font-size: var(--fs-sm);
+}
+.xim-figs {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  background: var(--card);
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-sm);
+}
+.xim-figs > .btn {
+  justify-self: start;
+}
+.xim-figs-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.xim-figs-list {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.xim-fig {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+.xim-fig img {
+  width: 96px;
+  height: 64px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.xim-fig-label {
+  flex: 1;
+  min-width: 120px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.xim-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* Selo de assunto comprido ("Língua Portuguesa › Variação linguística e
+   norma-padrão") quebra a linha em vez de empurrar a tela para o lado. */
+.xim-item-tags .badge {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+@media (max-width: 700px) {
+  .xim-filters {
+    padding: 0 var(--s-4) var(--s-3);
+  }
+  .xim-item-buttons {
+    margin-left: 0;
+  }
+  .xim-review-actions,
+  .xim-review-actions .btn {
+    max-width: 100%;
+  }
+  .xim-review-actions .btn {
+    white-space: normal;
+    text-align: left;
+  }
+}
+
+/* ---------------------------------------------------------------------
    Remover as questões de uma prova (.xrm-)
    A janela que vem antes de apagar. O número de questões e o de alunos
    afetados são o que decide, então ganham o peso; o resto é lista miúda.

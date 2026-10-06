@@ -73,6 +73,7 @@ const PREFIX = {
   depoimentos: 'depoimentos',
   editais: 'editais',
   provas: 'provas',
+  questoes: 'questoes',
   geral: 'geral',
 };
 

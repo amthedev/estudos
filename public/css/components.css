@@ -3611,6 +3611,15 @@ button.list-item {
 .prose img, .md img {
   border-radius: var(--radius-sm);
   margin: .5em 0;
+  /* figura de prova vem com width (largura de tela, ver core/markdown.js) */
+  height: auto;
+}
+/* fórmula recortada da prova no meio da frase: na linha do texto */
+.prose img.md-formula, .md img.md-formula {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 .1em;
+  border-radius: 0;
 }
 .prose table, .md table {
   width: 100%;
