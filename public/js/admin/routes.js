@@ -1,6 +1,7 @@
 // Manifesto de rotas do painel administrativo.
 export const routes = [
   { path: '/admin', title: 'Visão geral', page: () => import('./pages/dashboard.js') },
+  { path: '/admin/analise', title: 'Vendas e marketing', page: () => import('./pages/analytics.js') },
   { path: '/admin/alunos', title: 'Alunos', page: () => import('./pages/students.js') },
   { path: '/admin/alunos/:id', title: 'Aluno', page: () => import('./pages/student.js') },
   { path: '/admin/conteudo', title: 'Conteúdo', page: () => import('./pages/content.js') },

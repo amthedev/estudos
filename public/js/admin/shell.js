@@ -18,6 +18,7 @@ const COLLAPSE_KEY = 'fe.admin.sidebar.collapsed';
 const NAV_ITEMS = [
   { section: 'Visão geral' },
   { href: '/admin', label: 'Visão geral', icon: 'layout-dashboard', exact: true },
+  { href: '/admin/analise', label: 'Vendas e marketing', icon: 'trending-up' },
   { section: 'Pessoas' },
   { href: '/admin/alunos', label: 'Alunos', icon: 'users' },
   { href: '/admin/professores', label: 'Professores', icon: 'briefcase' },

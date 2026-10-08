@@ -1,0 +1,98 @@
+/* =====================================================================
+   Foco Elite — Painel administrativo: vendas e marketing
+   (js/admin/pages/analytics.js)
+   Prefixo: .aanl-  ·  usa apenas tokens de tokens.css.
+   ===================================================================== */
+
+.aanl-page > * + * {
+  margin-top: var(--s-5);
+}
+
+/* Seletor de período no cabeçalho */
+.aanl-periods {
+  display: inline-flex;
+  gap: var(--s-1);
+  padding: 3px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  border-radius: var(--radius-md, 10px);
+}
+
+.aanl-cards {
+  gap: var(--s-3);
+}
+
+/* Gráficos */
+.aanl-chart {
+  position: relative;
+  height: 260px;
+}
+.aanl-chart canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Tabelas */
+.aanl-table {
+  width: 100%;
+}
+.aanl-table th.num,
+.aanl-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.aanl-cell-main {
+  display: block;
+  font-weight: 600;
+}
+.aanl-cell-sub {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* Funil */
+.aanl-funil {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.aanl-funil-row {
+  display: grid;
+  grid-template-columns: 180px 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+}
+.aanl-funil-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.aanl-funil-bar {
+  position: relative;
+  height: 10px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.06));
+  border-radius: 999px;
+  overflow: hidden;
+}
+.aanl-funil-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--primary, #2f80ed);
+  border-radius: 999px;
+  transition: width 400ms ease;
+}
+.aanl-funil-value {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .aanl-funil-row {
+    grid-template-columns: 120px 1fr auto;
+  }
+}

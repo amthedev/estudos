@@ -7,6 +7,7 @@
 @import './pages/misc.css';
 /* páginas do admin */
 @import './pages/admin-dashboard.css';
+@import './pages/admin-analytics.css';
 @import './pages/admin-students.css';
 @import './pages/admin-content.css';
 @import './pages/admin-forms.css';
