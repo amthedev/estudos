@@ -7,6 +7,8 @@ import { html, render, qs, qsa, tabs } from './core/ui.js';
 import { icon } from './core/icons.js';
 import { fmtMoney, fmtNumber, fmtScore, intervalLabel } from './core/format.js';
 import { tierLabel } from './core/coins.js';
+import { captureTracking } from './core/tracking.js';
+import { initMetaPixel, trackLead, trackWhatsApp } from './core/meta-pixel.js';
 
 function initNav() {
   const nav = qs('#nav');
@@ -1270,6 +1272,7 @@ function initYear() {
 }
 
 document.documentElement.classList.add('js');
+captureTracking();
 initNav();
 initScrollMotion();
 initHeroMotion();
@@ -1284,4 +1287,29 @@ loadLanding().then((data) => {
   initTour(data);
   initFaqs(data);
   initActivity(data);
+  initTracking(data);
 });
+
+/**
+ * Liga o Pixel do Meta (quando configurado no painel) e os eventos da tela:
+ * Lead ao clicar num CTA de plano/começar, Contact ao clicar no WhatsApp.
+ */
+function initTracking(data) {
+  const pixelId = data && data.tracking && data.tracking.meta_pixel_id;
+  if (!pixelId) return;
+  initMetaPixel(pixelId);
+
+  // Lead: intenção real de compra é seguir para o cadastro (não rolar até os
+  // planos). Uma vez por sessão, para não inflar o evento a cada clique.
+  let leadEnviado = false;
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const cta = event.target.closest('a[href*="/cadastro"], [data-cta-plan]');
+    if (cta && !leadEnviado) {
+      leadEnviado = true;
+      trackLead();
+    }
+    const wa = event.target.closest('a[href*="wa.me"], a[href*="whatsapp"], [data-whatsapp]');
+    if (wa) trackWhatsApp();
+  });
+}

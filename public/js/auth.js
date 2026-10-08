@@ -5,6 +5,8 @@
 //   login | register | forgot | reset | admin-login
 // =====================================================================
 import { api } from './core/api.js';
+import { captureTracking, readTracking } from './core/tracking.js';
+import { initMetaPixel, trackRegistration } from './core/meta-pixel.js';
 import { html, render, qs, qsa, setLoading, fieldError, clearFieldErrors, applyApiErrors } from './core/ui.js';
 import { icon } from './core/icons.js';
 
@@ -294,11 +296,14 @@ function initRegister() {
   bindSubmit({
     validate: () => [checkName(), checkEmail(), checkPassword(), checkConfirm()].every(Boolean),
     submit: async () => {
-      const result = await api.post(
-        '/api/auth/register',
-        { name: name.value.trim(), email: email.value.trim(), password: password.value },
-        { noRedirect: true }
-      );
+      // A origem (UTMs) que trouxe o visitante viaja até aqui e é gravada no
+      // usuário, para a venda ser ligada ao anúncio na Utmify lá no pagamento.
+      const tracking = readTracking();
+      const corpo = { name: name.value.trim(), email: email.value.trim(), password: password.value };
+      if (tracking) corpo.tracking = tracking;
+      const result = await api.post('/api/auth/register', corpo, { noRedirect: true });
+      // Cadastro concluído: avisa o Pixel do Meta (se o fbq já veio da landing).
+      trackRegistration();
       location.assign(withChosenPlan(safeNext(result && result.next, '/app/assinatura')));
     },
   });
@@ -463,6 +468,17 @@ async function initAdminLogin() {
 // ---------------------------------------------------------------------
 initYear();
 initPasswordToggles();
+// Anúncio pode apontar direto para /cadastro?utm_source=…: captura aqui também.
+captureTracking();
+// E o Pixel do Meta pode não ter vindo da landing: inicia aqui, sem travar a
+// página se a configuração não responder.
+api
+  .get('/api/landing', { noRedirect: true, timeout: 8000 })
+  .then((data) => {
+    const id = data && data.tracking && data.tracking.meta_pixel_id;
+    if (id) initMetaPixel(id);
+  })
+  .catch(() => {});
 
 const handlers = {
   login: initLogin,

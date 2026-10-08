@@ -39,10 +39,28 @@ const emailSchema = z.string().trim().toLowerCase().email().max(160);
 const passwordSchema = z.string().min(8, 'A senha deve ter pelo menos 8 caracteres.').max(128);
 const nameSchema = z.string().trim().min(2, 'Informe seu nome completo.').max(120);
 
+// Origem do visitante (UTMs capturadas na landing), gravada no usuário para o
+// envio da venda à Utmify. Só os campos conhecidos, cada um curto; o resto do
+// corpo é ignorado. Nunca obrigatório: a maioria dos cadastros não tem.
+const campoTracking = z.string().trim().max(500).optional();
+const trackingSchema = z
+  .object({
+    utm_source: campoTracking,
+    utm_medium: campoTracking,
+    utm_campaign: campoTracking,
+    utm_term: campoTracking,
+    utm_content: campoTracking,
+    src: campoTracking,
+    sck: campoTracking,
+  })
+  .strip()
+  .optional();
+
 const registerSchema = z.object({
   name: nameSchema,
   email: emailSchema,
   password: passwordSchema,
+  tracking: trackingSchema,
 });
 
 const loginSchema = z.object({
@@ -132,18 +150,21 @@ router.post(
   authLimiter,
   validate({ body: registerSchema }),
   wrap(async (req, res) => {
-    const { name, email, password } = req.valid.body;
+    const { name, email, password, tracking } = req.valid.body;
 
     const existing = await db.one('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
     if (existing) throw new AppError(409, 'conflict', 'Já existe uma conta com este e-mail.');
 
+    // Só grava a origem se veio algum campo de fato; objeto vazio vira null.
+    const origem = tracking && Object.values(tracking).some((v) => v) ? tracking : null;
+
     const passwordHash = await bcrypt.hash(password, config.bcryptRounds);
     const user = await db.tx(async (client) => {
       const created = await client.one(
-        `INSERT INTO users (name, email, password_hash, role, last_login_at)
-         VALUES ($1, $2, $3, 'student', now())
+        `INSERT INTO users (name, email, password_hash, role, tracking, last_login_at)
+         VALUES ($1, $2, $3, 'student', $4::jsonb, now())
          RETURNING ${auth.USER_COLUMNS}`,
-        [name, email, passwordHash]
+        [name, email, passwordHash, origem ? JSON.stringify(origem) : null]
       );
       await client.query('INSERT INTO student_profiles (user_id) VALUES ($1)', [created.id]);
       return created;

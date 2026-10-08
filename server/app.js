@@ -54,7 +54,8 @@ function buildCsp() {
     'object-src': ["'none'"],
     'frame-ancestors': ["'self'"],
     'form-action': ["'self'"],
-    'script-src': ["'self'"],
+    // connect.facebook.net serve o fbevents.js do Pixel do Meta.
+    'script-src': ["'self'", 'https://connect.facebook.net'],
     'script-src-attr': ["'none'"],
     // 'unsafe-inline' em estilos permite atributos style="" (barras de progresso, gráficos);
     // fontes carregadas via @import do Google Fonts em app.css/admin.css
@@ -71,7 +72,8 @@ function buildCsp() {
       'https://www.youtube-nocookie.com',
       'https://player.vimeo.com',
     ],
-    'connect-src': ["'self'"],
+    // o Pixel do Meta envia os eventos para facebook.com (fetch e imagem).
+    'connect-src': ["'self'", 'https://www.facebook.com', 'https://connect.facebook.net'],
     'worker-src': ["'self'", 'blob:'],
     'manifest-src': ["'self'"],
   };

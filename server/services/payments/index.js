@@ -26,6 +26,8 @@ const { getSetting } = require('../settings');
 const dates = require('../../utils/dates');
 const asaas = require('./asaas');
 const upgrade = require('./upgrade');
+const utmify = require('../tracking/utmify');
+const metaCapi = require('../tracking/meta-capi');
 
 const ADAPTERS = { asaas };
 const PROVIDER_NAMES = ['asaas', 'none'];
@@ -853,12 +855,102 @@ async function applyAsaasEvent(tx, event) {
   };
 }
 
+/** O resultado do webhook representa uma venda que acabou de ser paga? */
+function creditouVenda(type, result) {
+  if (!result || !result.subscription_id) return false;
+  // 'unchanged'/'skipped' são reprocessamento ou evento sem efeito: a venda já
+  // foi contada (ou não houve). Só o crédito novo vira venda na Utmify.
+  if (result.unchanged || result.skipped) return false;
+  return (
+    type === 'PAYMENT_CONFIRMED' ||
+    type === 'PAYMENT_RECEIVED' ||
+    type === 'CHECKOUT_PAID' ||
+    type === 'SUBSCRIPTION_CREATED'
+  );
+}
+
+/**
+ * Avisa os rastreios (Utmify e Pixel do Meta) de que uma venda foi paga. Roda
+ * FORA da transação do webhook e nunca propaga erro: um rastreio fora do ar não
+ * pode desfazer nem atrasar o acesso que o aluno já recebeu. Busca os dados da
+ * venda uma vez e manda a cada destino de forma isolada — uma falha num não
+ * afeta o outro nem o pagamento.
+ */
+async function notificarVendas(type, result) {
+  try {
+    if (!creditouVenda(type, result)) return;
+    const utmifyOn = utmify.isConfigured();
+    const metaOn = await metaCapi.isConfigured();
+    if (!utmifyOn && !metaOn) return;
+
+    const venda = await db.one(
+      `SELECT s.id AS sub_id, s.payment_method, s.current_period_start,
+              u.id AS user_id, u.name, u.email, u.tracking,
+              p.id AS plan_id, p.name AS plan_name, p.price_cents
+         FROM subscriptions s
+         JOIN users u ON u.id = s.user_id
+         LEFT JOIN plans p ON p.id = s.plan_id
+        WHERE s.id = $1`,
+      [result.subscription_id]
+    );
+    if (!venda) return;
+
+    const tarefas = [];
+    // Utmify: a venda liga-se ao anúncio pela origem gravada no cadastro.
+    // Sem origem ainda vale registrar (venda orgânica aparece sem UTM).
+    if (utmifyOn) {
+      tarefas.push(
+        utmify
+          .sendOrder({
+            orderId: `sub_${venda.sub_id}`,
+            status: 'paid',
+            paymentMethod: venda.payment_method || 'pix',
+            createdAt: venda.current_period_start || new Date(),
+            approvedDate: new Date(),
+            customer: { name: venda.name, email: venda.email },
+            product: {
+              id: venda.plan_id || 'plano',
+              name: venda.plan_name || 'Assinatura',
+              planId: venda.plan_id || null,
+              planName: venda.plan_name || null,
+              priceInCents: venda.price_cents || 0,
+            },
+            tracking: venda.tracking || {},
+          })
+          .then((r) => r && r.error && console.warn(`[utmify] venda ${venda.sub_id}: ${r.error}`))
+          .catch((err) => console.warn(`[utmify] venda ${venda.sub_id}: ${err.message}`))
+      );
+    }
+    // Meta (Conversions API): a compra de Pix é paga fora do site, então o
+    // Pixel do navegador não a veria — por isso ela vai daqui, do servidor. O
+    // event_id é a assinatura, para o Meta deduplicar se um dia a compra também
+    // disparar no navegador.
+    if (metaOn) {
+      tarefas.push(
+        metaCapi
+          .sendPurchase({
+            eventId: `sub_${venda.sub_id}`,
+            value: venda.price_cents || 0,
+            currency: 'BRL',
+            email: venda.email,
+            tracking: venda.tracking || {},
+          })
+          .then((r) => r && r.error && console.warn(`[meta-capi] venda ${venda.sub_id}: ${r.error}`))
+          .catch((err) => console.warn(`[meta-capi] venda ${venda.sub_id}: ${err.message}`))
+      );
+    }
+    await Promise.all(tarefas);
+  } catch (err) {
+    console.warn(`[rastreio] falha ao notificar venda: ${err.message}`);
+  }
+}
+
 /** Fluxo completo do webhook do Asaas: valida → registra → aplica, tudo numa transação. */
 async function handleAsaasWebhook({ rawBody, headers }) {
   const event = asaas.parseWebhook({ rawBody, headers });
   const handled = asaas.HANDLED_EVENTS.has(event.type);
 
-  return db.tx(async (tx) => {
+  const resultado = await db.tx(async (tx) => {
     const isNew = await recordEvent(tx, event);
     const base = { provider: 'asaas', event_id: event.event_id, type: event.type, handled };
     if (!isNew) return { ...base, processed: false, duplicate: true };
@@ -868,6 +960,13 @@ async function handleAsaasWebhook({ rawBody, headers }) {
       : await applyAsaasEvent(tx, event);
     return { ...base, processed: true, duplicate: false, result };
   });
+
+  // Depois de confirmada a transação: a venda paga vai para a Utmify. Isolado
+  // de propósito — um erro aqui não pode afetar o que já foi gravado.
+  if (resultado.processed && !resultado.duplicate) {
+    await notificarVendas(event.type, resultado.result);
+  }
+  return resultado;
 }
 
 /**
@@ -914,4 +1013,8 @@ module.exports = {
   applySubscription,
   detectProvider,
   handleWebhook,
+
+  // Exportado para teste: decide se o resultado de um webhook é uma venda nova
+  // (status 'paid' na Utmify) ou reprocessamento/evento sem efeito.
+  creditouVenda,
 };

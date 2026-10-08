@@ -19,6 +19,8 @@ const { audit } = require('../../middleware/audit');
 const settings = require('../../services/settings');
 const ai = require('../../services/ai');
 const payments = require('../../services/payments');
+const utmify = require('../../services/tracking/utmify');
+const metaCapi = require('../../services/tracking/meta-capi');
 const mailer = require('../../services/mailer');
 const { invalidateLandingCache } = require('../landing');
 
@@ -62,6 +64,11 @@ const settingsBody = z
     openrouter_extract_model: z.preprocess((v) => (v === '' ? '' : v), z.string().trim().max(120).optional()),
     // Leitura pela imagem das questões com alerta (custa mais; desligada por padrão).
     exam_import_vision_enabled: z.boolean().optional(),
+    // Envio de vendas pagas para a Utmify (rastreio de anúncio).
+    utmify_enabled: z.boolean().optional(),
+    // Pixel do Meta: liga/desliga e o ID público (vazio usa META_PIXEL_ID).
+    meta_pixel_enabled: z.boolean().optional(),
+    meta_pixel_id: z.preprocess((v) => (v === '' ? '' : v), z.string().trim().max(40).optional()),
     openrouter_vision_model: z
       .string()
       .trim()
@@ -127,7 +134,12 @@ function withExtras(all) {
 router.get(
   '/integrations',
   wrap(async (req, res) => {
-    const [openrouter, paymentStatus] = await Promise.all([ai.status(), payments.status()]);
+    const [openrouter, paymentStatus, utmifyStatus, metaStatus] = await Promise.all([
+      ai.status(),
+      payments.status(),
+      utmify.status(),
+      metaCapi.status(),
+    ]);
     res.json({
       openrouter: {
         configured: openrouter.configured,
@@ -143,6 +155,8 @@ router.get(
       },
       asaas: paymentStatus.providers.asaas,
       payments: paymentStatus,
+      utmify: utmifyStatus,
+      meta: metaStatus,
       smtp: mailer.smtpStatus(),
       app: { version: config.version, env: config.env, app_url: config.appUrl },
     });

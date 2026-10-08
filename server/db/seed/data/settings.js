@@ -42,6 +42,14 @@ module.exports = {
   // medido (scripts/medir-leitura-visao.js). Modelo vazio = o da leitura.
   exam_import_vision_enabled: false,
   openrouter_vision_model: '',
+  // Envio de vendas pagas para a Utmify (rastreio de anúncio). O token fica em
+  // UTMIFY_API_TOKEN no servidor; isto liga/desliga o envio pelo painel.
+  utmify_enabled: false,
+  // Pixel do Meta: liga/desliga o rastreio (navegador + Conversions API). O
+  // PIXEL_ID é público e pode ficar aqui (cai para META_PIXEL_ID do ambiente
+  // quando vazio); o token da CAPI é segredo e vive só em META_CAPI_TOKEN.
+  meta_pixel_enabled: false,
+  meta_pixel_id: '',
   ai_student_monthly_token_limit: 3000000,
   tutor_system_prompt: TUTOR_SYSTEM_PROMPT,
   review_intervals: [1, 7, 30],

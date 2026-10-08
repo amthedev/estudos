@@ -38,6 +38,8 @@ const SECTIONS = [
   { id: 'coins', label: 'Moedas', icon: 'coins' },
   { id: 'openrouter', label: 'OpenRouter', icon: 'bot' },
   { id: 'asaas', label: 'Asaas', icon: 'credit-card' },
+  { id: 'utmify', label: 'Utmify', icon: 'target' },
+  { id: 'meta', label: 'Pixel do Meta', icon: 'activity' },
   { id: 'smtp', label: 'E-mail', icon: 'mail' },
   { id: 'schedule', label: 'Cronograma', icon: 'calendar-days' },
   { id: 'tutor', label: 'Tutor', icon: 'message-square' },
@@ -165,6 +167,53 @@ function asaasSection() {
         title: 'As chaves do Asaas ficam no servidor',
         text: 'ASAAS_API_KEY e ASAAS_WEBHOOK_TOKEN vêm das variáveis de ambiente. Cartões são coletados somente no checkout seguro do Asaas.',
         actions: html`<a class="btn btn-secondary btn-sm" href="/admin/planos">${icon('credit-card')}<span>Ir para planos</span></a>`,
+      })}
+    </div>`;
+}
+
+function utmifySection() {
+  const u = (state.integrations && state.integrations.utmify) || {};
+  return html`
+    <div class="aset-integration">
+      <div class="aset-integration-head">
+        ${u.configured ? badge('Token configurado', 'green', { icon: 'circle-check' }) : badge('Token ausente', 'red', { icon: 'circle-alert' })}
+        ${u.enabled ? badge('Envio ligado', 'green') : badge('Envio desligado', 'gray')}
+      </div>
+      <dl class="kv aset-kv">
+        <dt>Token da API</dt>
+        <dd>${u.token_last4 ? `•••• ${u.token_last4}` : 'Não definido'}</dd>
+        <dt>Envio de vendas</dt>
+        <dd>${u.enabled ? 'Ligado' : 'Desligado'}</dd>
+      </dl>
+      ${alertBox({
+        type: 'info',
+        title: 'O token da Utmify fica no servidor',
+        text: 'Cadastre UTMIFY_API_TOKEN nas variáveis de ambiente (como a chave do Asaas). O liga/desliga do envio fica em OpenRouter → "Enviar vendas para a Utmify". Quando ligado, cada venda paga é enviada à Utmify com a origem (UTMs) capturada no cadastro.',
+      })}
+    </div>`;
+}
+
+function metaSection() {
+  const m = (state.integrations && state.integrations.meta) || {};
+  return html`
+    <div class="aset-integration">
+      <div class="aset-integration-head">
+        ${m.pixel_id ? badge('Pixel definido', 'green', { icon: 'circle-check' }) : badge('Pixel ausente', 'red', { icon: 'circle-alert' })}
+        ${m.capi_configured ? badge('Conversions API pronta', 'green') : badge('CAPI pendente', 'orange')}
+        ${m.enabled ? badge('Rastreio ligado', 'green') : badge('Rastreio desligado', 'gray')}
+      </div>
+      <dl class="kv aset-kv">
+        <dt>Pixel ID</dt>
+        <dd>${m.pixel_id ? `${m.pixel_id}${m.pixel_id_source === 'ambiente' ? ' (ambiente)' : ''}` : 'Não definido'}</dd>
+        <dt>Token da Conversions API</dt>
+        <dd>${m.capi_token_last4 ? `•••• ${m.capi_token_last4}` : 'Não definido'}</dd>
+        <dt>Rastreio</dt>
+        <dd>${m.enabled ? 'Ligado' : 'Desligado'}</dd>
+      </dl>
+      ${alertBox({
+        type: 'info',
+        title: 'Pixel no navegador + compra pelo servidor',
+        text: 'O Pixel ID é público e pode ser definido em OpenRouter → "Pixel do Meta"; o token da Conversions API é segredo e fica em META_CAPI_TOKEN no servidor. Os eventos Lead, cadastro e clique no WhatsApp saem do navegador; a compra (Purchase) sai do servidor quando o Asaas confirma — assim o Pix pago fora do site também é contado.',
       })}
     </div>`;
 }
@@ -321,6 +370,28 @@ function mountForms() {
       integer: true,
       hint: 'Quando o banco não tem questões suficientes, a IA completa até esta quantidade — e elas ficam guardadas para os próximos simulados. Use 0 para só usar o que está no banco.',
     },
+    {
+      key: 'utmify_enabled',
+      label: 'Enviar vendas para a Utmify',
+      type: 'switch',
+      width: 'full',
+      hint: 'Quando ligado, cada venda paga é enviada à Utmify com a origem (UTMs) capturada no cadastro, para rastrear qual anúncio gerou a compra. Precisa do UTMIFY_API_TOKEN no servidor (veja a aba Utmify). Sem o token, nada é enviado mesmo ligado.',
+    },
+    {
+      key: 'meta_pixel_id',
+      label: 'Pixel ID do Meta',
+      type: 'text',
+      maxLength: 40,
+      placeholder: 'deixe vazio para usar META_PIXEL_ID do servidor',
+      hint: 'O ID do Pixel (é público, aparece no site). Pegue em Gerenciador de Eventos do Meta. A compra pelo servidor ainda precisa do META_CAPI_TOKEN no ambiente.',
+    },
+    {
+      key: 'meta_pixel_enabled',
+      label: 'Ligar o Pixel do Meta',
+      type: 'switch',
+      width: 'full',
+      hint: 'Quando ligado, a landing carrega o Pixel e dispara Lead, cadastro e clique no WhatsApp; a compra é enviada pelo servidor (Conversions API) quando o Asaas confirma. Sem Pixel ID, nada carrega mesmo ligado.',
+    },
   ], {
     values: {
       openrouter_model: s.openrouter_model || '',
@@ -330,6 +401,9 @@ function mountForms() {
       openrouter_vision_model: s.openrouter_vision_model || '',
       ai_student_monthly_token_limit: Number(s.ai_student_monthly_token_limit) || 0,
       simulado_ai_questions_max: Number(s.simulado_ai_questions_max) || 0,
+      utmify_enabled: s.utmify_enabled === true,
+      meta_pixel_id: s.meta_pixel_id || '',
+      meta_pixel_enabled: s.meta_pixel_enabled === true,
     },
     submitLabel: 'Salvar OpenRouter',
     onSubmit: async (values) => {
@@ -341,6 +415,9 @@ function mountForms() {
         openrouter_vision_model: values.openrouter_vision_model || '',
         ai_student_monthly_token_limit: Number(values.ai_student_monthly_token_limit) || 0,
         simulado_ai_questions_max: Number(values.simulado_ai_questions_max) || 0,
+        utmify_enabled: Boolean(values.utmify_enabled),
+        meta_pixel_id: values.meta_pixel_id || '',
+        meta_pixel_enabled: Boolean(values.meta_pixel_enabled),
       }, 'Configurações do OpenRouter salvas.');
       await refreshIntegrations();
     },
@@ -566,6 +643,8 @@ function paint() {
     ${sectionCard({ id: 'coins', title: 'Moedas', subtitle: 'Moedas por dia de cada nível, custo das ações com IA e cota do Tutor.', icon: 'coins', aside: coinsAside() })}
     ${sectionCard({ id: 'openrouter', title: 'OpenRouter', subtitle: 'Tutor, correção de redação e geração de temas.', icon: 'bot', aside: openrouterAside() })}
     ${sectionCard({ id: 'asaas', title: 'Asaas', subtitle: 'Cartão, Pix e assinaturas.', icon: 'credit-card', body: asaasSection() })}
+    ${sectionCard({ id: 'utmify', title: 'Utmify', subtitle: 'Rastreio de qual anúncio gerou cada venda.', icon: 'target', body: utmifySection() })}
+    ${sectionCard({ id: 'meta', title: 'Pixel do Meta', subtitle: 'Lead, cadastro, WhatsApp e compra no Facebook/Instagram.', icon: 'activity', body: metaSection() })}
     ${sectionCard({ id: 'smtp', title: 'E-mail', subtitle: 'Envio de mensagens automáticas.', icon: 'mail', body: smtpSection() })}
     ${sectionCard({ id: 'schedule', title: 'Cronograma', subtitle: 'Revisões e blocos padrão do plano de estudos.', icon: 'calendar-days' })}
     ${sectionCard({ id: 'tutor', title: 'Tutor IA', subtitle: 'Como o tutor conversa com o aluno.', icon: 'message-square' })}

@@ -45,6 +45,7 @@
  * (server/routes/auth.js).
  */
 const router = require('express').Router();
+const config = require('../config');
 const db = require('../db/pool');
 const { wrap } = require('../middleware/errors');
 const settings = require('../services/settings');
@@ -269,7 +270,7 @@ async function loadPayload() {
         WHERE active = true
         ORDER BY sort_order ASC, id ASC`
     ),
-    settings.getMany(['brand_name', 'support_email']),
+    settings.getMany(['brand_name', 'support_email', 'meta_pixel_enabled', 'meta_pixel_id']),
     coins.tierAllowances(),
     coins.readCosts(),
     // A prova do ENEM é achada pelo slug; o nome curto é o plano B para uma
@@ -323,6 +324,15 @@ async function loadPayload() {
     brand: {
       name: brand.brand_name,
       support_email: brand.support_email,
+    },
+    // Pixel do Meta para o navegador. Só o ID (público) e só quando ligado no
+    // painel; o ID vem do painel (meta_pixel_id) ou do ambiente (META_PIXEL_ID).
+    // O token da Conversions API nunca sai do servidor.
+    tracking: {
+      meta_pixel_id:
+        brand.meta_pixel_enabled === true
+          ? String(brand.meta_pixel_id || config.meta.pixelId || '').trim() || null
+          : null,
     },
     // guardado cru (só a data); a conta dos dias é feita na resposta
     countdown: enem ? { exam_short_name: enem.exam_short_name, exam_date: enem.exam_date } : null,

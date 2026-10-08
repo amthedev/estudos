@@ -96,6 +96,9 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   SQUARECLOUD_API_KEY: z.string().optional(),
   STORAGE_PROVIDER: z.string().optional(),
+  UTMIFY_API_TOKEN: z.string().optional(),
+  META_PIXEL_ID: z.string().optional(),
+  META_CAPI_TOKEN: z.string().optional(),
 
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().optional(),
@@ -368,6 +371,23 @@ const config = deepFreeze({
     secure: env.SMTP_SECURE ?? env.SMTP_PORT === 465,
     from: env.SMTP_FROM,
     enabled: Boolean(env.SMTP_HOST),
+  },
+
+  // Rastreio de vendas na Utmify (de qual anúncio veio cada compra). O token
+  // fica só no servidor, como as demais chaves; o liga/desliga do envio é a
+  // configuração utmify_enabled, no painel. Em teste o token é sempre vazio:
+  // a suíte não fala com a API real da Utmify.
+  utmify: {
+    apiToken: isTest ? '' : env.UTMIFY_API_TOKEN || '',
+  },
+
+  // Pixel do Meta (Facebook/Instagram). O PIXEL_ID é público (vai no HTML da
+  // landing); o token da Conversions API é segredo e fica só no servidor, para
+  // mandar a compra confirmada (Pix pago fora do site) direto ao Meta. O
+  // liga/desliga é a configuração meta_pixel_enabled, no painel.
+  meta: {
+    pixelId: isTest ? '' : env.META_PIXEL_ID || '',
+    capiToken: isTest ? '' : env.META_CAPI_TOKEN || '',
   },
 
   admin: {
