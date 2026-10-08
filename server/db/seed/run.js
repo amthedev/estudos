@@ -448,13 +448,14 @@ async function seedCuratedAssets(client, ctx) {
 
     // Vídeo não tem nota de estrelas; só o print curado leva 5.
     await client.query(
-      `INSERT INTO testimonials (name, role, image_url, video_url, rating, exam_id, sort_order, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
+      `INSERT INTO testimonials (name, role, image_url, video_url, kind, rating, exam_id, sort_order, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)`,
       [
         testimonial.name,
         testimonial.role,
         testimonial.image_url ?? null,
         testimonial.video_url ?? null,
+        testimonial.image_url ? testimonial.kind || 'foto' : null,
         isVideo ? null : 5,
         requireId(ctx.exams, testimonial.exam, 'Prova'),
         testimonial.sort_order,

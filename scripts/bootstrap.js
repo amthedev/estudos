@@ -29,7 +29,7 @@ const { getSetting, setSetting } = require('../server/services/settings');
 const { releaseInterruptedCorrections } = require('../server/services/essay');
 const { releaseInterruptedBuilds } = require('../server/services/simulados');
 const lessonQuestions = require('../server/services/lesson-questions');
-const { faqEBonusOutubro2026 } = require('../server/db/seed/ajustes');
+const { faqEBonusOutubro2026, resultadosOutubro2026 } = require('../server/db/seed/ajustes');
 
 function log(mensagem) {
   console.log(`[bootstrap] ${mensagem}`);
@@ -61,6 +61,17 @@ const AJUSTES_UNICOS = [
     run: async () => {
       const resumo = await faqEBonusOutubro2026();
       log(`  planos de 12 meses: ${resumo.planos}; perguntas: ${resumo.perguntasCriadas} criadas, ${resumo.perguntasAtualizadas} atualizadas, ${resumo.perguntasDesativadas} desativadas`);
+    },
+  },
+  {
+    // Outubro/2026: saem os posts de Instagram e os prints antigos de
+    // Resultados; as fotos dos aprovados (que caíam em "Mensagens recebidas")
+    // vão para Aprovados, em cópia leve. Os prints novos entram pelo seed.
+    flag: 'bootstrap_resultados_2026_10_aplicado',
+    descricao: 'Resultados com fotos dos aprovados e prints novos',
+    run: async () => {
+      const resumo = await resultadosOutubro2026();
+      log(`  depoimentos antigos apagados: ${resumo.removidos}; fotos levadas para Aprovados: ${resumo.fotos}`);
     },
   },
 ];

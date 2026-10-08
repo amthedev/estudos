@@ -785,29 +785,32 @@ async function initPlans() {
   window.dispatchEvent(new Event('landing:layout'));
 }
 
+// As imagens curadas de Resultados (/assets/results/<bloco>/arquivo) têm uma
+// miniatura em JPEG ao lado (<bloco>/thumbs/arquivo.jpg); o ampliar abre a cheia.
 function resultThumb(url) {
   const source = String(url || '');
-  if (!source.includes('/assets/results/posts/') && !source.includes('/assets/results/messages/')) {
-    return source;
-  }
+  const match = source.match(/^(\/assets\/results\/[a-z-]+\/)([^/]+)\.(png|jpe?g)$/i);
+  return match ? `${match[1]}thumbs/${match[2]}.jpg` : source;
+}
 
-  return source
-    .replace('/results/posts/', '/results/posts/thumbs/')
-    .replace('/results/messages/', '/results/messages/thumbs/')
-    .replace(/\.png$/i, '.jpg');
+// Bloco da imagem: 'conversa' vai para Mensagens recebidas, o resto é foto de
+// aprovado. Sem o campo (resposta antiga em cache), o caminho decide.
+function isConversation(item) {
+  if (item.kind) return item.kind === 'conversa';
+  return /\/results\/(conversas|messages)\//.test(item.image_url);
 }
 
 function resultCard(item, type) {
   const name = item.name || 'Aluno Foco de Elite';
   const role = item.role || item.exam_short_name || 'Resultado real';
-  const isPost = type === 'post';
+  const isPhoto = type === 'photo';
   return html`
     <button class="result-card result-card-${type}" type="button"
       data-media-src="${item.image_url}"
-      data-media-alt="Depoimento de ${name}: ${role}"
-      aria-label="Abrir depoimento de ${name}">
+      data-media-alt="${isPhoto ? 'Aprovado' : 'Mensagem'}: ${name}, ${role}"
+      aria-label="${isPhoto ? 'Ampliar foto' : 'Abrir mensagem'} de ${name}">
       <span class="result-card-media">
-        <img src="${resultThumb(item.image_url)}" alt="" width="${isPost ? 440 : 340}" height="${isPost ? 550 : 604}" loading="lazy" decoding="async">
+        <img src="${resultThumb(item.image_url)}" alt="" width="${isPhoto ? 480 : 340}" height="${isPhoto ? 600 : 604}" loading="lazy" decoding="async">
         <span class="media-open" aria-hidden="true">${icon('maximize-2')}</span>
       </span>
       <span class="result-card-copy"><strong>${name}</strong><span>${role}</span></span>
@@ -1155,6 +1158,64 @@ function initActivity(data) {
   window.setTimeout(start, Math.max(0, ACTIVITY_FIRST_MS - elapsed));
 }
 
+// Carrossel de Resultados: anda sozinho um cartão para a esquerda a cada
+// RAIL_STEP_MS e, no fim, volta ao começo. Para enquanto a pessoa mexe nele
+// (dedo, mouse, teclado), fora da tela e com a aba escondida; com movimento
+// reduzido não anda sozinho. Arrastar e as setas continuam valendo sempre.
+const RAIL_STEP_MS = 3200;
+const RAIL_RESUME_MS = 6000;
+
+function initResultsRail(rail) {
+  const block = rail.closest('.results-block');
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const behavior = reduce ? 'auto' : 'smooth';
+
+  const step = () => {
+    const card = rail.firstElementChild;
+    if (!card) return rail.clientWidth;
+    const gap = parseFloat(getComputedStyle(rail).columnGap) || 0;
+    return card.getBoundingClientRect().width + gap;
+  };
+  const atEnd = () => rail.scrollLeft + rail.clientWidth >= rail.scrollWidth - 4;
+  const atStart = () => rail.scrollLeft <= 4;
+  const forward = () => {
+    if (atEnd()) rail.scrollTo({ left: 0, behavior });
+    else rail.scrollBy({ left: step(), behavior });
+  };
+  const back = () => {
+    if (atStart()) rail.scrollTo({ left: rail.scrollWidth, behavior });
+    else rail.scrollBy({ left: -step(), behavior });
+  };
+
+  let pausedUntil = 0;
+  const hold = () => { pausedUntil = Date.now() + RAIL_RESUME_MS; };
+  qs('[data-rail-prev]', block)?.addEventListener('click', () => { hold(); back(); });
+  qs('[data-rail-next]', block)?.addEventListener('click', () => { hold(); forward(); });
+
+  if (reduce) return;
+
+  let hovering = false;
+  let visible = false;
+  rail.addEventListener('pointerenter', (event) => { if (event.pointerType === 'mouse') hovering = true; });
+  rail.addEventListener('pointerleave', () => { hovering = false; hold(); });
+  ['pointerdown', 'touchstart', 'wheel', 'focusin', 'keydown'].forEach((type) => {
+    rail.addEventListener(type, hold, { passive: true });
+  });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver((entries) => {
+      visible = entries.some((entry) => entry.isIntersecting);
+    }, { threshold: 0.35 }).observe(rail);
+  } else {
+    visible = true;
+  }
+
+  window.setInterval(() => {
+    if (!visible || hovering || document.hidden || Date.now() < pausedUntil) return;
+    if (rail.scrollWidth <= rail.clientWidth + 4) return;
+    forward();
+  }, RAIL_STEP_MS);
+}
+
 async function initResults() {
   const section = qs('#resultados');
   const postsEl = qs('#results-posts');
@@ -1166,26 +1227,26 @@ async function initResults() {
   const testimonials = Array.isArray(data && data.testimonials) ? data.testimonials : [];
 
   const withImage = testimonials.filter((item) => item && item.image_url);
-  const videos = testimonials.filter((item) => item && item.video_url);
-  const posts = withImage.filter((item) => item.image_url.includes('/results/posts/'));
-  const messages = withImage.filter((item) => !item.image_url.includes('/results/posts/'));
-  if (!posts.length && !messages.length && !videos.length) {
+  const videos = testimonials.filter((item) => item && item.video_url && !item.image_url);
+  const photos = withImage.filter((item) => !isConversation(item));
+  const messages = withImage.filter((item) => isConversation(item));
+  if (!photos.length && !messages.length && !videos.length) {
     section.hidden = true;
     qsa('a[href="#resultados"]').forEach((link) => { link.hidden = true; });
     return;
   }
 
-  render(postsEl, posts.map((item) => resultCard(item, 'post')));
+  render(postsEl, photos.map((item) => resultCard(item, 'photo')));
   render(messagesEl, messages.map((item) => resultCard(item, 'message')));
   if (videosEl) render(videosEl, videos.map((item) => videoCard(item)));
-  if (!posts.length) postsEl.closest('.results-block').hidden = true;
+  if (!photos.length) postsEl.closest('.results-block').hidden = true;
   if (!messages.length) messagesEl.closest('.results-block').hidden = true;
   const videosBlock = qs('#results-videos-block');
   if (videosBlock) videosBlock.hidden = !videos.length;
 
-  const step = () => Math.min(messagesEl.clientWidth * 0.78, 760);
-  qs('[data-results-prev]')?.addEventListener('click', () => messagesEl.scrollBy({ left: -step(), behavior: 'smooth' }));
-  qs('[data-results-next]')?.addEventListener('click', () => messagesEl.scrollBy({ left: step(), behavior: 'smooth' }));
+  qsa('[data-results-rail]', section).forEach((rail) => {
+    if (!rail.closest('.results-block').hidden) initResultsRail(rail);
+  });
   window.dispatchEvent(new Event('landing:layout'));
 }
 

@@ -125,6 +125,7 @@ const testimonialBase = z
     image_url: assetUrl,
     video_url: assetUrl,
     photo_url: assetUrl,
+    kind: z.preprocess(emptyToNull, z.enum(['foto', 'conversa']).nullable().optional()),
     rating: z.preprocess(emptyToNull, z.coerce.number().int().min(1).max(5).nullable().optional()),
     exam_id: z.preprocess(emptyToNull, uuid.nullable().optional()),
     sort_order: sortField,
@@ -187,6 +188,17 @@ function ensureTestimonialContent(record) {
   ]);
 }
 
+/**
+ * Bloco da landing para o depoimento em imagem: 'foto' (Aprovados) ou
+ * 'conversa' (Mensagens recebidas). Sem imagem, não há bloco; imagem sem
+ * escolha vai para Aprovados.
+ */
+function testimonialKind(record) {
+  const hasImage = typeof record.image_url === 'string' && record.image_url.trim() !== '';
+  if (!hasImage) return null;
+  return record.kind === 'conversa' ? 'conversa' : 'foto';
+}
+
 async function ensureExam(examId) {
   if (!examId) return;
   const exam = await db.one('SELECT id FROM exams WHERE id = $1', [examId]);
@@ -197,7 +209,7 @@ async function ensureExam(examId) {
   }
 }
 
-const TESTIMONIAL_COLUMNS = `t.id, t.name, t.role, t.content, t.image_url, t.video_url, t.photo_url, t.rating, t.exam_id,
+const TESTIMONIAL_COLUMNS = `t.id, t.name, t.role, t.content, t.image_url, t.video_url, t.photo_url, t.kind, t.rating, t.exam_id,
   t.sort_order, t.active, t.created_at, t.updated_at,
   e.short_name AS exam_short_name, e.name AS exam_name`;
 
@@ -350,7 +362,7 @@ router.delete(
 // ---------------------------------------------------------------------------
 // depoimentos
 // ---------------------------------------------------------------------------
-const TESTIMONIAL_FIELDS = ['name', 'role', 'content', 'image_url', 'video_url', 'photo_url', 'rating', 'exam_id', 'sort_order', 'active'];
+const TESTIMONIAL_FIELDS = ['name', 'role', 'content', 'image_url', 'video_url', 'photo_url', 'kind', 'rating', 'exam_id', 'sort_order', 'active'];
 
 router.get(
   '/testimonials',
@@ -375,11 +387,11 @@ router.post(
 
     const order = body.sort_order ?? (await nextSortOrder('testimonials'));
     const created = await db.one(
-      `INSERT INTO testimonials (name, role, content, image_url, video_url, photo_url, rating, exam_id, sort_order, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      `INSERT INTO testimonials (name, role, content, image_url, video_url, photo_url, kind, rating, exam_id, sort_order, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
       [
         body.name, body.role ?? null, body.content ?? null, body.image_url ?? null, body.video_url ?? null,
-        body.photo_url ?? null, body.rating ?? null, body.exam_id ?? null, order, body.active !== false,
+        body.photo_url ?? null, testimonialKind(body), body.rating ?? null, body.exam_id ?? null, order, body.active !== false,
       ]
     );
 
@@ -424,11 +436,11 @@ router.put(
 
     await db.query(
       `UPDATE testimonials SET name = $1, role = $2, content = $3, image_url = $4, video_url = $5, photo_url = $6,
-              rating = $7, exam_id = $8, sort_order = $9, active = $10
-        WHERE id = $11`,
+              kind = $7, rating = $8, exam_id = $9, sort_order = $10, active = $11
+        WHERE id = $12`,
       [
         next.name, next.role ?? null, next.content ?? null, next.image_url ?? null, next.video_url ?? null,
-        next.photo_url ?? null, next.rating ?? null, next.exam_id ?? null, Number(next.sort_order) || 0,
+        next.photo_url ?? null, testimonialKind(next), next.rating ?? null, next.exam_id ?? null, Number(next.sort_order) || 0,
         next.active !== false, id,
       ]
     );

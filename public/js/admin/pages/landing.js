@@ -259,7 +259,7 @@ function testimonialPreview(values = {}) {
       </figcaption>
       ${stars(values.rating)}
       ${content ? html`<blockquote class="adl-card-quote">${content}</blockquote>` : ''}
-      ${image ? html`<img class="adl-card-shot" src="${image}" alt="Print da conversa" loading="lazy">` : ''}
+      ${image ? html`<img class="adl-card-shot" src="${image}" alt="${values.kind === 'conversa' ? 'Print da conversa' : 'Foto do aluno aprovado'}" loading="lazy">` : ''}
       ${video ? html`<video class="adl-card-shot" src="${video}" controls preload="metadata"></video>` : ''}
       ${!content && !image && !video ? html`<p class="hint">Escreva o depoimento, envie o vídeo ou informe a imagem do print para ver a prévia.</p>` : ''}
       ${exam ? html`<span class="adl-card-exam">${badge(exam.short_name || exam.name, 'blue')}</span>` : ''}
@@ -272,6 +272,10 @@ function testimonialForm() {
   const examOptions = [{ value: '', label: 'Nenhuma' }].concat(
     (state.data.exams || []).map((exam) => ({ value: exam.id, label: exam.short_name || exam.name }))
   );
+  const kindOptions = [
+    { value: 'foto', label: 'Aprovados (foto do aluno)' },
+    { value: 'conversa', label: 'Mensagens recebidas (print da conversa)' },
+  ];
   const ratingOptions = [{ value: '', label: 'Sem nota' }].concat(
     [5, 4, 3, 2, 1].map((value) => ({ value: String(value), label: `${value} de 5` }))
   );
@@ -287,7 +291,8 @@ function testimonialForm() {
             ${field({ name: 'name', label: 'Nome do aluno', value: current.name, width: 'half', required: true, maxlength: 120 })}
             ${field({ name: 'role', label: 'Papel', value: current.role, width: 'half', placeholder: 'Aprovada em Medicina', maxlength: 120 })}
             ${field({ name: 'content', label: 'Depoimento em texto', value: current.content, type: 'textarea', rows: 5, maxlength: 4000, hint: 'Texto, print ou vídeo — pelo menos um dos três.' })}
-            ${field({ name: 'image_url', label: 'Print da conversa', value: current.image_url, placeholder: 'https://… ou envie a imagem', hint: 'Use quando o depoimento for uma captura de tela.', upload: 'depoimentos' })}
+            ${field({ name: 'image_url', label: 'Imagem', value: current.image_url, placeholder: 'https://… ou envie a imagem', hint: 'Foto do aprovado ou print da conversa.', upload: 'depoimentos' })}
+            ${field({ name: 'kind', label: 'Onde a imagem aparece', value: current.kind || 'foto', type: 'select', options: kindOptions, hint: 'Bloco de Resultados da página inicial em que a imagem entra.' })}
             ${field({ name: 'video_url', label: 'Vídeo do depoimento', value: current.video_url, placeholder: 'https://… ou envie o vídeo', hint: 'Aluno falando em vídeo (MP4/MOV). Aparece separado dos prints na página inicial.', upload: 'depoimentos', uploadAccept: 'video' })}
             ${field({ name: 'photo_url', label: 'Foto do aluno', value: current.photo_url, placeholder: 'https://… ou envie a imagem', upload: 'depoimentos' })}
             ${field({ name: 'rating', label: 'Nota', value: current.rating ?? '', type: 'select', width: 'half', options: ratingOptions })}
@@ -351,7 +356,9 @@ function testimonialsPanel() {
                       <td>
                         ${item.content
                           ? html`<span class="adl-quote-cell">${truncate(item.content, 120)}</span>`
-                          : html`<span class="chip">${icon('image', { size: 14 })}<span>Print da conversa</span></span>`}
+                          : item.video_url && !item.image_url
+                            ? html`<span class="chip">${icon('play', { size: 14 })}<span>Vídeo</span></span>`
+                            : html`<span class="chip">${icon('image', { size: 14 })}<span>${item.kind === 'conversa' ? 'Print da conversa' : 'Foto · Aprovados'}</span></span>`}
                       </td>
                       <td>${item.rating ? stars(item.rating) : html`<span class="text-3">—</span>`}</td>
                       <td>${item.exam_short_name ? badge(item.exam_short_name, 'blue') : html`<span class="text-3">—</span>`}</td>
@@ -385,6 +392,7 @@ async function saveTestimonial(form) {
     image_url: values.image_url ?? '',
     video_url: values.video_url ?? '',
     photo_url: values.photo_url ?? '',
+    kind: values.kind || 'foto',
     rating: values.rating ?? '',
     exam_id: values.exam_id ?? '',
     active: Boolean(values.active),

@@ -182,22 +182,34 @@
           <div><p class="eyebrow">Resultados reais</p><h2 id="results-title">Aprovação com <span>prova.</span></h2></div>
         </div>
         <div class="results-block reveal" aria-labelledby="results-posts-title">
-          <div class="results-subhead"><h3 id="results-posts-title">Aprovados</h3><span>ENEM e Barro Branco</span></div>
-          <div class="results-post-grid" id="results-posts"></div>
+          <div class="results-subhead">
+            <div><h3 id="results-posts-title">Aprovados</h3><span>Medicina e Barro Branco · fotos editadas</span></div>
+            <div class="results-controls" aria-label="Navegar pelos aprovados">
+              <button class="btn btn-icon btn-ghost" type="button" data-rail-prev aria-label="Aprovado anterior" title="Anterior"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-left"></use></svg></button>
+              <button class="btn btn-icon btn-ghost" type="button" data-rail-next aria-label="Próximo aprovado" title="Próximo"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-right"></use></svg></button>
+            </div>
+          </div>
+          <div class="results-rail results-rail-photos" id="results-posts" tabindex="0" data-results-rail></div>
         </div>
         <div class="results-block results-videos-block reveal" id="results-videos-block" aria-labelledby="results-videos-title" hidden>
-          <div class="results-subhead"><h3 id="results-videos-title">Quem estudou, conta</h3><span>Depoimentos em vídeo</span></div>
-          <div class="results-video-grid" id="results-videos"></div>
+          <div class="results-subhead">
+            <div><h3 id="results-videos-title">Quem estudou, conta</h3><span>Depoimentos em vídeo</span></div>
+            <div class="results-controls" aria-label="Navegar pelos vídeos">
+              <button class="btn btn-icon btn-ghost" type="button" data-rail-prev aria-label="Vídeo anterior" title="Anterior"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-left"></use></svg></button>
+              <button class="btn btn-icon btn-ghost" type="button" data-rail-next aria-label="Próximo vídeo" title="Próximo"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-right"></use></svg></button>
+            </div>
+          </div>
+          <div class="results-rail results-rail-videos" id="results-videos" tabindex="0" data-results-rail></div>
         </div>
         <div class="results-block results-messages-block reveal" aria-labelledby="results-messages-title">
           <div class="results-subhead">
             <div><h3 id="results-messages-title">Mensagens recebidas</h3><span>De quem viveu a preparação</span></div>
-            <div class="results-controls" aria-label="Navegar pelos depoimentos">
-              <button class="btn btn-icon btn-ghost" type="button" data-results-prev aria-label="Depoimento anterior" title="Anterior"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-left"></use></svg></button>
-              <button class="btn btn-icon btn-ghost" type="button" data-results-next aria-label="Próximo depoimento" title="Próximo"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-right"></use></svg></button>
+            <div class="results-controls" aria-label="Navegar pelas mensagens">
+              <button class="btn btn-icon btn-ghost" type="button" data-rail-prev aria-label="Mensagem anterior" title="Anterior"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-left"></use></svg></button>
+              <button class="btn btn-icon btn-ghost" type="button" data-rail-next aria-label="Próxima mensagem" title="Próximo"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-right"></use></svg></button>
             </div>
           </div>
-          <div class="results-message-rail" id="results-messages" tabindex="0"></div>
+          <div class="results-rail results-rail-messages" id="results-messages" tabindex="0" data-results-rail></div>
         </div>
       </div>
     </section>

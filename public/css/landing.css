@@ -249,11 +249,11 @@ body { overflow-x: hidden; background: var(--ink); }
 .results-subhead > div:first-child { min-width: 0; }
 .results-subhead h3 { color: #fff; font-family: var(--font-display); font-size: 16px; font-weight: 800; text-transform: uppercase; }
 .results-subhead span { display: block; margin-top: 4px; color: var(--text-3); font-size: 11px; }
-.results-post-grid { display: grid; grid-template-columns: repeat(5, minmax(0px, 1fr)); gap: 12px; }
 .result-card { min-width: 0; display: block; padding: 0; overflow: hidden; color: inherit; text-align: left; appearance: none; cursor: pointer; background: #0d1b2c; border: 1px solid var(--border-2); border-radius: 8px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2); scroll-snap-align: start; transition: transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 300ms, box-shadow 300ms; }
 .result-card:hover { border-color: rgba(242, 198, 77, 0.66); box-shadow: 0 20px 42px rgba(0, 0, 0, 0.3); transform: translateY(-6px); }
 .result-card-media { position: relative; display: block; overflow: hidden; background: #030811; }
-.result-card-post .result-card-media { aspect-ratio: 4 / 5; }
+.result-card-photo .result-card-media { aspect-ratio: 4 / 5; }
+.result-card-photo .result-card-media img { object-position: center 35%; }
 .result-card-message .result-card-media { aspect-ratio: 9 / 16; }
 .result-card-media::after { content: ""; position: absolute; inset: auto 0 0; height: 22%; pointer-events: none; background: linear-gradient(transparent, rgba(4, 11, 20, 0.32)); }
 .result-card-media img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top center; transition: transform 650ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 300ms; }
@@ -261,8 +261,9 @@ body { overflow-x: hidden; background: var(--ink); }
 .result-card-copy { min-height: 70px; display: flex; justify-content: center; flex-direction: column; gap: 3px; padding: 14px 15px; border-top: 1px solid var(--border); }
 .result-card-copy strong { overflow: hidden; color: #fff; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .result-card-copy span { overflow: hidden; color: var(--text-2); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.results-message-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 250px); gap: 12px; padding: 2px 2px 16px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline mandatory; scrollbar-color: rgba(224, 184, 75, 0.6) rgba(255, 255, 255, 0.06); scrollbar-width: thin; }
-.results-video-grid { display: grid; grid-template-columns: repeat(4, minmax(0px, 1fr)); gap: 12px; }
+/* Aprovados, vídeos e mensagens: o mesmo trilho lateral, que anda sozinho para a esquerda (initResultsRail);
+   o respiro de cima deixa o cartão subir no hover sem ser cortado */
+.results-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 250px); gap: 12px; margin-top: -8px; padding: 10px 2px 16px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline mandatory; scrollbar-color: rgba(224, 184, 75, 0.6) rgba(255, 255, 255, 0.06); scrollbar-width: thin; }
 .result-card-video .result-card-media { aspect-ratio: 9 / 16; }
 .result-card-video .result-card-media video { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: #030811; }
 .media-play { top: 50%; left: 50%; right: auto; width: 52px; height: 52px; opacity: 1; transform: translate(-50%, -50%); background: rgba(4, 11, 20, 0.72); }
@@ -464,10 +465,8 @@ body { overflow-x: hidden; background: var(--ink); }
   :root { --section-y: 84px; }
   .platform-showcase, .exams-showcase, .method-showcase { grid-template-columns: 1fr; }
   .platform-showcase > .section-visual, .exams-showcase > .section-visual, .method-showcase > .section-visual { height: auto; min-height: 0px; aspect-ratio: 3 / 2; }
-  .results-post-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(210px, 1fr); padding-bottom: 14px; overflow-x: auto; scroll-snap-type: inline mandatory; scrollbar-width: thin; }
-  .results-video-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(210px, 1fr); padding-bottom: 14px; overflow-x: auto; scroll-snap-type: inline mandatory; scrollbar-width: thin; }
   /* os trilhos correm até a borda da tela, com o primeiro cartão alinhado ao texto */
-  .results-post-grid, .results-video-grid, .results-message-rail { margin-inline: -28px; padding-inline: 28px; scroll-padding-inline: 28px; }
+  .results-rail { margin-inline: -28px; padding-inline: 28px; scroll-padding-inline: 28px; }
   .exams-showcase > .section-visual { order: -1; }
   .exam-grid { grid-template-columns: repeat(3, 1fr); }
   .exam-card { display: block; }
@@ -500,9 +499,8 @@ body { overflow-x: hidden; background: var(--ink); }
   .social-proof { width: min(900px, 82vw); }
   /* print de Provas nas duas colunas: a faixa de cima fica para o selo e o print centraliza no resto */
   .section-visual-shot img { object-position: center; padding: 64px 14px 14px; }
-  /* vídeos nas mesmas cinco colunas dos Aprovados e no mesmo retrato 4:5: a fileira tem a altura da de cima e o rosto
+  /* vídeos no mesmo retrato 4:5 dos Aprovados: a fileira tem a altura da de cima e o rosto
      aparece inteiro (os vídeos são em pé; deitada em 4:3, a miniatura cortava testa e queixo em 1024 e 1366) */
-  .results-video-grid { grid-template-columns: repeat(5, minmax(0px, 1fr)); }
   .result-card-video .result-card-media { aspect-ratio: 4 / 5; }
   .result-card-video .result-card-media video { object-position: center 30%; }
   /* o play vai para o canto de baixo: no centro ele caía em cima do rosto */
@@ -511,8 +509,8 @@ body { overflow-x: hidden; background: var(--ink); }
   /* no print da conversa, o 3:5 corta só a barra de digitar lá embaixo (o ampliar mostra o print inteiro) */
   .result-card-message .result-card-media { aspect-ratio: 3 / 5; }
   .results-block + .results-block { margin-top: 32px; }
-  /* mensagens: exatamente 5 cartões na área, nas mesmas colunas dos Aprovados */
-  .results-message-rail { grid-auto-columns: calc((100% - 48px) / 5); padding: 2px 0px 16px; }
+  /* os três trilhos: exatamente 5 cartões na área, nas mesmas colunas */
+  .results-rail { grid-auto-columns: calc((100% - 48px) / 5); padding: 10px 0px 16px; }
 }
 @media (min-width: 768px) and (max-width: 1023px) {
   /* 4 ferramentas em cima e 3 centralizadas embaixo */
@@ -650,10 +648,7 @@ body { overflow-x: hidden; background: var(--ink); }
   /* o print da conversa, cortado, termina num esfumado mais forte, para não parecer imagem quebrada */
   .result-card-message .result-card-media::after { height: 34%; background: linear-gradient(transparent, rgba(4, 11, 20, 0.78)); }
   .result-card-copy { min-height: 60px; padding: 11px 14px; }
-  .results-post-grid { grid-auto-columns: minmax(230px, 72vw); }
-  .results-video-grid { grid-auto-columns: minmax(230px, 72vw); }
-  .results-message-rail { grid-auto-columns: minmax(230px, 72vw); }
-  .results-post-grid, .results-video-grid, .results-message-rail { margin-inline: -18px; padding-inline: 18px; scroll-padding-inline: 18px; }
+  .results-rail { grid-auto-columns: minmax(230px, 72vw); margin-inline: -18px; padding-inline: 18px; scroll-padding-inline: 18px; }
   /* a legenda de cada bloco fica embaixo do título, alinhada à esquerda */
   .results-subhead { align-items: center; flex-wrap: wrap; row-gap: 0px; }
   .results-subhead > h3 { flex: 1 1 100%; }
