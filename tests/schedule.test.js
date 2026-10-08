@@ -13,6 +13,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { createTestContext } = require('./helpers');
 const dates = require('../server/utils/dates');
+const scheduleService = require('../server/services/schedule');
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 /** Tolerância da capacidade diária (minutos) — ver ARCHITECTURE §5. */
@@ -130,9 +131,9 @@ describe('Cronograma, revisões e onboarding', () => {
 
     const res = await student.agent.get('/api/schedule');
     assert.equal(res.status, 200);
-    assert.equal(res.body.days.length, 14);
+    assert.equal(res.body.days.length, 30, 'o horizonte padrão é de 30 dias');
     const withItems = res.body.days.filter((day) => day.items.length > 0);
-    assert.ok(withItems.length >= 7, 'com estudo todos os dias, o cronograma deve cobrir a quinzena');
+    assert.ok(withItems.length >= 14, 'com estudo todos os dias, o cronograma deve cobrir boa parte do mês');
     for (const item of res.body.days[0].items) {
       assert.ok(item.id && item.type && item.title, 'item precisa de id, tipo e título');
       assert.ok(typeof item.href === 'string' && item.href.startsWith('/app/'));
@@ -359,6 +360,58 @@ describe('Cronograma, revisões e onboarding', () => {
       pendingBefore.map((item) => item.id),
     ]);
     assert.equal(survivors.length, pendingBefore.length, 'os itens remanejados devem sobreviver à regeração');
+  });
+
+  it('ao longo do tempo o cronograma AVANÇA nos assuntos, não repete a mesma semana', async () => {
+    // O bug relatado: passava o tempo e o cronograma recomeçava pelos mesmos
+    // assuntos. Simulamos duas janelas no tempo: a primeira a partir de hoje, a
+    // segunda a partir de depois do fim da primeira (como se o aluno tivesse
+    // avançado sem concluir nada). Os assuntos da segunda janela têm que ser
+    // DIFERENTES dos da primeira — senão é a repetição que o cliente viu.
+    // PROVA PRÓPRIA deste teste, isolada, com conteúdo farto — para não alterar
+    // as contagens de assunto/matéria que outros testes verificam na prova
+    // compartilhada. Sem assunto suficiente, a segunda janela ficaria vazia por
+    // falta de material, não por repetição.
+    const exam = await db.one(
+      `INSERT INTO exams (slug, name, short_name, track, board, has_essay, exam_date, active)
+       VALUES ('prova-tempo', 'Prova Tempo', 'TEMPO', 'enem', 'INEP', false, (now() + interval '300 days')::date, true) RETURNING id`
+    );
+    const mat = await db.one(
+      `INSERT INTO subjects (slug, name, color, icon, sort_order, active) VALUES ('tempo-sub', 'Matéria Tempo', '#888', 'book', 99, true) RETURNING id`
+    );
+    await db.query('INSERT INTO exam_subjects (exam_id, subject_id, weight) VALUES ($1, $2, 5)', [exam.id, mat.id]);
+    for (let i = 1; i <= 40; i += 1) {
+      const t = await db.one(
+        `INSERT INTO topics (subject_id, slug, name, sort_order) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [mat.id, `extra-tempo-${i}`, `Extra ${i}`, i]
+      );
+      await db.query('INSERT INTO exam_topics (exam_id, topic_id, weight) VALUES ($1, $2, 1)', [exam.id, t.id]);
+    }
+
+    const aluno = await ctx.registerStudent({ name: 'Aluno Tempo' });
+    await aluno.agent.post('/api/onboarding', onboardingPayload(exam.id, { study_days: [0, 1, 2, 3, 4, 5, 6], hours_per_day: 3 }));
+
+    const assuntosDe = async (de, ate) => {
+      const rows = await db.many(
+        `SELECT DISTINCT topic_id FROM schedule_items
+          WHERE user_id = $1 AND type = 'topic' AND topic_id IS NOT NULL AND date BETWEEN $2 AND $3`,
+        [aluno.user.id, de, ate]
+      );
+      return new Set(rows.map((r) => r.topic_id));
+    };
+
+    const hoje = dates.todayISO();
+    const fimJanela1 = dates.addDays(hoje, 13);
+    const janela1 = await assuntosDe(hoje, fimJanela1);
+
+    // tempo passou: gera a próxima janela começando depois da primeira
+    const inicioJanela2 = dates.addDays(hoje, 14);
+    await scheduleService.generateSchedule(aluno.user.id, { from: inicioJanela2, days: 14 });
+    const janela2 = await assuntosDe(inicioJanela2, dates.addDays(inicioJanela2, 13));
+
+    assert.ok(janela1.size > 0 && janela2.size > 0, 'as duas janelas têm assuntos');
+    const repetidos = [...janela2].filter((id) => janela1.has(id));
+    assert.deepEqual(repetidos, [], 'a segunda janela não pode repetir os assuntos da primeira');
   });
 
   it('um aluno não altera nem enxerga itens de outro aluno', async () => {

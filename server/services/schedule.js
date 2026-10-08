@@ -31,10 +31,10 @@ const dates = require('../utils/dates');
 const studyPlan = require('./study-plan');
 const { getSetting } = require('./settings');
 
-const DEFAULT_HORIZON_DAYS = 14;
+const DEFAULT_HORIZON_DAYS = 30;
 const MAX_HORIZON_DAYS = 60;
-/** Gera mais dias quando o cronograma tem menos de uma semana pela frente. */
-const AHEAD_THRESHOLD_DAYS = 7;
+/** Gera mais dias quando o cronograma tem menos de duas semanas pela frente. */
+const AHEAD_THRESHOLD_DAYS = 14;
 const LESSON_EXTRA_MIN = 10;
 const TOPIC_BLOCK_MIN = 40;
 const ESSAY_BLOCK_MIN = 60;
@@ -258,7 +258,7 @@ function groupByDay(items, { from, to, studyDays }) {
  * Carrega matérias (com peso), assuntos na ordem do edital, aulas pendentes e desempenho.
  * Sem prova escolhida, todas as matérias ativas entram com peso 1.
  */
-async function loadPlan(userId, profile) {
+async function loadPlan(userId, profile, { coveredBefore = null } = {}) {
   const examId = profile.exam_id || null;
 
   let subjects = [];
@@ -328,10 +328,20 @@ async function loadPlan(userId, profile) {
       )
     : [];
 
+  // Assuntos que não devem ser ofertados de novo: os já concluídos (done) E os
+  // que já estão agendados em dias que esta geração NÃO vai refazer (antes de
+  // coveredBefore = a data `from`). Sem a segunda parte, cada regeração
+  // apagava o pending e recomeçava pelos mesmos primeiros assuntos — o
+  // cronograma repetia a mesma semana e nunca avançava pela lista. Com ela, a
+  // geração continua de onde o cronograma já estava.
   const studiedTopics = await db.many(
     `SELECT DISTINCT topic_id FROM schedule_items
-      WHERE user_id = $1 AND type = 'topic' AND status = 'done' AND topic_id IS NOT NULL`,
-    [userId]
+      WHERE user_id = $1 AND topic_id IS NOT NULL
+        AND (
+          (type = 'topic' AND status = 'done')
+          OR ($2::date IS NOT NULL AND date < $2 AND type IN ('lesson', 'topic'))
+        )`,
+    [userId, coveredBefore]
   );
   const studiedTopicIds = new Set(studiedTopics.map((row) => row.topic_id));
 
@@ -560,7 +570,10 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
   }
 
   const config = await getScheduleDefaults();
-  const plan = await loadPlan(userId, profile);
+  // `start` é o primeiro dia que esta geração refaz; o que está agendado antes
+  // dele já conta como coberto, para a geração avançar na lista em vez de
+  // recomeçar pelos mesmos assuntos.
+  const plan = await loadPlan(userId, profile, { coveredBefore: start });
   const planData = await studyPlan.loadPlanForExam(profile.exam_id);
   const examDate = effectiveExamDate(profile);
   const today = dates.todayISO();
