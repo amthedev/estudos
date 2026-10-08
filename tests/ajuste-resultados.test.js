@@ -9,7 +9,8 @@
  * Simula o banco de produção de antes do ajuste (posts de Instagram, prints
  * antigos, fotos de aprovados enviadas pelo painel e um vídeo) e confere: a
  * migration marca cada imagem com o bloco certo, o ajuste apaga os posts e os
- * prints antigos e leva as fotos para a cópia leve sem mexer no vídeo, rodar de
+ * prints antigos, leva as fotos para a cópia leve e cadastra os prints novos
+ * sem mexer no vídeo, rodar de
  * novo não muda nada, o painel grava o bloco escolhido e todo arquivo citado
  * existe com a sua miniatura.
  */
@@ -19,7 +20,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { createTestContext } = require('./helpers');
 const { resultadosOutubro2026, FOTOS_APROVADOS } = require('../server/db/seed/ajustes');
-const { testimonials } = require('../server/db/seed/data/curated_assets');
+const { resultConversations } = require('../server/db/seed/data/curated_assets');
 const { invalidateLandingCache } = require('../server/routes/landing');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -58,9 +59,14 @@ describe('Resultados: Aprovados com fotos, Mensagens com prints', () => {
 
   it('apaga posts e prints antigos e leva as fotos do painel para a cópia leve', async () => {
     const resumo = await resultadosOutubro2026();
-    assert.deepEqual(resumo, { removidos: 2, fotos: 2 });
+    assert.deepEqual(resumo, { removidos: 2, fotos: 2, prints: 12 });
 
-    const rows = await ctx.db.many('SELECT name, role, image_url, video_url, kind FROM testimonials ORDER BY sort_order');
+    const prints = await ctx.db.many(`SELECT image_url FROM testimonials WHERE kind = 'conversa' ORDER BY sort_order`);
+    assert.deepEqual(prints.map((row) => row.image_url), resultConversations.map((item) => item.image_url));
+
+    const rows = await ctx.db.many(
+      `SELECT name, role, image_url, video_url, kind FROM testimonials WHERE kind IS DISTINCT FROM 'conversa' ORDER BY sort_order`
+    );
     assert.deepEqual(rows, [
       { name: 'Ana Martins', role: 'Aprovada Academia do Barro Branco', image_url: '/assets/results/aprovados/aprovada-barro-branco-ana.jpg', video_url: null, kind: 'foto' },
       { name: 'Lucas Robis', role: 'Aprovado em Medicina pelo ENEM', image_url: '/assets/results/aprovados/aprovado-medicina-lucas.jpg', video_url: null, kind: 'foto' },
@@ -68,7 +74,7 @@ describe('Resultados: Aprovados com fotos, Mensagens com prints', () => {
     ]);
 
     // rodar de novo não muda nada
-    assert.deepEqual(await resultadosOutubro2026(), { removidos: 0, fotos: 0 });
+    assert.deepEqual(await resultadosOutubro2026(), { removidos: 0, fotos: 0, prints: 0 });
   });
 
   it('a página pública entrega o bloco de cada imagem', async () => {
@@ -107,11 +113,9 @@ describe('Resultados: Aprovados com fotos, Mensagens com prints', () => {
   it('todo arquivo citado existe, com a sua miniatura', () => {
     const urls = [
       ...Object.values(FOTOS_APROVADOS).map((nome) => `/assets/results/aprovados/${nome}.jpg`),
-      ...testimonials.filter((item) => item.image_url).map((item) => item.image_url),
+      ...resultConversations.map((item) => item.image_url),
     ];
-    const prints = testimonials.filter((item) => item.image_url);
-    assert.equal(prints.length, 12, 'os doze prints novos');
-    assert.ok(prints.every((item) => item.kind === 'conversa'));
+    assert.equal(resultConversations.length, 12, 'os doze prints novos');
     for (const url of urls) {
       assert.ok(fs.existsSync(path.join(PUBLIC, url)), `${url} existe`);
       assert.ok(fs.existsSync(path.join(PUBLIC, thumbOf(url))), `miniatura de ${url} existe`);

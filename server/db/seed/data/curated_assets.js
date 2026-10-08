@@ -15,10 +15,11 @@ function publishedDocument(pdfUrl, answerKeyUrl = null) {
   };
 }
 
-const testimonials = [
-  // Prints de conversa com alunos aprovados, enviados pelo Guilherme em
-  // outubro/2026 (bloco "Mensagens recebidas"). As fotos dos aprovados são
-  // cadastradas pelo painel e não moram aqui.
+// Prints de conversa com alunos aprovados, enviados pelo Guilherme em
+// outubro/2026 (bloco "Mensagens recebidas"). Entram UMA vez, pelo ajuste
+// resultadosOutubro2026 (seed/ajustes.js): depois disso quem manda é o painel,
+// e um print apagado lá não volta no próximo deploy.
+const resultConversations = [
   {
     name: 'Guilherme',
     role: 'Aprovado no Barro Branco',
@@ -115,6 +116,9 @@ const testimonials = [
     image_url: '/assets/results/conversas/conversa-barro-branco-joao-pedro.jpg',
     sort_order: 112,
   },
+];
+
+const testimonials = [
   // Depoimentos em vídeo (aluno falando). Vídeos já enviados ao Blob; ficam na
   // seção "Quem estudou, conta", separados dos prints. Sem nome de propósito.
   {
@@ -306,4 +310,4 @@ const studentComments = [
   ['Maria', 'primeira vez que consigo seguir um cronograma por mais de alguns dias 😂 tô gostando muito'],
 ].map(([name, content], index) => ({ name, content, sort_order: 1000 + index }));
 
-module.exports = { testimonials, pastExams, platformTour, studentComments };
+module.exports = { testimonials, resultConversations, pastExams, platformTour, studentComments };

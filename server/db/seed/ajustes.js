@@ -13,6 +13,7 @@
 const db = require('../pool');
 const { faqs } = require('./data/landing');
 const plans = require('./data/plans');
+const { resultConversations } = require('./data/curated_assets');
 
 /**
  * Outubro/2026 — duas decisões do Guilherme:
@@ -93,10 +94,12 @@ const FOTOS_APROVADOS = {
  *  1. Saem os posts de Instagram de "Aprovados" (/assets/results/posts/) e os
  *     prints antigos de "Mensagens recebidas" (/assets/results/messages/). Os
  *     arquivos saíram do repositório, então as linhas são apagadas, não
- *     desativadas. Os prints novos entram pelo seed (/assets/results/conversas/).
+ *     desativadas.
  *  2. As fotos dos aprovados cadastradas pelo painel, que caíam em "Mensagens
  *     recebidas", passam a ser 'foto' (bloco Aprovados) e apontam para a cópia
  *     leve. Nome, papel e ordem ficam como estão no painel.
+ *  3. Entram os 12 prints novos de "Mensagens recebidas" (resultConversations).
+ *     Só aqui, não no seed: um print apagado no painel não volta no deploy.
  *
  * Rodar de novo não muda nada.
  */
@@ -117,7 +120,18 @@ async function resultadosOutubro2026() {
       fotos += res.rowCount;
     }
 
-    return { removidos: removidos.rowCount, fotos };
+    let prints = 0;
+    for (const print of resultConversations) {
+      const res = await client.query(
+        `INSERT INTO testimonials (name, role, image_url, kind, rating, exam_id, sort_order, active)
+         SELECT $1, $2, $3, 'conversa', 5, (SELECT id FROM exams WHERE slug = $4), $5, true
+          WHERE NOT EXISTS (SELECT 1 FROM testimonials WHERE image_url = $3)`,
+        [print.name, print.role, print.image_url, print.exam, print.sort_order]
+      );
+      prints += res.rowCount;
+    }
+
+    return { removidos: removidos.rowCount, fotos, prints };
   });
 }
 

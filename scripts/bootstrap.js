@@ -66,12 +66,12 @@ const AJUSTES_UNICOS = [
   {
     // Outubro/2026: saem os posts de Instagram e os prints antigos de
     // Resultados; as fotos dos aprovados (que caíam em "Mensagens recebidas")
-    // vão para Aprovados, em cópia leve. Os prints novos entram pelo seed.
+    // vão para Aprovados, em cópia leve; entram os 12 prints novos.
     flag: 'bootstrap_resultados_2026_10_aplicado',
     descricao: 'Resultados com fotos dos aprovados e prints novos',
     run: async () => {
       const resumo = await resultadosOutubro2026();
-      log(`  depoimentos antigos apagados: ${resumo.removidos}; fotos levadas para Aprovados: ${resumo.fotos}`);
+      log(`  depoimentos antigos apagados: ${resumo.removidos}; fotos levadas para Aprovados: ${resumo.fotos}; prints novos: ${resumo.prints}`);
     },
   },
 ];
