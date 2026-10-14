@@ -79,15 +79,37 @@
           <p class="hero-lead" data-block-field="subtitle">Plano claro. Rotina em movimento.</p>
           <div class="hero-actions">
             <a class="btn btn-primary btn-lg" href="/cadastro">Começar agora <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-right"></use></svg></a>
+            <a class="btn btn-hero-quiet btn-lg" href="#conheca" data-intro-link><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-play"></use></svg> Assistir vídeo</a>
             <a class="btn btn-hero-quiet btn-lg" href="#planos" data-plans-link hidden>Ver planos</a>
           </div>
           <div class="hero-proof" aria-label="Recursos da plataforma"><span>Plano de estudos</span><span>Questões</span><span>Simulados</span></div>
           <div class="social-proof" id="social-proof" aria-label="Comentários de alunos" hidden></div>
         </div>
       </div>
-      <a class="hero-scroll" href="#plataforma" aria-label="Ir para a seção Plataforma">
+      <a class="hero-scroll" href="#conheca" aria-label="Ir para o vídeo de apresentação">
         <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-chevron-down"></use></svg>
       </a>
+    </section>
+
+    <section class="section intro-video-section" id="conheca" aria-labelledby="intro-video-title">
+      <div class="wrap">
+        <div class="section-intro section-intro-single reveal">
+          <div><p class="eyebrow">Em 1 minuto</p><h2 id="intro-video-title">Conheça a <span>plataforma.</span></h2></div>
+        </div>
+        <div class="intro-video reveal">
+          <video class="intro-video-player" id="intro-video" preload="none" playsinline controls
+            poster="/assets/video-conheca-poster.jpg"
+            src="https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/videos/conheca_foco_elite_b63610.mp4"
+            aria-label="Vídeo de apresentação do Foco de Elite"></video>
+          <button class="intro-video-play" type="button" data-intro-play aria-label="Assistir ao vídeo de apresentação">
+            <span class="intro-video-play-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-play"></use></svg></span>
+            <span class="intro-video-play-label">Assistir · 1 min</span>
+          </button>
+        </div>
+        <div class="intro-video-cta reveal">
+          <a class="btn btn-primary btn-lg" href="/cadastro">Começar agora <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-right"></use></svg></a>
+        </div>
+      </div>
     </section>
 
     <section class="section platform-tour" id="por-dentro" aria-labelledby="tour-title" hidden>

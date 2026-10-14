@@ -154,6 +154,24 @@ body { overflow-x: hidden; background: var(--ink); }
 .media-open { position: absolute; top: 10px; right: 10px; z-index: 3; width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: rgba(4, 11, 20, 0.78); border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 50%; opacity: 0; transform: translateY(5px); transition: opacity 220ms, transform 220ms, background 220ms; backdrop-filter: blur(10px); }
 .media-open .icon { width: 16px; height: 16px; padding: 0; color: inherit; background: none; border: 0; border-radius: 0; }
 [data-media-src]:hover .media-open, [data-media-src]:focus-visible .media-open { opacity: 1; transform: translateY(0); }
+/* Vídeo de apresentação ("Conheça a plataforma"), logo abaixo do topo */
+.intro-video-section { --section-accent: var(--gold-strong); background: radial-gradient(120% 80% at 50% 0%, rgba(224, 184, 75, 0.08), transparent 60%), var(--ink-2); border-bottom: 1px solid var(--border-2); }
+.intro-video { position: relative; max-width: 980px; margin: 0 auto; overflow: hidden; aspect-ratio: 16 / 9; background: #030811; border: 1px solid rgba(242, 198, 77, 0.38); border-radius: 12px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 0 0 6px rgba(224, 184, 75, 0.05); }
+.intro-video-player { width: 100%; height: 100%; display: block; object-fit: cover; background: #030811; }
+.intro-video-play { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 0; color: #fff; cursor: pointer; appearance: none; background: linear-gradient(180deg, rgba(4, 11, 20, 0.05), rgba(4, 11, 20, 0.45)); border: 0; transition: background 260ms; }
+.intro-video-play:hover { background: linear-gradient(180deg, rgba(4, 11, 20, 0), rgba(4, 11, 20, 0.3)); }
+.intro-video-play-icon { width: 84px; height: 84px; display: grid; place-items: center; color: var(--ink); background: var(--gold-strong); border-radius: 50%; box-shadow: 0 14px 40px rgba(224, 184, 75, 0.4), 0 0 0 10px rgba(242, 198, 77, 0.16); transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.intro-video-play-icon .icon { width: 32px; height: 32px; margin-left: 4px; }
+.intro-video-play:hover .intro-video-play-icon { transform: scale(1.07); }
+.intro-video-play-label { padding: 7px 12px; color: #fff; background: rgba(4, 11, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 999px; font-family: var(--font-label); font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; backdrop-filter: blur(8px); }
+.intro-video.is-playing .intro-video-play { opacity: 0; pointer-events: none; }
+.intro-video-cta { display: flex; justify-content: center; margin-top: 28px; }
+.intro-video-cta .btn-primary { color: var(--ink); background: var(--gold-strong); border-color: var(--gold-strong); }
+@media (max-width: 640px) {
+  .intro-video { border-radius: 10px; }
+  .intro-video-play-icon { width: 64px; height: 64px; }
+  .intro-video-play-icon .icon { width: 24px; height: 24px; }
+}
 .platform-tour { --section-accent: var(--gold-strong); background: var(--ink); border-bottom: 1px solid var(--border-2); }
 .tour-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .tour-card { min-width: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; color: inherit; text-align: left; appearance: none; cursor: pointer; background: #0d1b2c; border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2); transition: transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 300ms, box-shadow 300ms; }

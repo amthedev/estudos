@@ -1326,6 +1326,40 @@ function observeReveal(elements) {
   });
 }
 
+/**
+ * Vídeo de apresentação logo abaixo do topo. Só baixa quando o visitante dá
+ * play (preload="none"); o botão dourado some enquanto o vídeo toca e volta
+ * no fim. "Assistir vídeo" no topo rola até a seção e já começa a tocar.
+ */
+function initIntroVideo() {
+  const box = qs('.intro-video');
+  const video = qs('#intro-video');
+  const play = qs('[data-intro-play]');
+  if (!box || !video || !play) return;
+
+  // Controles nativos só depois do play: antes, a barra "0:00" aparece por baixo
+  // do botão dourado. Sem JS ela fica, para o vídeo continuar tocável.
+  video.controls = false;
+  const start = () => {
+    const tentativa = video.play();
+    if (tentativa && typeof tentativa.catch === 'function') tentativa.catch(() => {});
+  };
+  play.addEventListener('click', start);
+  video.addEventListener('play', () => {
+    box.classList.add('is-playing');
+    video.controls = true;
+  });
+  video.addEventListener('ended', () => box.classList.remove('is-playing'));
+
+  qsa('[data-intro-link]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      qs('#conheca')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      start();
+    });
+  });
+}
+
 function initYear() {
   qsa('[data-year]').forEach((element) => {
     element.textContent = String(new Date().getFullYear());
@@ -1338,6 +1372,7 @@ initNav();
 initScrollMotion();
 initHeroMotion();
 initMediaViewer();
+initIntroVideo();
 initYear();
 observeReveal(qsa('.reveal'));
 initPlans();
