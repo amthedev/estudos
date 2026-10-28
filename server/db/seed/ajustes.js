@@ -135,4 +135,90 @@ async function resultadosOutubro2026() {
   });
 }
 
-module.exports = { faqEBonusOutubro2026, resultadosOutubro2026, FOTOS_APROVADOS };
+const BLOB = 'https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93';
+
+/**
+ * Vídeos de depoimento que tinham sido enviados pelo painel e se perderam com o
+ * banco antigo. Os arquivos continuam no Blob; voltam DESATIVADOS, para a
+ * equipe conferir cada um no painel antes de pôr no ar.
+ */
+const VIDEOS_DEPOIMENTO_PAINEL = [
+  'depoimentos/7428F54B_5C4C_407E_9FBF__d40135.mov',
+  'depoimentos/VID_20261007111501262_1a7bad.mov',
+  'depoimentos/IMG_7043_b56348.mov',
+  'depoimentos/copy_C3C37E0F_AC67_4AE7__484e31.mov',
+  'depoimentos/Edits_GUILHERME_D_20p_20_dceb83.mp4',
+];
+
+/** Provas da FUVEST enviadas pelo painel em 2026-10-09 (PDFs seguem no Blob). */
+const PROVAS_FUVEST = [
+  [2015, 'provas/fuv2015_1fase_prova_V_888c31.pdf', 'provas/fuv2015_1fase_prova_gab_0a5b01.pdf'],
+  [2016, 'provas/fuv2016_1fase_prova_V_9d588e.pdf', 'provas/fuv2016_1fase_prova_gab_0c4b8c.pdf'],
+  [2017, 'provas/fuv2017_1fase_prova_V_8f1e76.pdf', 'provas/fuv2017_1fase_prova_gab_bd9418.pdf'],
+  [2018, 'provas/fuv2018_1fase_prova_V_2823ed.pdf', 'provas/fuv2018_1fase_prova_gab_d1b0d1.pdf'],
+  [2019, 'provas/fuvest_2019_primeira_fas_cc59e4.pdf', 'provas/fuv2019_gabarito_oficial_bd3ccf.pdf'],
+  [2020, 'provas/fuvest_2020_primeira_fas_a553b3.pdf', 'provas/fuvest_2020_primeira_fas_6aaf82.pdf'],
+  [2021, 'provas/fuvest_2021_primeira_fas_21668d.pdf', 'provas/fuvest_2021_primeira_fas_187aa8.pdf'],
+  [2022, 'provas/fuvest_2022_primeira_fas_f1d0ca.pdf', 'provas/fuvest_2022_primeira_fas_155325.pdf'],
+  [2023, 'provas/fuvest2023_primeira_fase_cff246.pdf', 'provas/fuvest2023_gabarito_prim_8b5240.pdf'],
+];
+
+/**
+ * Outubro/2026 — o banco de produção foi perdido (plano da hospedagem venceu)
+ * e o app subiu com banco novo. O seed recria o conteúdo base; isto devolve o
+ * que tinha sido feito pelo painel e cujos arquivos sobreviveram no Blob:
+ *
+ *  1. as 13 fotos de Aprovados (cópias leves em /assets/results/aprovados/);
+ *  2. os vídeos de depoimento enviados pelo painel, desativados;
+ *  3. as provas anteriores da FUVEST, com PDF e gabarito.
+ *
+ * Só cria o que falta: rodar de novo não duplica nada.
+ */
+async function restauracaoOutubro2026() {
+  return db.tx(async (client) => {
+    const resumo = { fotos: 0, videos: 0, provas: 0 };
+
+    let ordem = 0;
+    for (const nome of Object.values(FOTOS_APROVADOS)) {
+      ordem += 1;
+      const [genero, ...resto] = nome.split('-');
+      const primeiro = resto.pop();
+      const medicina = resto.join('-') === 'medicina';
+      const role = `${genero === 'aprovada' ? 'Aprovada' : 'Aprovado'} · ${medicina ? 'Medicina' : 'Barro Branco'}`;
+      const imagem = `/assets/results/aprovados/${nome}.jpg`;
+      const res = await client.query(
+        `INSERT INTO testimonials (name, role, image_url, kind, rating, exam_id, sort_order, active)
+         SELECT $1, $2, $3, 'foto', 5, (SELECT id FROM exams WHERE slug = $4), $5, true
+          WHERE NOT EXISTS (SELECT 1 FROM testimonials WHERE image_url = $3)`,
+        [primeiro.charAt(0).toUpperCase() + primeiro.slice(1), role, imagem, medicina ? 'enem' : 'barro-branco', ordem]
+      );
+      resumo.fotos += res.rowCount;
+    }
+
+    for (const caminho of VIDEOS_DEPOIMENTO_PAINEL) {
+      const url = `${BLOB}/${caminho}`;
+      const res = await client.query(
+        `INSERT INTO testimonials (name, role, video_url, rating, sort_order, active)
+         SELECT 'Aluno Foco Elite', 'Depoimento em vídeo', $1, 5, 100, false
+          WHERE NOT EXISTS (SELECT 1 FROM testimonials WHERE video_url = $1)`,
+        [url]
+      );
+      resumo.videos += res.rowCount;
+    }
+
+    for (const [ano, prova, gabarito] of PROVAS_FUVEST) {
+      const res = await client.query(
+        `INSERT INTO past_exams (exam_id, year, title, board, pdf_url, answer_key_url, sort_order, active)
+         SELECT e.id, $1, $2, 'FUVEST', $3, $4, 0, true FROM exams e
+          WHERE e.slug = 'fuvest'
+            AND NOT EXISTS (SELECT 1 FROM past_exams WHERE pdf_url = $3)`,
+        [ano, `FUVEST ${ano} - 1ª fase`, `${BLOB}/${prova}`, `${BLOB}/${gabarito}`]
+      );
+      resumo.provas += res.rowCount;
+    }
+
+    return resumo;
+  });
+}
+
+module.exports = { faqEBonusOutubro2026, resultadosOutubro2026, restauracaoOutubro2026, FOTOS_APROVADOS };

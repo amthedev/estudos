@@ -29,7 +29,7 @@ const { getSetting, setSetting } = require('../server/services/settings');
 const { releaseInterruptedCorrections } = require('../server/services/essay');
 const { releaseInterruptedBuilds } = require('../server/services/simulados');
 const lessonQuestions = require('../server/services/lesson-questions');
-const { faqEBonusOutubro2026, resultadosOutubro2026 } = require('../server/db/seed/ajustes');
+const { faqEBonusOutubro2026, resultadosOutubro2026, restauracaoOutubro2026 } = require('../server/db/seed/ajustes');
 
 function log(mensagem) {
   console.log(`[bootstrap] ${mensagem}`);
@@ -72,6 +72,18 @@ const AJUSTES_UNICOS = [
     run: async () => {
       const resumo = await resultadosOutubro2026();
       log(`  depoimentos antigos apagados: ${resumo.removidos}; fotos levadas para Aprovados: ${resumo.fotos}; prints novos: ${resumo.prints}`);
+    },
+  },
+  {
+    // Outubro/2026: o banco de produção se perdeu com o plano vencido da
+    // hospedagem. Devolve o que foi feito pelo painel e cujos arquivos ficaram
+    // no Blob: fotos de Aprovados, vídeos de depoimento (desativados) e as
+    // provas da FUVEST.
+    flag: 'bootstrap_restauracao_2026_10_aplicado',
+    descricao: 'restauração do conteúdo do painel a partir do Blob',
+    run: async () => {
+      const resumo = await restauracaoOutubro2026();
+      log(`  fotos de Aprovados: ${resumo.fotos}; vídeos de depoimento: ${resumo.videos}; provas da FUVEST: ${resumo.provas}`);
     },
   },
 ];
