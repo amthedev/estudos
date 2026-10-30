@@ -15,6 +15,7 @@ const assert = require('node:assert/strict');
 const { createTestContext } = require('./helpers');
 const schedule = require('../server/services/schedule');
 const studyPlan = require('../server/services/study-plan');
+const dates = require('../server/utils/dates');
 
 describe('Plano de estudos', () => {
   let ctx;
@@ -151,8 +152,11 @@ describe('Plano de estudos', () => {
     await schedule.generateSchedule(seisDias.user.id, { days: 21 });
     await schedule.generateSchedule(doisDias.user.id, { days: 21 });
 
-    const aulasSeis = (await itens(seisDias.user.id)).filter((i) => ['lesson', 'topic'].includes(i.type));
-    const aulasDois = (await itens(doisDias.user.id)).filter((i) => ['lesson', 'topic'].includes(i.type));
+    // o plano sai inteiro para os dois; a diferença é o ritmo nas três primeiras semanas
+    const limite = dates.addDays(dates.todayISO(), 20);
+    const noPeriodo = (i) => ['lesson', 'topic'].includes(i.type) && dates.toISODate(i.date) <= limite;
+    const aulasSeis = (await itens(seisDias.user.id)).filter(noPeriodo);
+    const aulasDois = (await itens(doisDias.user.id)).filter(noPeriodo);
 
     assert.ok(aulasSeis.length > aulasDois.length, 'mais dias por semana, mais aulas no mesmo período');
     assert.equal(aulasDois[0].title, 'Razão e proporção', 'a sequência começa igual para os dois');
@@ -205,6 +209,35 @@ describe('Plano de estudos', () => {
       aulas.every((item) => item.title !== 'Razão e proporção'),
       'a aula concluída não volta para o cronograma'
     );
+  });
+
+  it('gera o plano inteiro de uma vez, sem repetir aulas', async () => {
+    const student = await aluno({ dias: [1, 2, 3, 4, 5, 6] });
+    await schedule.generateSchedule(student.user.id, { days: 14 });
+    const aulas = (await itens(student.user.id)).filter((item) => ['lesson', 'topic'].includes(item.type));
+    assert.equal(aulas.length, 15, 'os quinze passos do plano entram, mesmo pedindo só 14 dias');
+    assert.equal(new Set(aulas.map((item) => item.title)).size, 15, 'nenhuma aula se repete');
+  });
+
+  it('regerar sem concluir nada continua de onde estava, sem voltar ao começo', async () => {
+    // o caso relatado: o aluno não marca as aulas como concluídas e, a cada
+    // regeração, o cronograma recomeçava em Razão e proporção
+    const student = await aluno({ dias: [0, 1, 2, 3, 4, 5, 6] });
+    const inicio = dates.addDays(dates.todayISO(), -10);
+    await schedule.generateSchedule(student.user.id, { from: inicio });
+    await schedule.generateSchedule(student.user.id, { from: dates.todayISO() });
+
+    const aulas = (await itens(student.user.id)).filter((item) => ['lesson', 'topic'].includes(item.type));
+    const titulos = aulas.map((item) => item.title);
+    assert.equal(new Set(titulos).size, titulos.length, `aula repetida: ${titulos.join(' | ')}`);
+    assert.equal(titulos.length, 15);
+
+    // a aula da véspera mantém o resumo, mesmo com a regeração começando hoje
+    const lista = await itens(student.user.id);
+    for (const aula of aulas) {
+      const resumo = lista.find((item) => item.type === 'summary' && item.plan_item_id === aula.plan_item_id);
+      assert.ok(resumo, `a aula "${aula.title}" ficou sem o dia de resumo`);
+    }
   });
 
   it('o treino físico entra em paralelo e não ocupa a carga do dia', async () => {

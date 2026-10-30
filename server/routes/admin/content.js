@@ -27,6 +27,7 @@ const { validate, z } = require('../../middleware/validate');
 const { AppError, wrap } = require('../../middleware/errors');
 const { audit } = require('../../middleware/audit');
 const { uniqueSlug } = require('../../utils/slug');
+const { nullableFileRef } = require('../../utils/validators');
 
 // ---------------------------------------------------------------------------
 // schemas
@@ -52,6 +53,8 @@ const subjectCreate = z.object({
   description: descriptionField,
   icon: iconField,
   color: colorField,
+  // capa usada por todas as aulas da matéria
+  cover_url: nullableFileRef(2000, 'Informe um endereço válido ou envie a imagem.'),
   sort_order: sortField,
   active: activeField,
 });
@@ -167,7 +170,7 @@ router.get(
     const [areas, subjects, topics, subtopics, exams] = await Promise.all([
       db.many('SELECT id, slug, name, sort_order FROM areas ORDER BY sort_order, name'),
       db.many(
-        `SELECT s.id, s.area_id, s.slug, s.name, s.description, s.icon, s.color, s.sort_order, s.active,
+        `SELECT s.id, s.area_id, s.slug, s.name, s.description, s.icon, s.color, s.cover_url, s.sort_order, s.active,
                 coalesce(l.c, 0)::int AS lessons_count,
                 coalesce(q.c, 0)::int AS questions_count,
                 coalesce(t.c, 0)::int AS topics_count
@@ -411,9 +414,9 @@ router.post(
     const slug = await uniqueSlug(body.name, async (s) => Boolean(await db.one('SELECT 1 FROM subjects WHERE slug = $1', [s])));
     const order = body.sort_order ?? (await nextSortOrder('subjects', 'WHERE area_id IS NOT DISTINCT FROM $1', [body.area_id ?? null]));
     const subject = await db.one(
-      `INSERT INTO subjects (area_id, slug, name, description, icon, color, sort_order, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [body.area_id ?? null, slug, body.name, body.description ?? null, body.icon ?? 'book-open', body.color ?? '#2F80ED', order, body.active ?? true]
+      `INSERT INTO subjects (area_id, slug, name, description, icon, color, cover_url, sort_order, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [body.area_id ?? null, slug, body.name, body.description ?? null, body.icon ?? 'book-open', body.color ?? '#2F80ED', body.cover_url ?? null, order, body.active ?? true]
     );
     await audit(req, 'content.subject.create', 'subject', subject.id, { name: body.name });
     res.status(201).json(subject);
@@ -429,9 +432,23 @@ router.put(
       const area = await db.one('SELECT id FROM areas WHERE id = $1', [body.area_id]);
       if (!area) throw new AppError(400, 'validation_error', 'Área não encontrada.', [{ path: 'area_id', message: 'Área não encontrada.' }]);
     }
-    const { sets, params } = buildUpdate(body, ['area_id', 'name', 'description', 'icon', 'color', 'sort_order', 'active']);
+    const { sets, params } = buildUpdate(body, ['area_id', 'name', 'description', 'icon', 'color', 'cover_url', 'sort_order', 'active']);
     params.push(req.valid.params.id);
-    const subject = await db.one(`UPDATE subjects SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+    const subject = await db.tx(async (client) => {
+      const before = await client.one('SELECT cover_url FROM subjects WHERE id = $1 FOR UPDATE', [req.valid.params.id]);
+      if (!before) return null;
+      const row = await client.one(`UPDATE subjects SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+      // capa nova vale para as aulas sem miniatura e para as que estavam com a
+      // capa anterior; miniatura própria de uma aula fica como está
+      if (body.cover_url !== undefined && (body.cover_url ?? null) !== (before.cover_url ?? null)) {
+        await client.query(
+          `UPDATE lessons SET thumbnail_url = $2, updated_at = now()
+            WHERE subject_id = $1 AND (thumbnail_url IS NULL OR thumbnail_url = $3)`,
+          [row.id, body.cover_url ?? null, before.cover_url ?? null]
+        );
+      }
+      return row;
+    });
     if (!subject) throw new AppError(404, 'not_found', 'Matéria não encontrada.');
     await audit(req, 'content.subject.update', 'subject', subject.id, body);
     res.json(subject);

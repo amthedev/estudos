@@ -33,6 +33,11 @@ const { getSetting } = require('./settings');
 
 const DEFAULT_HORIZON_DAYS = 30;
 const MAX_HORIZON_DAYS = 60;
+/**
+ * Com plano de estudos cadastrado, o cronograma sai inteiro de uma vez: um ano
+ * (53 semanas, para a última caber mesmo começando no meio da semana).
+ */
+const PLAN_HORIZON_DAYS = 371;
 /** Gera mais dias quando o cronograma tem menos de duas semanas pela frente. */
 const AHEAD_THRESHOLD_DAYS = 14;
 const LESSON_EXTRA_MIN = 10;
@@ -552,7 +557,12 @@ async function touchGeneratedAt(userId) {
 async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = {}) {
   const profile = await loadProfile(userId);
   const start = (from ? dates.toISODate(from) : null) || dates.todayISO();
-  const horizon = clamp(positiveInt(days, DEFAULT_HORIZON_DAYS), 1, MAX_HORIZON_DAYS);
+  // Com plano, a geração sempre cobre o ano inteiro: gerar só 30 dias e
+  // recomeçar a cada regeração era o que fazia o aluno ver só umas semanas.
+  const planData = profile ? await studyPlan.loadPlanForExam(profile.exam_id) : null;
+  const horizon = planData
+    ? PLAN_HORIZON_DAYS
+    : clamp(positiveInt(days, DEFAULT_HORIZON_DAYS), 1, MAX_HORIZON_DAYS);
   const end = dates.addDays(start, horizon - 1);
   const empty = { from: start, to: end, created: 0, study_days_count: 0 };
 
@@ -574,7 +584,6 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
   // dele já conta como coberto, para a geração avançar na lista em vez de
   // recomeçar pelos mesmos assuntos.
   const plan = await loadPlan(userId, profile, { coveredBefore: start });
-  const planData = await studyPlan.loadPlanForExam(profile.exam_id);
   const examDate = effectiveExamDate(profile);
   const today = dates.todayISO();
   const states = buildSubjectStates(plan, profile, examDate, today);
@@ -655,7 +664,8 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
     // anterior a cada quatro semanas. A pontuação por peso e fraqueza continua
     // valendo para provas sem plano.
     if (planData) {
-      const startPosition = await studyPlan.currentPosition(userId, planData.plan.id);
+      const startPosition = await studyPlan.currentPosition(userId, planData.plan.id, { before: start });
+      const resume = await studyPlan.pendingSummary(userId, planData.plan.id, { before: start });
       const planItems = await studyPlan.buildItems({
         planData,
         studyDates,
@@ -664,6 +674,7 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
         maxPosition,
         takenLessons,
         startPosition,
+        resume,
       });
 
       // revisões devidas entram antes do conteúdo do dia, sem estourar a carga
@@ -819,12 +830,14 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
     });
     }
 
-    for (const item of items) {
-      await client.query(
-        `INSERT INTO schedule_items
-           (user_id, date, position, type, title, subject_id, topic_id, lesson_id, review_id, duration_min, plan_item_id, generated)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)`,
-        [
+    // um ano de cronograma passa de mil itens: grava em lotes, não um por um
+    const COLUMNS = 11;
+    const BATCH = 400;
+    for (let offset = 0; offset < items.length; offset += BATCH) {
+      const chunk = items.slice(offset, offset + BATCH);
+      const params = [];
+      const rows = chunk.map((item, index) => {
+        params.push(
           userId,
           item.date,
           item.position,
@@ -835,8 +848,17 @@ async function generateSchedule(userId, { from, days = DEFAULT_HORIZON_DAYS } = 
           item.lesson_id || null,
           item.review_id || null,
           item.duration_min,
-          item.plan_item_id || null,
-        ]
+          item.plan_item_id || null
+        );
+        const base = index * COLUMNS;
+        const marks = Array.from({ length: COLUMNS }, (_, i) => `$${base + i + 1}`);
+        return `(${marks.join(', ')}, true)`;
+      });
+      await client.query(
+        `INSERT INTO schedule_items
+           (user_id, date, position, type, title, subject_id, topic_id, lesson_id, review_id, duration_min, plan_item_id, generated)
+         VALUES ${rows.join(', ')}`,
+        params
       );
     }
 
@@ -1308,5 +1330,6 @@ module.exports = {
   getScheduleDefaults,
   normalizeStudyDays,
   DEFAULT_HORIZON_DAYS,
+  PLAN_HORIZON_DAYS,
   WEAK_ACCURACY_PCT,
 };

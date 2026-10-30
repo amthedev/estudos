@@ -86,6 +86,31 @@ const AJUSTES_UNICOS = [
       log(`  fotos de Aprovados: ${resumo.fotos}; vídeos de depoimento: ${resumo.videos}; provas da FUVEST: ${resumo.provas}`);
     },
   },
+  {
+    // Outubro/2026: com plano de estudos, o cronograma passa a sair com o ano
+    // inteiro e para de voltar ao primeiro assunto a cada regeração. Refaz
+    // uma vez o cronograma de quem já tinha, a partir de hoje.
+    flag: 'bootstrap_cronograma_anual_2026_10_aplicado',
+    descricao: 'cronograma de um ano para os alunos que já tinham',
+    run: async () => {
+      const schedule = require('../server/services/schedule');
+      const alunos = await db.many(
+        `SELECT sp.user_id FROM student_profiles sp
+          WHERE sp.onboarding_completed AND sp.exam_id IS NOT NULL
+            AND EXISTS (SELECT 1 FROM study_plans p WHERE p.exam_id = sp.exam_id AND p.active)`
+      );
+      let refeitos = 0;
+      for (const { user_id: userId } of alunos) {
+        try {
+          await schedule.generateSchedule(userId);
+          refeitos += 1;
+        } catch (err) {
+          log(`  cronograma de ${userId} não foi refeito: ${err.message}`);
+        }
+      }
+      log(`  cronogramas refeitos: ${refeitos} de ${alunos.length}`);
+    },
+  },
 ];
 
 async function aplicarAjustesUnicos() {

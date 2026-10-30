@@ -419,7 +419,9 @@ router.post(
             `INSERT INTO lessons (subject_id, topic_id, subtopic_id, slug, title, video_url, video_provider,
                                   thumbnail_url, duration_min, teacher_name, difficulty, sort_order, active,
                                   video_bytes, video_mime, video_seconds, questions_status, questions_updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, 'upload', $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending', now())
+             VALUES ($1, $2, $3, $4, $5, $6, 'upload',
+                     coalesce($7, (SELECT cover_url FROM subjects WHERE id = $1)),
+                     $8, $9, $10, $11, $12, $13, $14, $15, 'pending', now())
              RETURNING id`,
             [
               body.subject_id, principal.topic_id, principal.subtopic_id, slug, title,
@@ -724,7 +726,8 @@ router.post(
         `INSERT INTO lessons (subject_id, topic_id, subtopic_id, slug, title, description, video_url, video_provider,
                               thumbnail_url, duration_min, teacher_name, difficulty, summary, sort_order, active,
                               questions_status, questions_updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending', now()) RETURNING id`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9, (SELECT cover_url FROM subjects WHERE id = $1)),
+                 $10, $11, $12, $13, $14, $15, 'pending', now()) RETURNING id`,
         [
           body.subject_id, principal.topic_id, principal.subtopic_id, slug, body.title, body.description ?? null,
           video.video_url, video.video_provider, video.thumbnail_url, body.duration_min ?? 30, body.teacher_name ?? null,

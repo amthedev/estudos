@@ -16,6 +16,7 @@ import {
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { fmtNumber, pluralize } from '../../core/format.js';
+import { attachFileUpload } from '../../components/file-input.js';
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_COLOR = '#2F80ED';
@@ -190,6 +191,17 @@ function colorField(value) {
     </div>`;
 }
 
+/** Capa única da matéria: todas as aulas dela usam esta imagem. */
+function coverField(value) {
+  return html`
+    <div class="field ac-field ac-field-wide">
+      <label class="label" for="ac-cover">Capa das aulas <span class="hint-inline">(opcional)</span></label>
+      <input class="input" id="ac-cover" name="cover_url" value="${value || ''}" maxlength="2000" placeholder="Envie a imagem" inputmode="url" spellcheck="false">
+      <p class="hint">Vale para todas as aulas da matéria. Aula com miniatura própria continua com a dela.</p>
+      <p class="error-text" data-error-for="cover_url"></p>
+    </div>`;
+}
+
 function areaSelect(value) {
   return html`
     <div class="field ac-field">
@@ -231,6 +243,7 @@ function inlineForm(type, node, parentId) {
           </div>` : ''}
         ${type === 'subject' ? iconPicker(values.icon) : ''}
         ${type === 'subject' ? colorField(values.color) : ''}
+        ${type === 'subject' ? coverField(values.cover_url) : ''}
         ${type !== 'area' ? html`
           <label class="switch-field ac-field">
             <span class="fm-switch-text">
@@ -513,6 +526,17 @@ function repaint() {
 function focusForm() {
   const input = qs('.ac-form [name="name"]', state.ctx.el);
   if (input) input.focus();
+  attachCoverUpload();
+}
+
+/** Liga o envio de imagem ao campo da capa do formulário aberto (um por vez). */
+function attachCoverUpload() {
+  if (state.coverUpload) {
+    state.coverUpload.destroy();
+    state.coverUpload = null;
+  }
+  const coverInput = qs('.ac-form [name="cover_url"]', state.ctx.el);
+  if (coverInput) state.coverUpload = attachFileUpload(coverInput, { folder: 'aulas', accept: 'image' });
 }
 
 // ---------------------------------------------------------------------
@@ -551,6 +575,7 @@ function readForm(form) {
     data.icon = qs('input[name="icon"]:checked', form)?.value || DEFAULT_ICON;
     const color = (form.elements.color?.value || '').trim();
     data.color = HEX_COLOR.test(color) ? color.toUpperCase() : DEFAULT_COLOR;
+    data.cover_url = (form.elements.cover_url?.value || '').trim() || null;
   }
   return { type, data };
 }
@@ -929,6 +954,7 @@ export default renderContentPage;
 export function unmount() {
   if (!state) return;
   clearTimeout(state.searchTimer);
+  if (state.coverUpload) state.coverUpload.destroy();
   state.off.forEach((off) => {
     if (typeof off === 'function') off();
   });

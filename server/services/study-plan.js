@@ -60,19 +60,50 @@ async function loadPlanForExam(examId) {
 /**
  * Em que ponto da sequência o aluno está.
  *
- * Deriva do que já foi concluído em vez de confiar em um contador: se o aluno
- * refizer o cronograma, mudar a disponibilidade ou pular dias, a posição
- * continua certa.
+ * Deriva do cronograma em vez de confiar em um contador: conta o que foi
+ * concluído e também o que já ficou agendado antes de `before` (o primeiro dia
+ * que a geração vai refazer). Sem a segunda parte, quem não marca as aulas
+ * como concluídas voltava para o primeiro passo a cada regeração — o
+ * cronograma recomeçava em Razão e Proporção depois de umas semanas.
  */
-async function currentPosition(userId, planId) {
+async function currentPosition(userId, planId, { before = null } = {}) {
   const row = await db.one(
     `SELECT coalesce(max(i.position), 0) AS position
        FROM schedule_items si
        JOIN study_plan_items i ON i.id = si.plan_item_id
-      WHERE si.user_id = $1 AND i.plan_id = $2 AND si.status = 'done'`,
-    [userId, planId]
+      WHERE si.user_id = $1 AND i.plan_id = $2
+        AND (si.status = 'done' OR ($3::date IS NOT NULL AND si.date < $3))`,
+    [userId, planId, before]
   );
   return Number(row?.position) || 0;
+}
+
+/**
+ * Aula do plano agendada antes de `before` cujo resumo ainda não foi agendado.
+ *
+ * Quando a regeração começa no dia seguinte a um dia de aula, o resumo dela
+ * ficaria perdido: a nova geração já abriria com a próxima aula.
+ * @returns {Promise<{step: object, lesson: object|null}|null>}
+ */
+async function pendingSummary(userId, planId, { before = null } = {}) {
+  if (!before) return null;
+  const row = await db.one(
+    `SELECT i.id, i.title, i.subject_id, i.topic_id, si.lesson_id, l.topic_id AS lesson_topic_id,
+            EXISTS (SELECT 1 FROM schedule_items s2
+                     WHERE s2.user_id = si.user_id AND s2.plan_item_id = i.id AND s2.type = 'summary') AS has_summary
+       FROM schedule_items si
+       JOIN study_plan_items i ON i.id = si.plan_item_id
+       LEFT JOIN lessons l ON l.id = si.lesson_id
+      WHERE si.user_id = $1 AND i.plan_id = $2 AND si.date < $3 AND si.type IN ('lesson', 'topic')
+      ORDER BY i.position DESC
+      LIMIT 1`,
+    [userId, planId, before]
+  );
+  if (!row || row.has_summary) return null;
+  return {
+    step: { id: row.id, title: row.title, subject_id: row.subject_id, topic_id: row.topic_id },
+    lesson: row.lesson_id ? { id: row.lesson_id, topic_id: row.lesson_topic_id } : null,
+  };
 }
 
 /**
@@ -147,6 +178,7 @@ function bestLesson(planItem, candidates, used) {
  * @param {Map<string, number>} options.maxPosition última posição usada em cada dia
  * @param {Set<string>} options.takenLessons aulas já agendadas
  * @param {number} options.startPosition posição do plano onde continuar
+ * @param {{step: object, lesson: object|null}|null} [options.resume] aula cujo resumo ficou para trás
  * @returns {Promise<object[]>} itens prontos para gravar
  */
 async function buildItems({
@@ -157,10 +189,11 @@ async function buildItems({
   maxPosition,
   takenLessons,
   startPosition,
+  resume = null,
 }) {
   const { plan, items: planItems } = planData;
   const pending = planItems.filter((item) => item.position > startPosition);
-  if (!pending.length) return [];
+  if (!pending.length && !resume) return [];
 
   const bySubject = await matchLessons(pending);
   const usedLessons = new Set(takenLessons);
@@ -177,8 +210,9 @@ async function buildItems({
 
   const out = [];
   let cursor = 0; // próximo passo do plano a consumir
-  let slot = LESSON_SLOT; // alterna aula → resumo
-  let lastScheduled = null; // o passo cuja aula acabou de ser agendada
+  // alterna aula → resumo; abre com o resumo da aula que ficou antes do início
+  let slot = resume ? SUMMARY_SLOT : LESSON_SLOT;
+  let lastScheduled = resume; // o passo cuja aula acabou de ser agendada
 
   for (const date of studyDates) {
     let remaining = capacity - (usedMinutes.get(date) || 0);
@@ -315,6 +349,7 @@ async function progress(userId, examId) {
 module.exports = {
   loadPlanForExam,
   currentPosition,
+  pendingSummary,
   buildItems,
   progress,
   SUMMARY_MIN,
