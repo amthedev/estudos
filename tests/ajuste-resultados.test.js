@@ -24,7 +24,7 @@ const { resultConversations } = require('../server/db/seed/data/curated_assets')
 const { invalidateLandingCache } = require('../server/routes/landing');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
-const BLOB = 'https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93/depoimentos';
+const BLOB = 'https://blob.squarecloud.dev/pub/0a9f7f1de21c92b5fe36d1006d36b96186874a93/depoimentos';
 const MIGRATION = path.join(__dirname, '..', 'server', 'db', 'migrations', '228_secao_do_depoimento.sql');
 
 function thumbOf(url) {

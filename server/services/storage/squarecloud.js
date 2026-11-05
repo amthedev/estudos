@@ -32,9 +32,10 @@ const BASE = 'https://blob.squarecloud.app/v1/objects';
  * a API (blob.squarecloud.app) exige a chave da conta e devolve 403 para o
  * navegador do aluno, então uma foto salva com aquele endereço aparecia no
  * cadastro e sumia para o aluno. O conteúdo público mora em
- * public-blob.squarecloud.dev/<id>, onde <id> é a chave do objeto.
+ * blob.squarecloud.dev/pub/<id> (o domínio public-blob.squarecloud.dev foi
+ * desligado em 25/10/2026), onde <id> é a chave do objeto sem o "pub/".
  */
-const PUBLIC_BASE = 'https://public-blob.squarecloud.dev';
+const PUBLIC_BASE = 'https://blob.squarecloud.dev/pub';
 
 /**
  * URL pública a partir da chave (id) do objeto.

@@ -388,7 +388,7 @@ describe('Leitura de prova no servidor', () => {
     // Figura enviada pelo painel (/uploads/...) ou do Blob: os dois valem.
     let res = await admin.agent.patch(url, {
       statement: 'Assinale a alternativa que completa a frase.\n\n![Figura](/uploads/questoes/abc123.png#w=200)',
-      E: '![Alternativa E](https://public-blob.squarecloud.dev/abc/questoes/alt_e.png)',
+      E: '![Alternativa E](https://blob.squarecloud.dev/pub/abc/questoes/alt_e.png)',
     });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.deepEqual(res.body.payload.alerts, [], 'completou a alternativa: o alerta sai');

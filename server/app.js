@@ -64,7 +64,7 @@ function buildCsp() {
     'img-src': ["'self'", 'https:', 'data:', 'blob:'],
     // vídeo e áudio vêm do armazenamento da plataforma (Blob da Square Cloud)
     // ou do próprio domínio quando o provedor configurado é o disco
-    'media-src': ["'self'", 'https://public-blob.squarecloud.dev', 'https://*.squarecloud.dev', 'blob:'],
+    'media-src': ["'self'", 'https://*.squarecloud.dev', 'blob:'],
     'frame-src': [
       // mantidos para aulas antigas que ainda apontem para vídeo externo;
       // o cadastro novo é sempre por arquivo enviado ao painel

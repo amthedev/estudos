@@ -135,7 +135,7 @@ async function resultadosOutubro2026() {
   });
 }
 
-const BLOB = 'https://public-blob.squarecloud.dev/0a9f7f1de21c92b5fe36d1006d36b96186874a93';
+const BLOB = 'https://blob.squarecloud.dev/pub/0a9f7f1de21c92b5fe36d1006d36b96186874a93';
 
 /**
  * Vídeos de depoimento que tinham sido enviados pelo painel e se perderam com o

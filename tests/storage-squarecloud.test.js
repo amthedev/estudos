@@ -59,7 +59,7 @@ describe('Blob Storage da Square Cloud', () => {
             id: `pub/123/${prefix}/${name}.mp4`, // a API real devolve a chave com "pub/"
             name,
             size: body.length,
-            url: `https://public-blob.squarecloud.dev/123/${prefix}/${name}.mp4`,
+            url: `https://blob.squarecloud.dev/pub/123/${prefix}/${name}.mp4`,
           },
         });
       }
@@ -70,7 +70,7 @@ describe('Blob Storage da Square Cloud', () => {
           response: {
             upload: 'token-de-teste',
             id: 'pub/123/videos/aula.mp4',
-            url: 'https://public-blob.squarecloud.dev/123/videos/aula.mp4',
+            url: 'https://blob.squarecloud.dev/pub/123/videos/aula.mp4',
             // nomes exatos da documentação
             chunk: {
               min_size: 5 * 1024 * 1024,
@@ -96,7 +96,7 @@ describe('Blob Storage da Square Cloud', () => {
             id: 'pub/123/videos/aula.mp4',
             size: enviadas,
             parts: calls.filter((c) => c.method === 'PUT').length,
-            url: 'https://public-blob.squarecloud.dev/123/videos/aula.mp4',
+            url: 'https://blob.squarecloud.dev/pub/123/videos/aula.mp4',
           },
         });
       }
@@ -164,9 +164,9 @@ describe('Blob Storage da Square Cloud', () => {
       contentType: 'video/mp4',
     });
 
-    assert.match(saved.url, /^https:\/\/public-blob\.squarecloud\.dev\//);
+    assert.match(saved.url, /^https:\/\/blob\.squarecloud\.dev\/pub\//);
     // com "pub/" o domínio público devolve 404: o link salvo não pode levar o prefixo
-    assert.match(saved.url, /^https:\/\/public-blob\.squarecloud\.dev\/123\/videos\/Aula_de_Porcentagem_\w+\.mp4$/);
+    assert.match(saved.url, /^https:\/\/blob\.squarecloud\.dev\/pub\/123\/videos\/Aula_de_Porcentagem_\w+\.mp4$/);
     assert.equal(saved.key.startsWith('pub/'), true, 'a chave da API segue com o prefixo, para apagar depois');
     // o servidor falso devolve o tamanho do corpo multipart, que carrega o
     // delimitador além do arquivo; o que importa é que o tamanho veio da API
@@ -197,12 +197,12 @@ describe('Blob Storage da Square Cloud', () => {
     assert.equal(calls.filter((c) => c.method === 'PATCH').length, 1, 'fecha o envio');
     assert.equal(saved.bytes, buffer.length);
     // o caso real: a videoaula de 217 MB subia inteira e o link com "pub/" dava 404
-    assert.equal(saved.url, 'https://public-blob.squarecloud.dev/123/videos/aula.mp4');
+    assert.equal(saved.url, 'https://blob.squarecloud.dev/pub/123/videos/aula.mp4');
   });
 
   it('link público nunca leva o prefixo "pub/" da chave', () => {
-    assert.equal(driver.publicUrl('pub/abc/videos/aula.mp4'), 'https://public-blob.squarecloud.dev/abc/videos/aula.mp4');
-    assert.equal(driver.publicUrl('abc/videos/aula.mp4'), 'https://public-blob.squarecloud.dev/abc/videos/aula.mp4');
+    assert.equal(driver.publicUrl('pub/abc/videos/aula.mp4'), 'https://blob.squarecloud.dev/pub/abc/videos/aula.mp4');
+    assert.equal(driver.publicUrl('abc/videos/aula.mp4'), 'https://blob.squarecloud.dev/pub/abc/videos/aula.mp4');
     assert.equal(driver.publicUrl(''), '');
   });
 

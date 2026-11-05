@@ -181,7 +181,7 @@ function videoMeta(videoUrl, thumbnailUrl) {
 
 /**
  * Vídeo gravado pelo painel. Pode ser um endereço do Blob da Square Cloud
- * (https://public-blob.squarecloud.dev/...) ou, quando o provedor é o disco,
+ * (https://blob.squarecloud.dev/pub/...) ou, quando o provedor é o disco,
  * um caminho servido pela própria aplicação (/uploads/...).
  */
 function isUploadedVideo(value) {

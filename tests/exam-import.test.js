@@ -278,7 +278,7 @@ describe('Link do Google Drive', () => {
   });
 
   it('não mexe em endereço que não é do Drive', () => {
-    const blob = 'https://public-blob.squarecloud.dev/abc/provas/enem.pdf';
+    const blob = 'https://blob.squarecloud.dev/pub/abc/provas/enem.pdf';
     assert.equal(examImport.directDownloadUrl(blob), blob);
     assert.equal(examImport.directDownloadUrl('/uploads/provas/x.pdf'), '/uploads/provas/x.pdf');
     assert.equal(examImport.isDriveUrl(blob), false);

@@ -24,7 +24,7 @@ describe('Player de vídeo', () => {
 
   it('reconhece o vídeo hospedado pela plataforma', () => {
     assert.equal(player.detectProvider('/uploads/videos/abc123.mp4'), 'upload');
-    assert.equal(player.detectProvider('https://public-blob.squarecloud.dev/123/videos/aula.mp4'), 'upload');
+    assert.equal(player.detectProvider('https://blob.squarecloud.dev/pub/123/videos/aula.mp4'), 'upload');
     assert.equal(player.detectProvider(''), 'none');
   });
 
@@ -32,7 +32,7 @@ describe('Player de vídeo', () => {
     assert.equal(player.fileExtension('/uploads/videos/abc123.mp4'), 'mp4');
     assert.equal(player.fileExtension('/uploads/videos/abc123.webm'), 'webm');
     assert.equal(player.fileExtension('/uploads/videos/abc123.mp4?v=2'), 'mp4');
-    assert.equal(player.fileExtension('https://public-blob.squarecloud.dev/1/videos/aula.mp4'), 'mp4');
+    assert.equal(player.fileExtension('https://blob.squarecloud.dev/pub/1/videos/aula.mp4'), 'mp4');
     assert.equal(player.fileExtension('https://exemplo.com/pagina'), '');
   });
 

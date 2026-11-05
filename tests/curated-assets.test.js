@@ -19,8 +19,8 @@ describe('Acervo de provas combinado com o cliente', () => {
       assert.deepEqual(dias, [1, 2], `PPL ${ano} precisa dos dias 1 e 2`);
     }
     for (const prova of ppl) {
-      assert.match(prova.pdf_url, /^https:\/\/public-blob\.squarecloud\.dev\//);
-      assert.match(prova.answer_key_url, /^https:\/\/public-blob\.squarecloud\.dev\//);
+      assert.match(prova.pdf_url, /^https:\/\/blob\.squarecloud\.dev\/pub\//);
+      assert.match(prova.answer_key_url, /^https:\/\/blob\.squarecloud\.dev\/pub\//);
       assert.equal(prova.exam, 'enem');
       assert.equal(prova.board, 'INEP');
     }
