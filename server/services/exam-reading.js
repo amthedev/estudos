@@ -92,8 +92,89 @@ function setReaderForTests(fn) {
 }
 
 function leitor() {
+  if (leitorDeTeste) return { readExam: leitorDeTeste };
+  // nos testes o leitor roda no próprio processo; em produção, num processo à parte
   // eslint-disable-next-line global-require
-  return leitorDeTeste ? { readExam: leitorDeTeste } : require('./exam-reader');
+  return process.env.NODE_ENV === 'test' ? require('./exam-reader') : { readExam: lerEmProcessoFilho };
+}
+
+/** Teto de memória do processo da leitura (MB). Cabe com o site nos 1 GB do plano. */
+const LEITOR_MEMORIA_MB = Number(process.env.EXAM_READER_MEMORY_MB) || 384;
+const LEITOR_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Lê a prova num processo filho (exam-reader/worker.js). O pdf.js e as figuras
+ * renderizadas chegavam a centenas de MB dentro do processo do site e, no
+ * limite de 1 GB da hospedagem, derrubavam o site inteiro no meio da leitura.
+ * No filho, estourar o teto mata só a leitura, e a memória volta quando ele sai.
+ */
+async function lerEmProcessoFilho(pdf, opcoes = {}) {
+  const { fork } = require('node:child_process'); // eslint-disable-line global-require
+  const os = require('node:os'); // eslint-disable-line global-require
+  const { regions, onPage, ...resto } = opcoes;
+  const options = { ...resto };
+  if (regions === examVision.precisaDeVisao) options.regionAlerts = examVision.ALERTAS_DE_VISAO;
+
+  const arquivo = path.join(os.tmpdir(), `prova-${crypto.randomUUID()}.pdf`);
+  await fs.promises.writeFile(arquivo, pdf);
+  try {
+    const resposta = await new Promise((resolve, reject) => {
+      const filho = fork(path.join(__dirname, 'exam-reader', 'worker.js'), [], {
+        execArgv: [`--max-old-space-size=${LEITOR_MEMORIA_MB}`],
+        serialization: 'advanced',
+        stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+      });
+      let fim = false;
+      const relogio = setTimeout(() => {
+        if (fim) return;
+        fim = true;
+        filho.kill('SIGKILL');
+        reject(new Error('A leitura da prova demorou demais e foi interrompida.'));
+      }, LEITOR_TIMEOUT_MS);
+      filho.on('message', (msg) => {
+        if (fim) return;
+        fim = true;
+        clearTimeout(relogio);
+        resolve(msg);
+      });
+      filho.on('error', (err) => {
+        if (fim) return;
+        fim = true;
+        clearTimeout(relogio);
+        reject(err);
+      });
+      filho.on('exit', (code, signal) => {
+        if (fim) return;
+        fim = true;
+        clearTimeout(relogio);
+        reject(definitivo(
+          `A leitura desta prova passou do limite de memória do servidor (${signal || `saída ${code}`}). ` +
+            'Tente um PDF menor ou use a leitura pelo navegador.'
+        ));
+      });
+      filho.send({ file: arquivo, options });
+    });
+    if (!resposta.ok) {
+      const err = new Error(resposta.error.message || 'A leitura da prova falhou.');
+      if (resposta.error.code) err.code = resposta.error.code;
+      throw err;
+    }
+    return paraBuffers(resposta.result);
+  } finally {
+    fs.promises.unlink(arquivo).catch(() => {});
+  }
+}
+
+/** O IPC devolve Uint8Array onde havia Buffer (as figuras em PNG): volta para Buffer. */
+function paraBuffers(valor) {
+  if (valor instanceof Uint8Array && !Buffer.isBuffer(valor)) {
+    return Buffer.from(valor.buffer, valor.byteOffset, valor.byteLength);
+  }
+  if (Array.isArray(valor)) return valor.map(paraBuffers);
+  if (valor && typeof valor === 'object' && !Buffer.isBuffer(valor) && !(valor instanceof Date)) {
+    for (const chave of Object.keys(valor)) valor[chave] = paraBuffers(valor[chave]);
+  }
+  return valor;
 }
 
 /** Erro que não adianta tentar de novo com o mesmo arquivo: a leitura vai para 'falhou'. */

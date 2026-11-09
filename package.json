@@ -19,7 +19,7 @@
     "test": "NODE_ENV=test node --test --test-concurrency=1 'tests/**/*.test.js'",
     "build:icons": "node scripts/build-icons.js",
     "vendor": "node scripts/vendor.js",
-    "start:cloud": "node scripts/bootstrap.js && node server/index.js",
+    "start:cloud": "node scripts/bootstrap.js && node --max-old-space-size=448 server/index.js",
     "check": "node scripts/check-config.js",
     "reprocessar-pagamentos": "node scripts/reprocessar-pagamentos.js",
     "bootstrap": "node scripts/bootstrap.js",
