@@ -27,7 +27,7 @@ import {
 } from '../../core/ui.js';
 import { icon } from '../../core/icons.js';
 import { fmtBytes, fmtMinutes, pluralize } from '../../core/format.js';
-import { uploadFile } from '../../components/file-input.js';
+import { attachFileUpload, uploadFile } from '../../components/file-input.js';
 
 let state = null;
 
@@ -164,6 +164,7 @@ function collectSettings() {
     teacher_name: value('teacher_name') || undefined,
     difficulty: Number(value('difficulty')) || 2,
     duration_min: Number(value('duration_min')) || undefined,
+    thumbnail_url: value('thumbnail_url') || undefined,
     active: qs('[name="active"]', el)?.checked !== false,
     exam_ids: qsa('[data-exam-id]:checked', el).map((box) => box.dataset.examId),
   };
@@ -904,6 +905,11 @@ function view() {
               <p class="hint">Usada quando não der para ler a duração do arquivo.</p>
             </div>
           </div>
+          <div class="field">
+            <label class="label" for="lu-cover">Capa das aulas <span class="hint-inline">(opcional)</span></label>
+            <input class="input" id="lu-cover" name="thumbnail_url" maxlength="2000" placeholder="Envie a imagem" inputmode="url" spellcheck="false">
+            <p class="hint">Uma imagem só: fica como capa de todas as aulas deste lote. Sem imagem aqui, vale a capa da matéria.</p>
+          </div>
           <label class="switch-field">
             <span class="switch-title">Aulas ativas</span>
             <input type="checkbox" role="switch" class="switch" name="active" checked>
@@ -971,6 +977,13 @@ async function renderLessonsImport(ctx) {
     if (subjectSelect) subjectSelect.value = query.subject_id;
     await loadTopics(query.subject_id, { keep: query.topic_id || '' });
     if (!state || state.token !== token) return;
+  }
+
+  // capa única do lote: enviada uma vez, vai junto no cadastro de todas as aulas
+  const coverInput = qs('[name="thumbnail_url"]', ctx.el);
+  if (coverInput) {
+    const coverUpload = attachFileUpload(coverInput, { folder: 'aulas', accept: 'image' });
+    state.off.push(() => coverUpload.destroy());
   }
 
   const picker = qs('[data-picker]', ctx.el);

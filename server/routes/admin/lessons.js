@@ -305,6 +305,8 @@ router.post(
       difficulty: z.coerce.number().int().min(1).max(3).optional(),
       teacher_name: z.string().trim().max(120).nullable().optional(),
       duration_min: z.coerce.number().int().min(1).max(600).optional(),
+      // capa única do lote: vale para toda aula que não trouxer a própria
+      thumbnail_url: nullableUrl,
       active: z.boolean().optional(),
       exam_ids: z.array(uuid).max(50).optional(),
       skip_existing: z.boolean().optional(),
@@ -425,7 +427,7 @@ router.post(
              RETURNING id`,
             [
               body.subject_id, principal.topic_id, principal.subtopic_id, slug, title,
-              item.video_url, item.thumbnail_url ?? null, minutes,
+              item.video_url, item.thumbnail_url ?? body.thumbnail_url ?? null, minutes,
               body.teacher_name ?? null, body.difficulty ?? 2, position, body.active ?? true,
               item.video_bytes ?? null, item.video_mime ?? null, item.video_seconds ?? null,
             ]

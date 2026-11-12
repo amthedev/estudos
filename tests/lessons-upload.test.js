@@ -128,6 +128,42 @@ describe('Aulas em massa', () => {
     assert.equal(links.total, 2);
   });
 
+  it('a capa do lote vai em todas as aulas, e a da própria aula vale mais', async () => {
+    const [a, b, c] = [await putVideo(81), await putVideo(82), await putVideo(83)];
+    const res = await admin.agent.post('/api/admin/lessons/import', {
+      ...base(),
+      thumbnail_url: 'https://exemplo.com/capa-do-lote.jpg',
+      items: [
+        { video_url: a, title: 'Capa do lote — aula 1' },
+        { video_url: b, title: 'Capa do lote — aula 2' },
+        { video_url: c, title: 'Capa do lote — aula 3', thumbnail_url: 'https://exemplo.com/propria.jpg' },
+      ],
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.imported, 3);
+    const rows = await db.many(
+      `SELECT title, thumbnail_url FROM lessons WHERE title LIKE 'Capa do lote%' ORDER BY title`
+    );
+    assert.deepEqual(rows.map((r) => r.thumbnail_url), [
+      'https://exemplo.com/capa-do-lote.jpg',
+      'https://exemplo.com/capa-do-lote.jpg',
+      'https://exemplo.com/propria.jpg',
+    ]);
+  });
+
+  it('sem capa no lote, a aula leva a capa da matéria', async () => {
+    await db.query(`UPDATE subjects SET cover_url = 'https://exemplo.com/da-materia.jpg' WHERE id = $1`, [subject.id]);
+    const v = await putVideo(84);
+    const res = await admin.agent.post('/api/admin/lessons/import', {
+      ...base(),
+      items: [{ video_url: v, title: 'Sem capa no lote' }],
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const row = await db.one(`SELECT thumbnail_url FROM lessons WHERE title = 'Sem capa no lote'`);
+    assert.equal(row.thumbnail_url, 'https://exemplo.com/da-materia.jpg');
+    await db.query('UPDATE subjects SET cover_url = NULL WHERE id = $1', [subject.id]);
+  });
+
   it('recusa arquivo que não está no armazenamento', async () => {
     const res = await admin.agent.post('/api/admin/lessons/import', {
       ...base(),
